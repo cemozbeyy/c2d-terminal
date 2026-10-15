@@ -7,6 +7,9 @@ options:
 packages:
   C2DCore:
     path: Packages/C2DCore
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    exactVersion: 1.99.0   # ADR-009; review every bump
 targets:
   C2DTerminal:
     type: application
@@ -14,6 +17,7 @@ targets:
     sources: [App]
     dependencies:
       - package: C2DCore
+      - package: SwiftTerm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.c2d.terminal

@@ -7,7 +7,7 @@ macOS-first, AI-native terminal workspace. Product owner: C2D Works.
 ## Status
 
 Foundation only. The app builds, launches a native window, logs a diagnostics line and runs one test target.
-**PTY session core exists (headless; see `docs/PTY_CORE.md`). No terminal engine/rendering, editor, Git, agent or Token Optimizer code yet.** The window says so.
+Real terminals (SwiftTerm over the C2D PTY core), project registry, persisted dockable layouts. **No editor, Git, agent or Token Optimizer code yet.**
 
 ## Requirements
 
@@ -21,7 +21,7 @@ The `.xcodeproj` is generated and gitignored. Edit `project.yml`, not the projec
 ```sh
 xcodegen generate                                   # (re)create C2DTerminal.xcodeproj
 swift test --package-path Packages/C2DCore          # unit tests (Swift Testing)
-xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configuration Debug -destination 'platform=macOS'
+xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configuration Debug -destination 'platform=macOS' -skipPackagePluginValidation
 open ~/Library/Developer/Xcode/DerivedData/C2DTerminal-*/Build/Products/Debug/C2DTerminal.app   # launch dev build
 ```
 

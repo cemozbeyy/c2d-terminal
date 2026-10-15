@@ -1,34 +1,105 @@
-import SwiftUI
+import AppKit
 import C2DCore
+import SwiftUI
 
 @main
 struct C2DTerminalApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @State private var model = AppModel()
+
     init() {
         Log.app.info("launch: \(DiagnosticsReport.current().summary, privacy: .public)")
     }
 
     var body: some Scene {
         WindowGroup("C2D Terminal") {
-            FoundationView()
+            MainWindowView()
+                .environment(model)
+                .onAppear {
+                    delegate.model = model
+                    #if DEBUG
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2))
+                        let desc = NSApp.windows.map { "\(type(of: $0)) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height)) visible=\($0.isVisible)" }
+                        debugTrace("windows: \(desc.joined(separator: " | "))")
+                    }
+                    #endif
+                }
+                .frame(minWidth: 720, minHeight: 440)
+        }
+        .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Open Project…") { model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil) }
+                    .keyboardShortcut("o", modifiers: .command)
+                Button("New Terminal") { model.workspace?.newTerminal() }
+                    .keyboardShortcut("t", modifiers: .command)
+                    .disabled(model.workspace == nil)
+            }
+            CommandMenu("Workspace") {
+                Button("Toggle Focus Mode") {
+                    guard let ws = model.workspace else { return }
+                    if ws.layout.maximizedGroup != nil { ws.exitFocusMode() } else if let g = ws.layout.groupIDs.first { ws.maximize(g) }
+                }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(model.workspace == nil)
+                Divider()
+                ForEach(LayoutPreset.allCases, id: \.self) { preset in
+                    Button("Apply \(preset.displayName) Layout") { model.workspace?.apply(preset) }
+                        .disabled(model.workspace == nil)
+                }
+                Divider()
+                Button("Save as Default Layout") { model.workspace?.saveAsGlobalDefault() }
+                    .disabled(model.workspace == nil)
+            }
         }
     }
 }
 
-/// Temporary foundation surface. It states plainly what does not exist yet;
-/// it must not be mistaken for a terminal (Bible Part 4 §2.1, §17).
-struct FoundationView: View {
-    private let report = DiagnosticsReport.current()
+extension Notification.Name {
+    static let c2dOpenProject = Notification.Name("works.c2d.terminal.openProject")
+}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("C2D Terminal").font(.title)
-            Text("Foundation build. No terminal engine, PTY, editor, Git, agent or optimizer functionality is implemented yet.")
-                .foregroundStyle(.secondary)
-            Text(report.summary)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
+/// Quit terminates live shells after confirmation, like Terminal.app. Nothing is left orphaned.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var model: AppModel?
+    private var terminating = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        debugTrace("applicationShouldTerminate model=\(model != nil) terminating=\(terminating)")
+        guard let model else { return .terminateNow }
+        if terminating { return .terminateNow }
+        #if DEBUG
+        // `-c2dAutoConfirmQuit YES` skips the confirmation so automated runtime checks can exercise
+        // the real quit path (terminate sessions, wait for exits). Debug builds only.
+        let autoConfirm = UserDefaults.standard.bool(forKey: "c2dAutoConfirmQuit")
+        #else
+        let autoConfirm = false
+        #endif
+        if model.workspace?.hasRunningSessions == true && !autoConfirm {
+            let alert = NSAlert()
+            alert.messageText = "Quit C2D Terminal?"
+            alert.informativeText = "Running terminal sessions will be stopped (SIGHUP, then SIGKILL after 2 s)."
+            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
-        .padding(24)
-        .frame(minWidth: 520, minHeight: 240, alignment: .topLeading)
+        // `.terminateLater` parks the run loop in a mode where main-actor tasks never run, so the
+        // async shutdown happens first and termination is re-requested when it has finished.
+        terminating = true
+        Task { @MainActor in
+            debugTrace("shutdown begin")
+            await model.shutdown()
+            debugTrace("shutdown done → terminate again")
+            sender.terminate(nil)
+        }
+        return .terminateCancel
     }
+}
+
+/// Debug-only stderr trace for runtime checks that run the binary directly (os_log is not readable while the process lives).
+func debugTrace(_ message: String) {
+    #if DEBUG
+    FileHandle.standardError.write(Data("[c2d] \(message)\n".utf8))
+    #endif
 }
