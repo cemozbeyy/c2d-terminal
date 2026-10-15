@@ -31,7 +31,7 @@ Formatting/linting: none configured yet (swiftformat/swiftlint are not installed
 
 Release build (ad-hoc signed, Gatekeeper will reject until a Developer ID exists): `./Scripts/build-release.sh` → `build/C2DTerminal-<version>-unsigned.zip`.
 
-Debug-only launch hooks for runtime checks (compiled out of Release): `-c2dOpenProject <dir>`, `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`.
+Launch argument available in every build: `-c2dOpenProject <dir>` (or pass a folder to `open -a`). Debug-only hooks for runtime checks (compiled out of Release): `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`.
 
 ## Layout
 

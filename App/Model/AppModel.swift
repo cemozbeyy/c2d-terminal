@@ -67,7 +67,8 @@ final class AppModel {
         agentSessions = (try? AgentSessionRegistry(store: store)) ?? (try! AgentSessionRegistry(store: nil))
         taskStore = (try? TaskStore(path: TaskStore.standardPath())) ?? (try? TaskStore.inMemory())
         optimizationStore = (try? OptimizationStore(path: OptimizationStore.standardPath())) ?? (try? OptimizationStore.inMemory())
-        if let saved = try? store?.load(Entitlement.self, named: "entitlement") { entitlement = saved }
+        // No entitlement document is read: until a billing provider exists (DEF-15) there is no
+        // trustworthy source, and a hand-edited file must not unlock Premium (ADR-016).
         #if DEBUG
         // `-c2dPremium YES` simulates a premium entitlement for development only; no billing exists.
         if UserDefaults.standard.bool(forKey: "c2dPremium") { entitlement = Entitlement(state: .premium, source: "developer override (Debug build)") }
