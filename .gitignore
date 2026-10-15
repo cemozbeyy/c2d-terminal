@@ -1,0 +1,31 @@
+# Xcode / generated project (regenerate with `xcodegen generate`)
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+*.xcresult
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/*/.build/
+
+# Signing material and secrets — never commit
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*.keychain*
+.env
+.env.*
+*.pem
+*.key
+
+# Local machine / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
