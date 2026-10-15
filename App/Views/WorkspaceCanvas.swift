@@ -183,7 +183,9 @@ struct PanelGroupView: View {
     private func tabTitle(_ panel: Panel) -> String {
         switch panel.kind {
         case .terminal: return workspace.terminal(for: panel.id).title
-        case .agentSession: return workspace.agent(for: panel.id).title
+        case .agentSession:
+            let a = workspace.agent(for: panel.id)
+            return a.agentPlan == nil && a.agentRecord == nil ? "Agent" : a.title
         case .editor:
             // Panel tabs and file tabs are different levels (Bible Part 3 §6.1); the panel stays "Editor".
             return workspace.editor(for: panel.id).hasUnsavedChanges ? "Editor ●" : "Editor"
@@ -290,7 +292,7 @@ struct PanelContentView: View {
         case .gitChanges:
             GitPanelView(git: workspace.git)
         case .agentSession:
-            AgentPanelView(controller: workspace.agent(for: panel.id))
+            AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:
             TasksPanelView(tasks: workspace.tasks, workspace: workspace)
         default:

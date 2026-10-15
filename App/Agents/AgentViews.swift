@@ -5,6 +5,8 @@ import SwiftUI
 /// event stream for Claude Code, so status is the process state and nothing more (Bible Part 7 §16).
 struct AgentPanelView: View {
     let controller: TerminalPanelController
+    let workspace: WorkspaceController
+    @State private var showLaunch = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,17 +34,19 @@ struct AgentPanelView: View {
                 TerminalSurfaceView(controller: controller)
             } else {
                 VStack(spacing: 8) {
-                    Text(controller.statusText).foregroundStyle(.secondary)
+                    Text(controller.agentRecord == nil && controller.agentPlan == nil ? "No agent in this panel yet" : controller.statusText).foregroundStyle(.secondary)
                     if controller.agentPlan != nil {
                         Button("New Session") { controller.startNewSession() }
                             .help("Starts the provider again in the same directory. Previous work on disk is untouched.")
-                    } else {
+                    } else if controller.agentRecord != nil {
                         Text("Provider not available on this machine; the previous session cannot be restarted here.").font(.caption).foregroundStyle(.orange)
                     }
+                    Button("Start Agent…") { showLaunch = true }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .sheet(isPresented: $showLaunch) { AgentLaunchSheet(workspace: workspace, targetPanel: controller.panelID) }
     }
 }
 
@@ -52,14 +56,16 @@ struct AgentLaunchSheet: View {
     @Environment(\.dismiss) private var dismiss
     let workspace: WorkspaceController
     let linkedTask: TaskRecord?
+    let targetPanel: PanelID?
     @State private var providerID = AgentProvider.claudeCode.id
     @State private var directory: String
     @State private var task = ""
     @State private var error: String?
 
-    init(workspace: WorkspaceController, task: TaskRecord? = nil) {
+    init(workspace: WorkspaceController, task: TaskRecord? = nil, targetPanel: PanelID? = nil) {
         self.workspace = workspace
         self.linkedTask = task
+        self.targetPanel = targetPanel
         _directory = State(initialValue: task?.worktreePath ?? workspace.projectPath)
         _task = State(initialValue: task.map { t in t.details.isEmpty ? t.title : "\(t.title)\n\n\(t.details)" } ?? "")
     }
@@ -108,7 +114,7 @@ struct AgentLaunchSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Launch") {
                     guard let plan else { error = "Provider is not ready."; return }
-                    workspace.launchAgent(plan, task: linkedTask)
+                    workspace.launchAgent(plan, task: linkedTask, intoPanel: targetPanel)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

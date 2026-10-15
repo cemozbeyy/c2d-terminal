@@ -6,7 +6,18 @@ struct MainWindowView: View {
 
     var body: some View {
         @Bindable var model = model
-        HStack(spacing: 0) {
+        ZStack {
+            mainContent
+            if model.paletteVisible {
+                Color.black.opacity(0.25).ignoresSafeArea().onTapGesture { model.paletteVisible = false }
+                CommandPaletteView(isPresented: $model.paletteVisible).padding(.top, 60).frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+    }
+
+    private var mainContent: some View {
+        @Bindable var model = model
+        return HStack(spacing: 0) {
             NavigationRail(destination: $model.destination, hasWorkspace: model.workspace != nil)
             Divider()
             VStack(spacing: 0) {
@@ -108,6 +119,8 @@ struct TopBar: View {
                 Text("C2D Terminal").font(.headline)
                 Spacer()
             }
+            Button { model.paletteVisible = true } label: { Label("Search / Commands", systemImage: "magnifyingglass") }
+                .keyboardShortcut("k", modifiers: .command).help("Command palette (⌘K)")
         }
         .padding(.horizontal, 12)
         .frame(height: 38)

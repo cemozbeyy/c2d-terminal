@@ -199,15 +199,24 @@ final class WorkspaceController {
     @ObservationIgnored private var pendingAgentPlans: [PanelID: AgentLaunchPlan] = [:]
 
     /// Creates the panel and starts the agent. The caller has already shown the pre-launch summary.
-    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil, task: TaskRecord? = nil) {
-        let panel = Panel(kind: .agentSession, title: plan.provider.displayName, attributes: ["provider": plan.provider.id])
-        pendingAgentPlans[panel.id] = plan
-        mutate("new agent session") { layout in
-            if let g = group ?? layout.groupIDs.last { try layout.add(panel, to: g) } else {
-                layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil, task: TaskRecord? = nil, intoPanel: PanelID? = nil) {
+        let panelID: PanelID
+        if let intoPanel, layout.panels[intoPanel]?.kind == .agentSession, terminals[intoPanel]?.isRunning != true {
+            // Reuse an empty/ended agent panel: same panel identity, new session identity.
+            terminals[intoPanel] = nil
+            panelID = intoPanel
+            activate(intoPanel)
+        } else {
+            let panel = Panel(kind: .agentSession, title: plan.provider.displayName, attributes: ["provider": plan.provider.id])
+            mutate("new agent session") { layout in
+                if let g = group ?? layout.groupIDs.last { try layout.add(panel, to: g) } else {
+                    layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+                }
             }
+            panelID = panel.id
         }
-        let controller = agent(for: panel.id)
+        pendingAgentPlans[panelID] = plan
+        let controller = agent(for: panelID)
         // Linking is explicit user intent (the sheet was confirmed); status moves to In progress
         // because the user started work, never because the agent did something (Bible Part 8 §5).
         if let task, let agentID = controller.agentRecord?.id {

@@ -49,6 +49,7 @@ final class AppModel {
     private(set) var providersRefreshedAt: Date?
     private(set) var workspace: WorkspaceController?
     var destination: Destination = .projects
+    var paletteVisible = false
     var messages: [UserMessage] = []
     let diagnostics = DiagnosticsReport.current()
     /// Set when a store could not be opened; the app then runs without persistence and says so.
@@ -101,6 +102,16 @@ final class AppModel {
                     await git.commit()
                     debugTrace("c2dGitStageAllAndCommit: hash=\(git.lastCommitHash ?? "none") error=\(git.lastError ?? "none")")
                 }
+            }
+        }
+        // `-c2dPaletteQuery "<text>"` opens the palette with a query and prints the matching commands.
+        if let q = UserDefaults.standard.string(forKey: "c2dPaletteQuery") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                self.paletteVisible = true
+                let cmds = CommandCatalog.commands(model: self, query: q).filter { $0.title.lowercased().contains(q.lowercased()) || ($0.subtitle?.lowercased().contains(q.lowercased()) ?? false) }
+                debugTrace("c2dPaletteQuery '\(q)': \(cmds.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "))")
             }
         }
         // `-c2dCreateTask "<title>"` creates a task and moves it to Ready (runtime checks).
