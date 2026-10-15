@@ -22,6 +22,19 @@ struct C2DTerminalApp: App {
                         try? await Task.sleep(for: .seconds(2))
                         let desc = NSApp.windows.map { "\(type(of: $0)) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height)) visible=\($0.isVisible)" }
                         debugTrace("windows: \(desc.joined(separator: " | "))")
+                        // `-c2dSnapshot <png>` renders the window content in-process (works while occluded).
+                        if let path = UserDefaults.standard.string(forKey: "c2dSnapshot"), let cv = NSApp.windows.first(where: { $0.isVisible })?.contentView {
+                            try? await Task.sleep(for: .seconds(2))
+                            cv.window?.layoutIfNeeded(); cv.displayIfNeeded()
+                            if let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+                                cv.cacheDisplay(in: cv.bounds, to: rep)
+                                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                                debugTrace("snapshot written: \(path)")
+                            }
+                        }
+                        if UserDefaults.standard.bool(forKey: "c2dDumpViews"), let cv = NSApp.windows.first(where: { $0.isVisible })?.contentView {
+                            debugTrace("view tree:\n\(cv.value(forKey: "_subtreeDescription") ?? "n/a")")
+                        }
                     }
                     #endif
                 }
@@ -35,6 +48,11 @@ struct C2DTerminalApp: App {
                 Button("New Terminal") { model.workspace?.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(model.workspace == nil)
+            }
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") { model.workspace?.saveActiveEditor() }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(model.workspace?.editors.values.contains { $0.activeTab != nil } != true)
             }
             CommandMenu("Workspace") {
                 Button("Toggle Focus Mode") {
@@ -76,6 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         let autoConfirm = false
         #endif
+        if model.workspace?.hasUnsavedEditors == true && !autoConfirm {
+            let alert = NSAlert()
+            alert.messageText = "You have unsaved files."
+            alert.informativeText = "Quitting now discards unsaved edits. Save them first (⌘S) or discard."
+            alert.addButton(withTitle: "Discard and Quit")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
+        }
         if model.workspace?.hasRunningSessions == true && !autoConfirm {
             let alert = NSAlert()
             alert.messageText = "Quit C2D Terminal?"

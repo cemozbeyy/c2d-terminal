@@ -178,8 +178,13 @@ struct PanelGroupView: View {
     }
 
     private func tabTitle(_ panel: Panel) -> String {
-        if panel.kind == .terminal { return workspace.terminal(for: panel.id).title }
-        return panel.title ?? panel.kind.rawValue
+        switch panel.kind {
+        case .terminal: return workspace.terminal(for: panel.id).title
+        case .editor:
+            // Panel tabs and file tabs are different levels (Bible Part 3 §6.1); the panel stays "Editor".
+            return workspace.editor(for: panel.id).hasUnsavedChanges ? "Editor ●" : "Editor"
+        default: return panel.title ?? panel.kind.rawValue
+        }
     }
 
     private var dropZones: some View {
@@ -274,6 +279,10 @@ struct PanelContentView: View {
         switch panel.kind {
         case .terminal:
             TerminalPanelView(controller: workspace.terminal(for: panel.id))
+        case .projectExplorer:
+            ExplorerPanelView(explorer: workspace.explorer, workspace: workspace)
+        case .editor:
+            EditorPanelView(editor: workspace.editor(for: panel.id))
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }

@@ -113,7 +113,7 @@ private func twoGroups() -> (WorkspaceLayout, Panel, Panel, NodeID, NodeID) {
     }
 
     @Test func recoveryReplacesUnavailableKindsAndPrunesDanglingReferences() throws {
-        var (layout, a, b, _, _) = twoGroups()
+        let (layout, a, b, _, _) = twoGroups()
         var bogus = layout
         bogus.root = .split(id: NodeID(), orientation: .vertical, children: [layout.root, .group(id: NodeID(), panels: [PanelID("dangling")], active: nil)], weights: [1, 1])
         bogus.panels[b.id]?.kind = PanelKind(rawValue: "hologram")
@@ -122,7 +122,6 @@ private func twoGroups() -> (WorkspaceLayout, Panel, Panel, NodeID, NodeID) {
         #expect(bogus.panels[b.id]?.kind == .unavailable)
         #expect(bogus.panels[b.id]?.attributes["originalKind"] == "hologram")
         #expect(Set(bogus.visiblePanelIDs) == [a.id, b.id], "slot kept, dangling reference dropped")
-        _ = layout
     }
 
     @Test func roundTripsThroughJSON() throws {

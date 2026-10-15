@@ -11,6 +11,9 @@ final class WorkspaceController {
     let projectPath: String
     let restoredFromDisk: Bool
     private(set) var terminals: [PanelID: TerminalPanelController] = [:]
+    private(set) var editors: [PanelID: EditorPanelController] = [:]
+    let explorer: ExplorerController
+    @ObservationIgnored private var watcher: FileWatcher?
     private(set) var lastSaveError: String?
     private(set) var lastSavedAt: Date?
     /// Panel currently being dragged; drop zones render only while this is set.
@@ -27,8 +30,62 @@ final class WorkspaceController {
         self.projectPath = projectPath
         self.app = app
         self.restoredFromDisk = restoredFromDisk
+        self.explorer = ExplorerController(rootPath: projectPath)
         scheduleSave()   // a freshly created layout must survive a quit before the first edit
+        do {
+            watcher = try FileWatcher(root: projectPath) { [weak self] paths in
+                Task { @MainActor in self?.filesChanged(paths) }
+            }
+        } catch {
+            app.report("File watching unavailable", "Explorer and editor will not notice external changes automatically. \(error)")
+        }
     }
+
+    private func filesChanged(_ paths: [String]) {
+        explorer.filesChanged(paths)
+        for e in editors.values { e.filesChanged(paths) }
+    }
+
+    // MARK: Editor
+
+    func editor(for panel: PanelID) -> EditorPanelController {
+        if let e = editors[panel] { return e }
+        let e = EditorPanelController(panelID: panel, projectPath: projectPath, app: app)
+        editors[panel] = e
+        return e
+    }
+
+    /// Opens in the active editor panel, or creates one beside the first group (Bible Part 5 §3.3).
+    func openFile(path: String) {
+        let target: PanelID
+        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .editor }) {
+            target = visible
+        } else if let hiddenEditor = layout.hidden.first(where: { layout.panels[$0]?.kind == .editor }) {
+            restore(hiddenEditor); target = hiddenEditor
+        } else {
+            let panel = Panel(kind: .editor, title: "Editor")
+            mutate("new editor") { layout in
+                if let g = layout.groupIDs.first { try layout.add(panel, beside: g, edge: .right) } else {
+                    layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+                }
+            }
+            target = panel.id
+        }
+        activate(target)
+        editor(for: target).open(path: path)
+    }
+
+    func fileRenamed(from old: String, to new: String) {
+        for e in editors.values {
+            if let tab = e.tabs.first(where: { $0.path == old }) { e.close(tab); e.open(path: new) }
+        }
+    }
+
+    func saveActiveEditor() {
+        editors.values.first { $0.activeTab != nil }?.saveActive()
+    }
+
+    var hasUnsavedEditors: Bool { editors.values.contains { $0.hasUnsavedChanges } }
 
     var projectName: String { URL(fileURLWithPath: projectPath).lastPathComponent }
 
@@ -77,6 +134,8 @@ final class WorkspaceController {
     func requestClose(_ panel: PanelID) {
         if let t = terminals[panel], t.isRunning {
             closeConfirmation = panel
+        } else if let e = editors[panel], e.hasUnsavedChanges {
+            app.report("Unsaved changes", "Save or discard the open files in this editor before closing the panel.")
         } else {
             close(panel)
         }
@@ -87,6 +146,7 @@ final class WorkspaceController {
         if let t = terminals.removeValue(forKey: panel) {
             Task { await t.terminateAndClose() }
         }
+        editors.removeValue(forKey: panel)
         mutate("close") { try $0.close(panel) }
     }
 
@@ -119,6 +179,7 @@ final class WorkspaceController {
 
     func terminateAllSessions() async {
         flushSave()
+        watcher?.stop()
         for t in terminals.values { await t.terminateAndClose() }
     }
 

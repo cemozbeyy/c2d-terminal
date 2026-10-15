@@ -81,8 +81,18 @@ final class OutputCollector: @unchecked Sendable {
     private func account(_ n: Int) { bytes += n; chunks += 1; largestChunk = max(largestChunk, n) }
 }
 
+/// Counts only PTY-related descriptors (master `/dev/ptmx`, slave `/dev/ttys*`), so suites that
+/// run in parallel and open ordinary files or pipes cannot perturb the leak checks.
 func openDescriptorCount() -> Int {
-    (0..<getdtablesize()).reduce(0) { $0 + (fcntl($1, F_GETFD) >= 0 ? 1 : 0) }
+    var count = 0
+    var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+    for fd in 0..<getdtablesize() where fcntl(fd, F_GETFD) >= 0 {
+        if fcntl(fd, F_GETPATH, &buffer) == 0 {
+            let path = String(cString: buffer)
+            if path.hasPrefix("/dev/ptmx") || path.hasPrefix("/dev/ttys") { count += 1 }
+        }
+    }
+    return count
 }
 
 func residentBytes() -> UInt64 {

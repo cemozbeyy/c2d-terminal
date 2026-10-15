@@ -7,6 +7,7 @@ public enum Log {
     public static let subsystem = "works.c2d.terminal"
     public static let app = Logger(subsystem: subsystem, category: "app")
     public static let pty = Logger(subsystem: subsystem, category: "pty")
+    public static let git = Logger(subsystem: subsystem, category: "git")
 }
 
 /// Facts about the running build and host, for the About/diagnostics surface and bug reports.

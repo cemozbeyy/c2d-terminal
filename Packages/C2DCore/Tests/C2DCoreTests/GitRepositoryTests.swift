@@ -1,0 +1,199 @@
+import Foundation
+import Testing
+@testable import C2DCore
+
+/// Real `git` in temp repositories. Identity is set per repo; global config is masked.
+@Suite(.serialized) struct GitRepositoryTests {
+    struct Repo {
+        let root: URL
+        let repo: GitRepository
+        func write(_ name: String, _ content: String) throws {
+            let url = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        }
+        func read(_ name: String) throws -> String { try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8) }
+        func cleanup() { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    }
+
+    private static let maskedGlobal = ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+
+    func makeRepo(identity: Bool = true) async throws -> Repo {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-git-\(UUID().uuidString)")
+        let root = base.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let probe = GitRepository(root: root.path, isLinkedWorktree: false, gitPath: GitRepository.locateGit()!)
+        await probe.setExtraEnvironment(Self.maskedGlobal)
+        try await probe.run(["init", "-q", "-b", "main"])
+        if identity {
+            try await probe.run(["config", "user.name", "C2D Test"])
+            try await probe.run(["config", "user.email", "test@c2d.works"])
+        }
+        let repo = try await GitRepository.discover(path: root.path)!
+        await repo.setExtraEnvironment(Self.maskedGlobal)
+        return Repo(root: root.standardizedFileURL.resolvingSymlinksInPath(), repo: repo)
+    }
+
+    @Test func discoverFindsRootFromSubdirectoryAndNilOutside() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("src/deep/a.txt", "x")
+        let sub = try await GitRepository.discover(path: r.root.appendingPathComponent("src/deep").path)
+        #expect(sub?.root == r.root.path)
+        #expect(sub?.isLinkedWorktree == false)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-nogit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        #expect(try await GitRepository.discover(path: outside.path) == nil)
+        await #expect(throws: GitError.invalidPath) { try await GitRepository.discover(path: "/no/such/dir") }
+    }
+
+    @Test func unbornRepoStatus() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        let s = try await r.repo.status()
+        #expect(s.isUnborn && s.branch == "main" && s.isClean && !s.isDetached)
+        #expect(try await r.repo.log().isEmpty)
+    }
+
+    @Test func untrackedStagedCommittedTransitions() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("a.txt", "hello\n")
+        var s = try await r.repo.status()
+        #expect(s.entries.map(\.path) == ["a.txt"] && s.entries[0].isUntracked)
+        try await r.repo.stage(paths: ["a.txt"])
+        s = try await r.repo.status()
+        #expect(s.entries[0].staged == .added && !s.entries[0].isUntracked && s.entries[0].hasStagedChange)
+        let hash = try await r.repo.commit(message: "first")
+        #expect(hash.count == 40)
+        s = try await r.repo.status()
+        #expect(s.isClean && !s.isUnborn)
+        let log = try await r.repo.log()
+        #expect(log.count == 1 && log[0].subject == "first" && log[0].author == "C2D Test" && log[0].hash == hash)
+    }
+
+    @Test func stagedAndUnstagedChangesToSameFileAreDistinct() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("f.txt", "1\n"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")
+        try r.write("f.txt", "1\n2\n"); try await r.repo.stage(paths: ["f.txt"])
+        try r.write("f.txt", "1\n2\n3\n")
+        let e = try await r.repo.status().entries[0]
+        #expect(e.staged == .modified && e.unstaged == .modified && e.hasStagedChange && e.hasUnstagedChange)
+        #expect(try await r.repo.diff(path: "f.txt", staged: true).contains("+2"))
+        let unstaged = try await r.repo.diff(path: "f.txt", staged: false)
+        #expect(unstaged.contains("+3") && !unstaged.contains("+2"))
+        try await r.repo.unstage(paths: ["f.txt"])
+        let e2 = try await r.repo.status().entries[0]
+        #expect(e2.staged == .unmodified && e2.unstaged == .modified)
+    }
+
+    @Test func renameIsReportedWithOriginalPath() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("old.txt", String(repeating: "line\n", count: 20)); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")
+        try await r.repo.run(["mv", "old.txt", "new.txt"])
+        let e = try await r.repo.status().entries[0]
+        #expect(e.staged == .renamed && e.path == "new.txt" && e.originalPath == "old.txt")
+    }
+
+    @Test func untrackedDiffShowsAdditionsAndParserWorks() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("n.txt", "a\nb\n")
+        let text = try await r.repo.diff(path: "n.txt", staged: false)
+        let files = GitRepository.parseUnifiedDiff(text)
+        #expect(files.count == 1 && files[0].oldPath == nil && files[0].newPath == "n.txt" && !files[0].isBinary)
+        #expect(files[0].hunks[0].lines.map(\.kind) == [.added, .added])
+        #expect(files[0].hunks[0].lines.map(\.newLine) == [1, 2])
+
+        try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")
+        try r.write("n.txt", "a\nB\nc\n")
+        let modified = GitRepository.parseUnifiedDiff(try await r.repo.diff(path: "n.txt", staged: false))
+        let hunk = modified[0].hunks[0]
+        #expect(hunk.oldStart == 1 && hunk.newStart == 1 && hunk.oldCount == 2 && hunk.newCount == 3)
+        #expect(hunk.lines.map(\.kind) == [.context, .removed, .added, .added])
+        #expect(hunk.lines[1].oldLine == 2 && hunk.lines[2].newLine == 2 && hunk.lines[3].newLine == 3)
+    }
+
+    @Test func parserHandlesBinaryAndMultipleFiles() {
+        let text = """
+        diff --git a/x.bin b/x.bin
+        Binary files a/x.bin and b/x.bin differ
+        diff --git a/y.txt b/y.txt
+        --- a/y.txt
+        +++ b/y.txt
+        @@ -10,2 +10,3 @@ func f()
+         ctx
+        -gone
+        +new1
+        +new2
+        \\ No newline at end of file
+        """
+        let files = GitRepository.parseUnifiedDiff(text)
+        #expect(files.count == 2)
+        #expect(files[0].isBinary && files[0].hunks.isEmpty)
+        #expect(files[1].hunks.count == 1 && files[1].hunks[0].header.hasPrefix("@@ -10,2 +10,3 @@"))
+        #expect(files[1].hunks[0].lines.count == 4 && files[1].hunks[0].lines.last?.newLine == 12)
+    }
+
+    @Test func commitErrors() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        await #expect(throws: GitError.emptyMessage) { try await r.repo.commit(message: "  \n") }
+        await #expect(throws: GitError.nothingToCommit) { try await r.repo.commit(message: "x") }
+        let noId = try await makeRepo(identity: false); defer { noId.cleanup() }
+        try noId.write("a", "1"); try await noId.repo.stageAll()
+        await #expect(throws: GitError.identityNotConfigured) { try await noId.repo.commit(message: "x") }
+    }
+
+    @Test func branchesCheckoutAndDirtyRefusal() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("a", "1"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")
+        try await r.repo.createBranch("feature", checkout: true)
+        var b = try await r.repo.branches()
+        #expect(b.map(\.name).sorted() == ["feature", "main"] && b.first { $0.isCurrent }?.name == "feature")
+        try r.write("a", "2")
+        await #expect(throws: GitError.dirtyWorkingTree) { try await r.repo.checkout(branch: "main") }
+        #expect(try r.read("a") == "2", "refusal left the change alone")
+        try await r.repo.discardChanges(paths: ["a"])
+        #expect(try r.read("a") == "1")
+        try await r.repo.checkout(branch: "main")
+        b = try await r.repo.branches()
+        #expect(b.first { $0.isCurrent }?.name == "main")
+        #expect(try await r.repo.status().branch == "main")
+    }
+
+    @Test func logIsNewestFirstAndBounded() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        for i in 1...3 { try r.write("f", "\(i)"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "commit \(i)") }
+        let log = try await r.repo.log(limit: 2)
+        #expect(log.map(\.subject) == ["commit 3", "commit 2"])
+        #expect(log[0].shortHash.count >= 7 && log[0].date <= Date())
+    }
+
+    @Test func worktreeLifecycleAndDirtyRefusal() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("a", "1"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")
+        let wtPath = r.root.deletingLastPathComponent().appendingPathComponent("wt").path
+        try await r.repo.addWorktree(path: wtPath, branch: "wt-branch", createBranch: true)
+        let list = try await r.repo.worktrees()
+        #expect(list.count == 2 && list[0].isMain && list[0].path == r.root.path)
+        #expect(list[1].branch == "wt-branch" && !list[1].isMain && list[1].path == URL(fileURLWithPath: wtPath).resolvingSymlinksInPath().path)
+        let linked = try await GitRepository.discover(path: wtPath)
+        #expect(linked?.isLinkedWorktree == true)
+        await #expect(throws: GitError.invalidPath) { try await r.repo.addWorktree(path: wtPath, branch: "x", createBranch: true) }
+
+        try "dirty".write(toFile: wtPath + "/a", atomically: true, encoding: .utf8)
+        await #expect(throws: GitError.dirtyWorkingTree) { try await r.repo.removeWorktree(path: wtPath) }
+        #expect(FileManager.default.fileExists(atPath: wtPath))
+        try await r.repo.removeWorktree(path: wtPath, force: true)
+        #expect(!FileManager.default.fileExists(atPath: wtPath))
+        #expect(try await r.repo.worktrees().count == 1)
+        #expect(try await r.repo.branches().map(\.name).contains("wt-branch"), "removing a worktree never deletes its branch")
+    }
+
+    @Test func commandFailureCarriesStderr() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        do {
+            try await r.repo.checkout(branch: "no-such-branch")
+            Issue.record("expected failure")
+        } catch let GitError.commandFailed(code, stderr) {
+            #expect(code != 0 && stderr.contains("no-such-branch"))
+        }
+    }
+}

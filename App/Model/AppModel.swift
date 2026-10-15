@@ -33,7 +33,7 @@ enum Destination: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     /// Panel kinds this build can actually host. Presets and restoration degrade to these.
-    static let availableKinds: Set<PanelKind> = [.terminal]
+    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor]
 
     private(set) var registry: ProjectRegistry
     let layoutStore: LayoutStore?
@@ -68,6 +68,21 @@ final class AppModel {
         // `-c2dQuitAfter <seconds>` quits through the normal NSApplication path after a delay (runtime checks).
         let secs = UserDefaults.standard.double(forKey: "c2dQuitAfter"); if secs > 0 {
             Task { try? await Task.sleep(for: .seconds(secs)); debugTrace("c2dQuitAfter firing"); await MainActor.run { NSApplication.shared.terminate(nil) } }
+        }
+        // `-c2dOpenFile <path>` opens a file in the editor; `-c2dEditorAppendAndSave "<text>"` appends to the
+        // active tab and saves — the controller path that a keyboard edit + ⌘S takes.
+        if let file = UserDefaults.standard.string(forKey: "c2dOpenFile") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                self?.workspace?.openFile(path: file)
+                if let text = UserDefaults.standard.string(forKey: "c2dEditorAppendAndSave") {
+                    try? await Task.sleep(for: .milliseconds(800))
+                    guard let ws = self?.workspace, let e = ws.editors.values.first(where: { $0.activeTab != nil }), let tab = e.activeTab else { return }
+                    tab.update(text: tab.text + text)
+                    e.saveActive()
+                    debugTrace("c2dEditorAppendAndSave: dirty=\(tab.isDirty) error=\(e.lastError ?? "none")")
+                }
+            }
         }
         // `-c2dRunCommand "<line>"` types one line into the first terminal once its shell is running.
         // Debug builds only; exists so runtime checks can exercise the input path without a keyboard.
