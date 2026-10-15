@@ -11,7 +11,7 @@ Foundation only. The app builds, launches a native window, logs a diagnostics li
 
 ## Requirements
 
-- macOS 15+. Built and verified only on Xcode 27 / Swift 6.4; older Xcode 16+ is expected to work (tools-version 6.0) but is unverified until CI runs.
+- macOS 15+. Verified on Xcode 27 / Swift 6.4 locally and on Xcode 16.4 / Swift 6.1.2 in CI.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 The `.xcodeproj` is generated and gitignored. Edit `project.yml`, not the project file.
@@ -34,7 +34,7 @@ Formatting/linting: none configured yet (swiftformat/swiftlint are not installed
 ```
 App/                 SwiftUI app target (entry point, foundation window)
 Packages/C2DCore/    Shared Swift package: diagnostics now; terminal/session/git/agent modules later
-docs/                Product Bible, DECISIONS.md (ADRs), OPEN_DECISIONS.md (owner approval queue)
+docs/                Product Bible, DECISIONS.md (ADRs), OPEN_DECISIONS.md (approval queue), TERMINAL_ENGINE_EVALUATION.md
 .github/workflows/   CI: package tests + app build on a macOS runner
 project.yml          XcodeGen spec
 ```

@@ -2,7 +2,7 @@ name: C2DTerminal
 options:
   bundleIdPrefix: works.c2d
   deploymentTarget:
-    macOS: "15.0"   # PROPOSED — see docs/DECISIONS.md ADR-002
+    macOS: "15.0"   # CONFIRMED — docs/DECISIONS.md ADR-002
   createIntermediateGroups: true
 packages:
   C2DCore:
@@ -30,3 +30,4 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO   # PROPOSED — see ADR-003
+        ARCHS: arm64             # CONFIRMED — ADR-006, Intel deferred
