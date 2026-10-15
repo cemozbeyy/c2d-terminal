@@ -83,6 +83,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     private var terminating = false
 
+    /// Folders dropped on the Dock icon or passed to `open` become projects; anything else is
+    /// ignored. Handling this here also stops SwiftUI from opening an empty window per argument.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in
+            for url in urls {
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                    model?.openProject(at: url)
+                }
+            }
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         debugTrace("applicationShouldTerminate model=\(model != nil) terminating=\(terminating)")
         guard let model else { return .terminateNow }
