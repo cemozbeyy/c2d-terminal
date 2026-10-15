@@ -17,6 +17,9 @@ struct C2DTerminalApp: App {
                 .environment(model)
                 .onAppear {
                     delegate.model = model
+                    // C2D restores its own workspace; AppKit window restoration would resurrect stale
+                    // windows from earlier launches (seen as blank 500×500 windows).
+                    NSApp.windows.forEach { $0.isRestorable = false }
                     #if DEBUG
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(2))
@@ -95,6 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.windows.forEach { $0.isRestorable = false }
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         debugTrace("applicationShouldTerminate model=\(model != nil) terminating=\(terminating)")
