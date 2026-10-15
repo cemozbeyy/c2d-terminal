@@ -37,13 +37,15 @@ enum Destination: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     /// Panel kinds this build can actually host. Presets and restoration degrade to these.
-    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges, .agentSession, .tasks]
+    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges, .agentSession, .tasks, .tokenOptimizer]
 
     private(set) var registry: ProjectRegistry
     let layoutStore: LayoutStore?
     private(set) var sessions: TerminalSessionRegistry
     private(set) var agentSessions: AgentSessionRegistry
     let taskStore: TaskStore?
+    let optimizationStore: OptimizationStore?
+    private(set) var entitlement = Entitlement()
     private(set) var providerStatuses: [String: AgentProviderStatus] = [:]
     private(set) var providerPaths: [String: String] = [:]
     private(set) var providersRefreshedAt: Date?
@@ -64,6 +66,12 @@ final class AppModel {
         sessions = (try? TerminalSessionRegistry(store: store)) ?? (try! TerminalSessionRegistry(store: nil))
         agentSessions = (try? AgentSessionRegistry(store: store)) ?? (try! AgentSessionRegistry(store: nil))
         taskStore = (try? TaskStore(path: TaskStore.standardPath())) ?? (try? TaskStore.inMemory())
+        optimizationStore = (try? OptimizationStore(path: OptimizationStore.standardPath())) ?? (try? OptimizationStore.inMemory())
+        if let saved = try? store?.load(Entitlement.self, named: "entitlement") { entitlement = saved }
+        #if DEBUG
+        // `-c2dPremium YES` simulates a premium entitlement for development only; no billing exists.
+        if UserDefaults.standard.bool(forKey: "c2dPremium") { entitlement = Entitlement(state: .premium, source: "developer override (Debug build)") }
+        #endif
         persistenceUnavailable = unavailable
         if unavailable != nil {
             messages.append(UserMessage(title: "Persistence unavailable", detail: "Settings and layouts will not be saved this session."))
@@ -102,6 +110,22 @@ final class AppModel {
                     await git.commit()
                     debugTrace("c2dGitStageAllAndCommit: hash=\(git.lastCommitHash ?? "none") error=\(git.lastError ?? "none")")
                 }
+            }
+        }
+        // `-c2dOptimizerDemo YES` builds a payload from the open editor files twice (to create an exact
+        // duplicate), optimizes, and records — exercising the premium path under the developer override.
+        if UserDefaults.standard.bool(forKey: "c2dOptimizerDemo") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let ws = self?.workspace else { return }
+                ws.showOptimizerPanel()
+                let o = ws.optimizer
+                o.addOpenEditorFiles(ws); o.addOpenEditorFiles(ws)
+                o.add(ContextItem(kind: .instructions, content: "Keep the public API unchanged.", mandatory: true))
+                o.measureOnly()
+                o.optimize()
+                await o.recordResult()
+                debugTrace("c2dOptimizerDemo: items=\(o.items.count) before=\(o.result?.before.tokens ?? -1) after=\(o.result?.after.tokens ?? -1) label=\(o.report?.label ?? "none") history=\(o.history.count) error=\(o.lastError ?? "none")")
             }
         }
         // `-c2dPaletteQuery "<text>"` opens the palette with a query and prints the matching commands.

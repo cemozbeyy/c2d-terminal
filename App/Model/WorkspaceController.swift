@@ -15,6 +15,7 @@ final class WorkspaceController {
     let explorer: ExplorerController
     let git: GitController
     let tasks: TaskController
+    let optimizer: OptimizerController
     unowned let app: AppModel
     @ObservationIgnored private var watcher: FileWatcher?
     private(set) var lastSaveError: String?
@@ -35,6 +36,7 @@ final class WorkspaceController {
         self.explorer = ExplorerController(rootPath: projectPath)
         self.git = GitController(projectPath: projectPath)
         self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
+        self.optimizer = OptimizerController(projectPath: projectPath, store: app.optimizationStore, app: app)
         scheduleSave()   // a freshly created layout must survive a quit before the first edit
         do {
             watcher = try FileWatcher(root: projectPath) { [weak self] paths in
@@ -78,6 +80,18 @@ final class WorkspaceController {
         }
         activate(target)
         editor(for: target).open(path: path)
+    }
+
+    /// Opens (or reveals) the single optimizer panel for this workspace.
+    func showOptimizerPanel() {
+        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
+        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }
+        let panel = Panel(kind: .tokenOptimizer, title: "Token Optimizer")
+        mutate("open optimizer") { layout in
+            if let g = layout.groupIDs.last { try layout.add(panel, beside: g, edge: .right) } else {
+                layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+            }
+        }
     }
 
     func fileRenamed(from old: String, to new: String) {

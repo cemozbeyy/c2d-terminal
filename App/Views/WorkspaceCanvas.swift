@@ -295,6 +295,8 @@ struct PanelContentView: View {
             AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:
             TasksPanelView(tasks: workspace.tasks, workspace: workspace)
+        case .tokenOptimizer:
+            OptimizerPanelView(optimizer: workspace.optimizer, workspace: workspace)
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }

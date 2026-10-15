@@ -110,6 +110,8 @@ struct TopBar: View {
                 Spacer()
                 Button { ws.newTerminal() } label: { Label("New Terminal", systemImage: "plus.rectangle") }
                     .help("New terminal in \(ws.projectName) (⌘T)")
+                Button { ws.showOptimizerPanel() } label: { Label("Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
+                    .help("Token Optimizer: measure prepared context (estimates only)")
                 Button { showAgentLaunch = true } label: { Label("New Agent", systemImage: "cpu") }
                     .help("Start Claude Code or another supported agent in this project")
                 if ws.layout.maximizedGroup != nil {
