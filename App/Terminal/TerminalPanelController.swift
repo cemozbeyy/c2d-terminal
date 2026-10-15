@@ -12,6 +12,9 @@ import SwiftTerm
 final class TerminalPanelController: NSObject {
     let panelID: PanelID
     let projectPath: String
+    /// When set, the panel hosts an agent CLI instead of the login shell (Bible Part 7 "managed mode").
+    let agentPlan: AgentLaunchPlan?
+    private(set) var agentRecord: AgentSessionRecord?
     private(set) var record: TerminalSessionRecord?
     private(set) var state: PTYSessionState?
     /// True when a surface is attached and output is being fed.
@@ -26,11 +29,14 @@ final class TerminalPanelController: NSObject {
     /// Output is read only after `start()` succeeded; reading an unstarted session would end the stream.
     @ObservationIgnored private var started = false
 
-    init(panelID: PanelID, projectPath: String, app: AppModel, previousRecord: TerminalSessionRecord?) {
+    init(panelID: PanelID, projectPath: String, app: AppModel, previousRecord: TerminalSessionRecord?,
+         agentPlan: AgentLaunchPlan? = nil, previousAgentRecord: AgentSessionRecord? = nil) {
         self.panelID = panelID
         self.projectPath = projectPath
         self.app = app
         self.record = previousRecord
+        self.agentPlan = agentPlan
+        self.agentRecord = previousAgentRecord
         super.init()
     }
 
@@ -42,6 +48,7 @@ final class TerminalPanelController: NSObject {
 
     var title: String {
         if let t = record?.userTitle, !t.isEmpty { return t }
+        if let plan = agentPlan { return plan.provider.displayName }
         if let shell = record?.shell { return URL(fileURLWithPath: shell).lastPathComponent }
         return "Terminal"
     }
@@ -69,19 +76,39 @@ final class TerminalPanelController: NSObject {
     /// Starts a fresh shell with a fresh session identity. Never reuses an old record.
     func startNewSession() {
         guard !isRunning else { return }
-        let shell: String
-        do { shell = try PTYSessionConfiguration.loginShell() } catch {
-            app.report("Login shell unavailable", "Could not read the login shell from the user database.")
-            return
+        let executable: String
+        let arguments: [String]
+        let directory: String
+        if let plan = agentPlan {
+            executable = plan.executable
+            arguments = plan.arguments
+            directory = plan.workingDirectory
+        } else {
+            do { executable = try PTYSessionConfiguration.loginShell() } catch {
+                app.report("Login shell unavailable", "Could not read the login shell from the user database.")
+                return
+            }
+            arguments = ["-l"]
+            directory = projectPath
         }
         var env = PTYSessionConfiguration.inheritedEnvironment()
+        // Agent CLIs need the login PATH (node, git, …) that a GUI-launched app does not inherit (Bible Part 7 §4).
+        if agentPlan != nil { let loginPath = AgentDiscovery.loginShellPath(); if !loginPath.isEmpty { env["PATH"] = loginPath } }
         env["COLORTERM"] = "truecolor"
         env["TERM_PROGRAM"] = "C2DTerminal"
         env["TERM_PROGRAM_VERSION"] = app.diagnostics.appVersion
+        for (k, v) in agentPlan?.environmentAdditions ?? [:] { env[k] = v }
         let size = lastGrid.cols > 0 ? TerminalSize(rows: UInt16(lastGrid.rows), columns: UInt16(lastGrid.cols)) : TerminalSize(rows: 24, columns: 80)
-        let config = PTYSessionConfiguration(executable: shell, arguments: ["-l"], environment: env,
-                                             workingDirectory: projectPath, initialSize: size)
-        let rec = TerminalSessionRecord(panelID: panelID, projectPath: projectPath, initialDirectory: projectPath, shell: shell)
+        let config = PTYSessionConfiguration(executable: executable, arguments: arguments, environment: env,
+                                             workingDirectory: directory, initialSize: size)
+        let rec = TerminalSessionRecord(panelID: panelID, projectPath: projectPath, initialDirectory: directory, shell: executable)
+        if let plan = agentPlan {
+            var a = AgentSessionRecord(providerID: plan.provider.id, panelID: panelID, projectPath: projectPath, workingDirectory: directory)
+            a.terminalSessionID = rec.id
+            a.taskSummary = plan.task
+            agentRecord = a
+            app.registerAgentSession(a)
+        }
         let session = PTYSession(configuration: config)
         self.session = session
         self.started = false
@@ -110,10 +137,12 @@ final class TerminalPanelController: NSObject {
                 guard let self else { return }
                 self.state = s
                 guard let id = self.record?.id else { continue }
+                let agentID = self.agentRecord?.id
                 switch s {
                 case .running(let pid):
                     self.app.updateSession(id) { $0.lifecycle = .running; $0.pid = pid }
                     self.record?.lifecycle = .running; self.record?.pid = pid
+                    if let agentID { self.app.updateAgentSession(agentID) { $0.lifecycle = .running }; self.agentRecord?.lifecycle = .running }
                 case .exited(let status):
                     self.app.updateSession(id) {
                         $0.lifecycle = .exited; $0.endedAt = Date(); $0.pid = nil
@@ -121,9 +150,17 @@ final class TerminalPanelController: NSObject {
                         if case .signaled(let g) = status { $0.signal = g }
                     }
                     self.record = self.app.sessions.record(id)
+                    if let agentID {
+                        self.app.updateAgentSession(agentID) { $0.lifecycle = .exited; $0.endedAt = Date(); if case .exited(let c) = status { $0.exitCode = c } }
+                        self.agentRecord = self.app.agentSessions.record(agentID)
+                    }
                 case .failed(let error):
                     self.app.updateSession(id) { $0.lifecycle = .startupFailed; $0.failureDescription = self.describe(error); $0.endedAt = Date() }
                     self.record = self.app.sessions.record(id)
+                    if let agentID {
+                        self.app.updateAgentSession(agentID) { $0.lifecycle = .failed; $0.failureDescription = self.describe(error); $0.endedAt = Date() }
+                        self.agentRecord = self.app.agentSessions.record(agentID)
+                    }
                 default: break
                 }
             }

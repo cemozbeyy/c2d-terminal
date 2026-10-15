@@ -25,6 +25,7 @@ struct MainWindowView: View {
         case .projects: ProjectsView()
         case .workspace:
             if let ws = model.workspace { WorkspaceCanvas(workspace: ws) } else { ProjectsView() }
+        case .agents: AgentsDestinationView()
         case .settings: SettingsPlaceholderView()
         }
     }
@@ -63,6 +64,7 @@ struct NavigationRail: View {
 
 struct TopBar: View {
     @Environment(AppModel.self) private var model
+    @State private var showAgentLaunch = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -95,6 +97,8 @@ struct TopBar: View {
                 Spacer()
                 Button { ws.newTerminal() } label: { Label("New Terminal", systemImage: "plus.rectangle") }
                     .help("New terminal in \(ws.projectName) (⌘T)")
+                Button { showAgentLaunch = true } label: { Label("New Agent", systemImage: "cpu") }
+                    .help("Start Claude Code or another supported agent in this project")
                 if ws.layout.maximizedGroup != nil {
                     Button("Exit Focus Mode") { ws.exitFocusMode() }.keyboardShortcut(.escape, modifiers: [])
                 }
@@ -105,6 +109,7 @@ struct TopBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
+        .sheet(isPresented: $showAgentLaunch) { if let ws = model.workspace { AgentLaunchSheet(workspace: ws).environment(model) } }
     }
 }
 

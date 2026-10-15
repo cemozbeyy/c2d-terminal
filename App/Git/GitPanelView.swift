@@ -19,7 +19,7 @@ struct GitPanelView: View {
                 Picker("", selection: $section) {
                     Text("Changes").tag(0); Text("Branches").tag(1); Text("Worktrees").tag(2); Text("History").tag(3)
                 }
-                .pickerStyle(.segmented).controlSize(.small).frame(maxWidth: 300)
+                .pickerStyle(.menu).controlSize(.small).fixedSize()
                 Button { Task { await git.refresh(); await git.loadBranchesAndHistory(); await git.loadWorktrees() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Refresh from git")
             }
             .padding(.horizontal, 8).frame(height: 26)
@@ -42,6 +42,7 @@ struct GitPanelView: View {
                 HStack { Text(err).font(.caption).foregroundStyle(.orange).lineLimit(3).textSelection(.enabled); Spacer(); Button("Dismiss") { git.lastError = nil }.font(.caption) }.padding(6)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Discard changes?", isPresented: Binding(get: { git.discardRequest != nil }, set: { if !$0 { git.discardRequest = nil } })) {
             Button("Discard", role: .destructive) { if let p = git.discardRequest { Task { await git.discard(p) } } }
             Button("Cancel", role: .cancel) { git.discardRequest = nil }
@@ -77,9 +78,9 @@ struct GitPanelView: View {
                 Divider()
                 composer
             }
-            .frame(minHeight: 160)
+            .frame(maxWidth: .infinity, minHeight: 160)
             DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated)
-                .frame(minHeight: 100)
+                .frame(maxWidth: .infinity, minHeight: 100)
         }
     }
 

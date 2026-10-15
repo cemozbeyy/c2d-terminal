@@ -10,12 +10,13 @@ struct UserMessage: Identifiable, Equatable {
 }
 
 enum Destination: String, CaseIterable, Identifiable {
-    case projects, workspace, settings
+    case projects, workspace, agents, settings
     var id: String { rawValue }
     var label: String {
         switch self {
         case .projects: "Projects"
         case .workspace: "Workspace"
+        case .agents: "Agents"
         case .settings: "Settings"
         }
     }
@@ -23,6 +24,7 @@ enum Destination: String, CaseIterable, Identifiable {
         switch self {
         case .projects: "folder"
         case .workspace: "rectangle.3.group"
+        case .agents: "cpu"
         case .settings: "gearshape"
         }
     }
@@ -33,11 +35,15 @@ enum Destination: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     /// Panel kinds this build can actually host. Presets and restoration degrade to these.
-    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges]
+    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges, .agentSession]
 
     private(set) var registry: ProjectRegistry
     let layoutStore: LayoutStore?
     private(set) var sessions: TerminalSessionRegistry
+    private(set) var agentSessions: AgentSessionRegistry
+    private(set) var providerStatuses: [String: AgentProviderStatus] = [:]
+    private(set) var providerPaths: [String: String] = [:]
+    private(set) var providersRefreshedAt: Date?
     private(set) var workspace: WorkspaceController?
     var destination: Destination = .projects
     var messages: [UserMessage] = []
@@ -52,6 +58,7 @@ final class AppModel {
         registry = (try? ProjectRegistry(store: store)) ?? (try! ProjectRegistry(store: nil))
         layoutStore = (try? LayoutStore.standard())
         sessions = (try? TerminalSessionRegistry(store: store)) ?? (try! TerminalSessionRegistry(store: nil))
+        agentSessions = (try? AgentSessionRegistry(store: store)) ?? (try! AgentSessionRegistry(store: nil))
         persistenceUnavailable = unavailable
         if unavailable != nil {
             messages.append(UserMessage(title: "Persistence unavailable", detail: "Settings and layouts will not be saved this session."))
@@ -90,6 +97,23 @@ final class AppModel {
                     await git.commit()
                     debugTrace("c2dGitStageAllAndCommit: hash=\(git.lastCommitHash ?? "none") error=\(git.lastError ?? "none")")
                 }
+            }
+        }
+        // `-c2dLaunchAgent <provider-id>` starts the provider interactively (no prompt, so no model call)
+        // in the project root; runtime checks use it to prove the managed-session path.
+        if let providerID = UserDefaults.standard.string(forKey: "c2dLaunchAgent") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                guard let self, let ws = self.workspace else { return }
+                await self.refreshProviders()
+                guard let provider = AgentProvider.builtIn.first(where: { $0.id == providerID }), let path = self.providerPaths[providerID] else {
+                    debugTrace("c2dLaunchAgent: provider not ready \(String(describing: self.providerStatuses[providerID]))"); return
+                }
+                do {
+                    let plan = try AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: ws.projectPath, workingDirectory: ws.projectPath, task: nil)
+                    ws.launchAgent(plan)
+                    debugTrace("c2dLaunchAgent: launched \(plan.executable) \(plan.arguments)")
+                } catch { debugTrace("c2dLaunchAgent: \(error)") }
             }
         }
         // `-c2dOpenFile <path>` opens a file in the editor; `-c2dEditorAppendAndSave "<text>"` appends to the
@@ -222,6 +246,26 @@ final class AppModel {
 
     func updateSession(_ id: String, _ change: (inout TerminalSessionRecord) -> Void) {
         do { try sessions.update(id, change) } catch { Log.pty.error("session registry write failed: \(error, privacy: .public)") }
+    }
+
+    // MARK: Agents
+
+    func registerAgentSession(_ record: AgentSessionRecord) {
+        do { try agentSessions.register(record) } catch { Log.agents.error("agent registry write failed: \(error, privacy: .public)") }
+    }
+
+    func updateAgentSession(_ id: String, _ change: (inout AgentSessionRecord) -> Void) {
+        do { try agentSessions.update(id, change) } catch { Log.agents.error("agent registry write failed: \(error, privacy: .public)") }
+    }
+
+    /// Probes each built-in provider (`--version`); "exists" and "ready" stay distinct (Bible Part 7 §4).
+    func refreshProviders() async {
+        for provider in AgentProvider.builtIn {
+            let status = await AgentDiscovery.status(of: provider)
+            providerStatuses[provider.id] = status
+            if case .available(let path, _) = status { providerPaths[provider.id] = path } else { providerPaths[provider.id] = nil }
+        }
+        providersRefreshedAt = Date()
     }
 
     /// Terminates every live session; called on quit. Returns once all exits were observed or the timeout passed.

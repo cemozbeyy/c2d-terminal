@@ -180,6 +180,46 @@ final class WorkspaceController {
         return controller
     }
 
+    /// Agent panel: a terminal panel bound to a launch plan. A restored agent panel never relaunches
+    /// the agent by itself (re-running could duplicate work, Bible Part 7 §7).
+    func agent(for panel: PanelID) -> TerminalPanelController {
+        if let existing = terminals[panel] { return existing }
+        let previousAgent = app.agentSessions.record(forPanel: panel)
+        let previous = app.sessions.record(forPanel: panel)
+        let plan = pendingAgentPlans.removeValue(forKey: panel)
+        let controller = TerminalPanelController(panelID: panel, projectPath: projectPath, app: app, previousRecord: previous,
+                                                 agentPlan: plan ?? previousAgent.flatMap { restoredPlan(from: $0) }, previousAgentRecord: previousAgent)
+        terminals[panel] = controller
+        if plan != nil { controller.startNewSession() }
+        return controller
+    }
+
+    @ObservationIgnored private var pendingAgentPlans: [PanelID: AgentLaunchPlan] = [:]
+
+    /// Creates the panel and starts the agent. The caller has already shown the pre-launch summary.
+    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil) {
+        let panel = Panel(kind: .agentSession, title: plan.provider.displayName, attributes: ["provider": plan.provider.id])
+        pendingAgentPlans[panel.id] = plan
+        mutate("new agent session") { layout in
+            if let g = group ?? layout.groupIDs.last { try layout.add(panel, to: g) } else {
+                layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+            }
+        }
+        _ = agent(for: panel.id)
+    }
+
+    /// Rebuilds a plan for "New Session" on a restored agent panel; validation happens again at launch.
+    private func restoredPlan(from record: AgentSessionRecord) -> AgentLaunchPlan? {
+        guard let provider = AgentProvider.builtIn.first(where: { $0.id == record.providerID }),
+              let path = app.providerPaths[provider.id] ?? AgentDiscovery.locate(provider) else { return nil }
+        return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: projectPath, workingDirectory: record.workingDirectory, task: nil)
+    }
+
+    /// Agents currently running in a given directory, for the pre-launch warning (Bible Part 7 §5).
+    func liveAgents(in directory: String) -> [TerminalPanelController] {
+        terminals.values.filter { $0.agentPlan?.workingDirectory == directory && $0.isRunning }
+    }
+
     func terminateAllSessions() async {
         flushSave()
         watcher?.stop()
