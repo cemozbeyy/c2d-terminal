@@ -82,9 +82,9 @@ struct TopBar: View {
     var body: some View {
         HStack(spacing: 12) {
             if let ws = model.workspace {
-                Label(ws.projectName, systemImage: "folder").font(.headline).help(ws.projectPath)
+                Label(ws.projectName, systemImage: "folder").labelStyle(.titleAndIcon).font(.headline).lineLimit(1).help(ws.projectPath)
                 if ws.git.isAvailable {
-                    Label(ws.git.branchLabel, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(.secondary)
+                    Label(ws.git.branchLabel, systemImage: "arrow.triangle.branch").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Repository: \(ws.git.repository?.root ?? "")")
                 }
                 Menu {
@@ -92,7 +92,7 @@ struct TopBar: View {
                         Button(p.displayName) { ws.apply(p) }
                     }
                 } label: {
-                    Label(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout", systemImage: "rectangle.3.group")
+                    Label(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout", systemImage: "rectangle.3.group").labelStyle(.titleAndIcon)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -102,18 +102,19 @@ struct TopBar: View {
                             Button(ws.layout.panels[id]?.title ?? id.rawValue) { ws.restore(id) }
                         }
                     } label: {
-                        Label("Hidden panels (\(ws.layout.hidden.count))", systemImage: "eye.slash")
+                        Label("Hidden panels (\(ws.layout.hidden.count))", systemImage: "eye.slash").labelStyle(.titleAndIcon)
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
                 Spacer()
+                // Icon-only with tooltips and accessibility labels so the bar survives narrow windows (Bible Part 12 §6.4).
                 Button { ws.newTerminal() } label: { Label("New Terminal", systemImage: "plus.rectangle") }
-                    .help("New terminal in \(ws.projectName) (⌘T)")
-                Button { ws.showOptimizerPanel() } label: { Label("Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
-                    .help("Token Optimizer: measure prepared context (estimates only)")
+                    .help("New terminal in \(ws.projectName) (⌘T)").accessibilityLabel("New Terminal")
                 Button { showAgentLaunch = true } label: { Label("New Agent", systemImage: "cpu") }
-                    .help("Start Claude Code or another supported agent in this project")
+                    .help("Start Claude Code or another supported agent in this project").accessibilityLabel("New Agent")
+                Button { ws.showOptimizerPanel() } label: { Label("Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
+                    .help("Token Optimizer: measure prepared context (estimates only)").accessibilityLabel("Token Optimizer")
                 if ws.layout.maximizedGroup != nil {
                     Button("Exit Focus Mode") { ws.exitFocusMode() }.keyboardShortcut(.escape, modifiers: [])
                 }
@@ -122,8 +123,9 @@ struct TopBar: View {
                 Spacer()
             }
             Button { model.paletteVisible = true } label: { Label("Search / Commands", systemImage: "magnifyingglass") }
-                .keyboardShortcut("k", modifiers: .command).help("Command palette (⌘K)")
+                .keyboardShortcut("k", modifiers: .command).help("Command palette (⌘K)").accessibilityLabel("Search and commands")
         }
+        .labelStyle(.iconOnly)
         .padding(.horizontal, 12)
         .frame(height: 38)
         .sheet(isPresented: $showAgentLaunch) { if let ws = model.workspace { AgentLaunchSheet(workspace: ws).environment(model) } }

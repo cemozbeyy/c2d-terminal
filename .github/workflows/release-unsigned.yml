@@ -1,0 +1,18 @@
+name: Release build (unsigned)
+# Manual only. Produces an ad-hoc-signed Release .app for internal testing. Developer ID signing and
+# notarization are NOT configured (owner action: Apple Developer Program, certificate, secrets).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: ./Scripts/build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: C2DTerminal-unsigned
+          path: build/C2DTerminal-*-unsigned.zip
+          retention-days: 14

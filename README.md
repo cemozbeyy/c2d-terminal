@@ -29,12 +29,18 @@ Or open `C2DTerminal.xcodeproj` in Xcode and press Run.
 
 Formatting/linting: none configured yet (swiftformat/swiftlint are not installed on the dev machine).
 
+Release build (ad-hoc signed, Gatekeeper will reject until a Developer ID exists): `./Scripts/build-release.sh` → `build/C2DTerminal-<version>-unsigned.zip`.
+
+Debug-only launch hooks for runtime checks (compiled out of Release): `-c2dOpenProject <dir>`, `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`.
+
 ## Layout
 
 ```
-App/                 SwiftUI app target (entry point, foundation window)
-Packages/C2DCore/    Shared Swift package: Diagnostics, PTY/ (PTYSession); git/agent modules later
-docs/                Product Bible, DECISIONS.md (ADRs), OPEN_DECISIONS.md, TERMINAL_ENGINE_EVALUATION.md, PTY_CORE.md
-.github/workflows/   CI: package tests + app build on a macOS runner
+App/                 SwiftUI/AppKit app: Model, Views (workspace canvas), Terminal, Explorer, Editor, Git, Agents, Tasks, Palette, Optimizer
+Packages/C2DCore/    Engine-free core: PTY, Workspace layout, Persistence (JSON docs + SQLite), Projects, Terminal/Agent registries, Files, Git, Tasks, Optimizer
+Spikes/              SwiftTermSpike evaluation harness (not part of the app)
+Scripts/             build-release.sh
+docs/                Product Bible, DECISIONS.md, OPEN_DECISIONS.md, PROGRESS.md, module notes, evidence/ screenshots
+.github/workflows/   CI (core tests on macos-15, app build on macos-26) and a manual unsigned release build
 project.yml          XcodeGen spec
 ```
