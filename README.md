@@ -7,7 +7,7 @@ macOS-first, AI-native terminal workspace. Product owner: C2D Works.
 ## Status
 
 Foundation only. The app builds, launches a native window, logs a diagnostics line and runs one test target.
-**No terminal engine, PTY, editor, Git, agent or Token Optimizer code exists yet.** The window says so.
+**PTY session core exists (headless; see `docs/PTY_CORE.md`). No terminal engine/rendering, editor, Git, agent or Token Optimizer code yet.** The window says so.
 
 ## Requirements
 
@@ -33,8 +33,8 @@ Formatting/linting: none configured yet (swiftformat/swiftlint are not installed
 
 ```
 App/                 SwiftUI app target (entry point, foundation window)
-Packages/C2DCore/    Shared Swift package: diagnostics now; terminal/session/git/agent modules later
-docs/                Product Bible, DECISIONS.md (ADRs), OPEN_DECISIONS.md (approval queue), TERMINAL_ENGINE_EVALUATION.md
+Packages/C2DCore/    Shared Swift package: Diagnostics, PTY/ (PTYSession); git/agent modules later
+docs/                Product Bible, DECISIONS.md (ADRs), OPEN_DECISIONS.md, TERMINAL_ENGINE_EVALUATION.md, PTY_CORE.md
 .github/workflows/   CI: package tests + app build on a macOS runner
 project.yml          XcodeGen spec
 ```
