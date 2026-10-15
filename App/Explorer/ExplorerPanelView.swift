@@ -69,6 +69,11 @@ struct ExplorerPanelView: View {
             Text(entry.name).font(.system(size: 12)).lineLimit(1)
             if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(.secondary) }
             Spacer()
+            if let badge = workspace.git.badges[entry.path] {
+                Text(badge).font(.system(size: 10, design: .monospaced)).bold()
+                    .foregroundStyle(badge == "D" ? Color.red : badge == "U" || badge == "A" ? Color.green : Color.yellow)
+                    .padding(.trailing, 8).accessibilityLabel("git status \(badge)")
+            }
         }
         .padding(.leading, CGFloat(depth) * 14 + 8).padding(.vertical, 2)
         .background(explorer.selectedPath == entry.path ? Color.accentColor.opacity(0.2) : .clear)

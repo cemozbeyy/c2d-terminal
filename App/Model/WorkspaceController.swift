@@ -13,6 +13,7 @@ final class WorkspaceController {
     private(set) var terminals: [PanelID: TerminalPanelController] = [:]
     private(set) var editors: [PanelID: EditorPanelController] = [:]
     let explorer: ExplorerController
+    let git: GitController
     @ObservationIgnored private var watcher: FileWatcher?
     private(set) var lastSaveError: String?
     private(set) var lastSavedAt: Date?
@@ -31,6 +32,7 @@ final class WorkspaceController {
         self.app = app
         self.restoredFromDisk = restoredFromDisk
         self.explorer = ExplorerController(rootPath: projectPath)
+        self.git = GitController(projectPath: projectPath)
         scheduleSave()   // a freshly created layout must survive a quit before the first edit
         do {
             watcher = try FileWatcher(root: projectPath) { [weak self] paths in
@@ -44,6 +46,7 @@ final class WorkspaceController {
     private func filesChanged(_ paths: [String]) {
         explorer.filesChanged(paths)
         for e in editors.values { e.filesChanged(paths) }
+        git.scheduleRefresh()
     }
 
     // MARK: Editor

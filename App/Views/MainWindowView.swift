@@ -68,6 +68,10 @@ struct TopBar: View {
         HStack(spacing: 12) {
             if let ws = model.workspace {
                 Label(ws.projectName, systemImage: "folder").font(.headline).help(ws.projectPath)
+                if ws.git.isAvailable {
+                    Label(ws.git.branchLabel, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(.secondary)
+                        .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Repository: \(ws.git.repository?.root ?? "")")
+                }
                 Menu {
                     ForEach(LayoutPreset.allCases, id: \.self) { p in
                         Button(p.displayName) { ws.apply(p) }

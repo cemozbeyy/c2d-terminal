@@ -85,6 +85,7 @@ struct SplitView: View {
                     LayoutNodeView(node: child, workspace: workspace)
                         .frame(width: orientation == .horizontal ? sizes[index] : nil,
                                height: orientation == .vertical ? sizes[index] : nil)
+                        .clipped()   // a panel whose content wants more room must not spill over its neighbours
                     if index < children.count - 1 {
                         divider(at: index, total: total)
                     }
@@ -145,8 +146,10 @@ struct PanelGroupView: View {
                 if workspace.draggingPanel != nil { dropZones }
             }
         }
+        .frame(minWidth: 0, minHeight: 0)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
+        .clipped()
     }
 
     private var tabBar: some View {
@@ -283,6 +286,8 @@ struct PanelContentView: View {
             ExplorerPanelView(explorer: workspace.explorer, workspace: workspace)
         case .editor:
             EditorPanelView(editor: workspace.editor(for: panel.id))
+        case .gitChanges:
+            GitPanelView(git: workspace.git)
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }

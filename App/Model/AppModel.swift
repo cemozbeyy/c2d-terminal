@@ -33,7 +33,7 @@ enum Destination: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     /// Panel kinds this build can actually host. Presets and restoration degrade to these.
-    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor]
+    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges]
 
     private(set) var registry: ProjectRegistry
     let layoutStore: LayoutStore?
@@ -68,6 +68,29 @@ final class AppModel {
         // `-c2dQuitAfter <seconds>` quits through the normal NSApplication path after a delay (runtime checks).
         let secs = UserDefaults.standard.double(forKey: "c2dQuitAfter"); if secs > 0 {
             Task { try? await Task.sleep(for: .seconds(secs)); debugTrace("c2dQuitAfter firing"); await MainActor.run { NSApplication.shared.terminate(nil) } }
+        }
+        // `-c2dApplyPreset <development|multiAgent|terminalFocus|codeReview>`; `-c2dGitSelect <relative path>`
+        // selects a changed file in the Git panel; `-c2dGitStageAllAndCommit "<msg>"` exercises the commit path.
+        if let presetName = UserDefaults.standard.string(forKey: "c2dApplyPreset"), let preset = LayoutPreset(rawValue: presetName) {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                self?.workspace?.apply(preset)
+            }
+        }
+        if let rel = UserDefaults.standard.string(forKey: "c2dGitSelect") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let git = self?.workspace?.git else { return }
+                await git.refresh()
+                await git.select(path: rel, staged: false)
+                debugTrace("c2dGitSelect: \(rel) hunks=\(git.selectedDiff.reduce(0) { $0 + $1.hunks.count })")
+                if let msg = UserDefaults.standard.string(forKey: "c2dGitStageAllAndCommit") {
+                    await git.stageAll()
+                    git.commitMessage = msg
+                    await git.commit()
+                    debugTrace("c2dGitStageAllAndCommit: hash=\(git.lastCommitHash ?? "none") error=\(git.lastError ?? "none")")
+                }
+            }
         }
         // `-c2dOpenFile <path>` opens a file in the editor; `-c2dEditorAppendAndSave "<text>"` appends to the
         // active tab and saves — the controller path that a keyboard edit + ⌘S takes.

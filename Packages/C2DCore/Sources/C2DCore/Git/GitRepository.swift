@@ -79,6 +79,13 @@ public struct FileDiff: Hashable, Sendable {
     public let newPath: String?
     public let isBinary: Bool
     public let hunks: [DiffHunk]
+
+    public init(oldPath: String?, newPath: String?, isBinary: Bool, hunks: [DiffHunk]) {
+        self.oldPath = oldPath
+        self.newPath = newPath
+        self.isBinary = isBinary
+        self.hunks = hunks
+    }
 }
 
 /// Thin, uncached wrapper around the `git` executable for one repository. Git owns the truth;
