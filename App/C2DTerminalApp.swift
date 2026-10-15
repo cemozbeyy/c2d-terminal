@@ -41,9 +41,10 @@ struct C2DTerminalApp: App {
                     }
                     #endif
                 }
-                .frame(minWidth: 720, minHeight: 440)
+                .frame(minWidth: 980, minHeight: 560)
         }
         .windowStyle(.titleBar)
+        .defaultSize(width: 1240, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Project…") { model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil) }

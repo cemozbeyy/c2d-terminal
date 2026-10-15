@@ -12,7 +12,7 @@ struct GitPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch")
+                Image(systemName: "arrow.triangle.branch").foregroundStyle(Theme.warning)
                 Text(git.branchLabel).font(.caption).bold().lineLimit(1)
                 if git.isBusy { ProgressView().controlSize(.mini) }
                 Spacer()
@@ -22,12 +22,12 @@ struct GitPanelView: View {
                 .pickerStyle(.menu).controlSize(.small).fixedSize()
                 Button { Task { await git.refresh(); await git.loadBranchesAndHistory(); await git.loadWorktrees() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Refresh from git")
             }
-            .padding(.horizontal, 8).frame(height: 26)
+            .padding(.horizontal, 8).frame(height: 30).background(Theme.panel)
             Divider()
             if git.repository == nil {
                 VStack(spacing: 6) {
-                    Text(git.discoveryError ?? "This folder is not inside a Git repository.").foregroundStyle(.secondary)
-                    Text("Run `git init` in the terminal to start one; C2D never initializes a repository silently.").font(.caption).foregroundStyle(.secondary)
+                    Text(git.discoveryError ?? "This folder is not inside a Git repository.").foregroundStyle(Theme.textSecondary)
+                    Text("Run `git init` in the terminal to start one; C2D never initializes a repository silently.").font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -39,7 +39,7 @@ struct GitPanelView: View {
                 }
             }
             if let err = git.lastError {
-                HStack { Text(err).font(.caption).foregroundStyle(.orange).lineLimit(3).textSelection(.enabled); Spacer(); Button("Dismiss") { git.lastError = nil }.font(.caption) }.padding(6)
+                HStack { Text(err).font(.caption).foregroundStyle(Theme.warning).lineLimit(3).textSelection(.enabled); Spacer(); Button("Dismiss") { git.lastError = nil }.font(.caption) }.padding(6)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -61,7 +61,7 @@ struct GitPanelView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if let s = git.status {
-                            if s.isClean { Text("Working tree clean").font(.caption).foregroundStyle(.secondary).padding(8) }
+                            if s.isClean { Text("Working tree clean").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
                             let conflicted = s.entries.filter(\.isConflicted)
                             let staged = s.entries.filter(\.hasStagedChange)
                             let unstaged = s.entries.filter(\.hasUnstagedChange)
@@ -71,7 +71,7 @@ struct GitPanelView: View {
                             if !unstaged.isEmpty { group("Changes (\(unstaged.count))", unstaged, staged: false, showStage: true) }
                             if !untracked.isEmpty { group("Untracked (\(untracked.count))", untracked, staged: false, showStage: true) }
                         } else {
-                            Text("Reading status…").font(.caption).foregroundStyle(.secondary).padding(8)
+                            Text("Reading status…").font(.caption).foregroundStyle(Theme.textSecondary).padding(8)
                         }
                     }
                 }
@@ -96,10 +96,10 @@ struct GitPanelView: View {
             }
         } header: {
             HStack {
-                Text(title).font(.caption).bold().foregroundStyle(.secondary)
+                Text(title).font(.caption).bold().foregroundStyle(Theme.textSecondary)
                 Spacer()
                 if showStage && !staged && entries.count > 1 {
-                    Button("Stage all") { Task { await git.stageAll() } }.font(.caption).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    Button("Stage all") { Task { await git.stageAll() } }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
                 }
             }
             .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 2)
@@ -113,21 +113,21 @@ struct GitPanelView: View {
             Text(letter).font(.system(.caption, design: .monospaced)).bold().foregroundStyle(color(letter)).frame(width: 14)
             VStack(alignment: .leading, spacing: 0) {
                 Text((e.path as NSString).lastPathComponent).font(.caption).lineLimit(1)
-                if let o = e.originalPath { Text("← \(o)").font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
-                else { Text((e.path as NSString).deletingLastPathComponent).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
+                if let o = e.originalPath { Text("← \(o)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                else { Text((e.path as NSString).deletingLastPathComponent).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1) }
             }
             Spacer()
             if showStage {
                 if staged {
-                    Button("Unstage") { Task { await git.unstage([e.path]) } }.font(.caption).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    Button("Unstage") { Task { await git.unstage([e.path]) } }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
                 } else {
-                    if !e.isUntracked { Button("Discard…") { git.discardRequest = e.path }.font(.caption).buttonStyle(.plain).foregroundStyle(.red) }
-                    Button("Stage") { Task { await git.stage([e.path]) } }.font(.caption).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    if !e.isUntracked { Button("Discard…") { git.discardRequest = e.path }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.error) }
+                    Button("Stage") { Task { await git.stage([e.path]) } }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
                 }
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(git.selectedPath == e.path && git.selectedIsStaged == staged ? Color.accentColor.opacity(0.18) : .clear)
+        .background(git.selectedPath == e.path && git.selectedIsStaged == staged ? Theme.accent.opacity(0.18) : .clear)
         .contentShape(Rectangle())
         .onTapGesture { Task { await git.select(path: e.path, staged: staged) } }
         .accessibilityLabel("\(letter) \(e.path)")
@@ -142,8 +142,8 @@ struct GitPanelView: View {
             TextEditor(text: $git.commitMessage).font(.system(size: 12)).frame(height: 52)
                 .overlay(alignment: .topLeading) { if git.commitMessage.isEmpty { Text("Commit message (staged changes only)").font(.caption).foregroundStyle(.tertiary).padding(6).allowsHitTesting(false) } }
             HStack {
-                Text("\(git.stagedCount) staged file(s)").font(.caption).foregroundStyle(.secondary)
-                if let h = git.lastCommitHash { Text("last commit \(h.prefix(7))").font(.caption).foregroundStyle(.secondary) }
+                Text("\(git.stagedCount) staged file(s)").font(.caption).foregroundStyle(Theme.textSecondary)
+                if let h = git.lastCommitHash { Text("last commit \(h.prefix(7))").font(.caption).foregroundStyle(Theme.textSecondary) }
                 Spacer()
                 Button("Commit") { Task { await git.commit() } }.disabled(!git.canCommit).keyboardShortcut(.return, modifiers: .command)
             }
@@ -165,14 +165,14 @@ struct GitPanelView: View {
                 HStack {
                     Image(systemName: b.isCurrent ? "checkmark.circle.fill" : "circle").foregroundStyle(b.isCurrent ? Color.accentColor : .secondary)
                     Text(b.name).font(.caption)
-                    if let u = b.upstream { Text("→ \(u)").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    if let u = b.upstream { Text("→ \(u)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
                     Spacer()
-                    Text(b.head.prefix(7)).font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                    Text(b.head.prefix(7)).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textSecondary)
                     if !b.isCurrent { Button("Switch") { Task { await git.checkout(b.name) } }.font(.caption).disabled(git.isBusy) }
                 }
             }
             .listStyle(.inset)
-            Text("Switching refuses when the working tree is dirty; nothing is stashed automatically.").font(.system(size: 9)).foregroundStyle(.secondary).padding(6)
+            Text("Switching refuses when the working tree is dirty; nothing is stashed automatically.").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(6)
         }
     }
 
@@ -195,28 +195,28 @@ struct GitPanelView: View {
             Divider()
             List(git.worktrees, id: \.self) { w in
                 HStack {
-                    Image(systemName: w.isMain ? "house" : "arrow.triangle.branch").foregroundStyle(.secondary)
+                    Image(systemName: w.isMain ? "house" : "arrow.triangle.branch").foregroundStyle(Theme.textSecondary)
                     VStack(alignment: .leading) {
                         Text(w.branch ?? w.head?.prefix(7).description ?? "?").font(.caption).bold()
-                        Text(w.path).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Text(w.path).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
-                    if w.isLocked { Text("locked").font(.system(size: 9)).foregroundStyle(.orange) }
+                    if w.isLocked { Text("locked").font(.system(size: 9)).foregroundStyle(Theme.warning) }
                     if !w.isMain { Button("Remove…") { git.worktreeRemoveRequest = w }.font(.caption).disabled(git.isBusy) }
                 }
             }
             .listStyle(.inset)
-            Text("Worktrees share repository data and are not a security sandbox (Bible Part 6 §14.2).").font(.system(size: 9)).foregroundStyle(.secondary).padding(6)
+            Text("Worktrees share repository data and are not a security sandbox (Bible Part 6 §14.2).").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(6)
         }
     }
 
     private var historyView: some View {
         List(git.history, id: \.self) { c in
             HStack(alignment: .top) {
-                Text(c.shortHash).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                Text(c.shortHash).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textSecondary)
                 VStack(alignment: .leading) {
                     Text(c.subject).font(.caption).lineLimit(2)
-                    Text("\(c.author) · \(c.date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("\(c.author) · \(c.date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
                 }
             }
         }
@@ -233,16 +233,16 @@ struct DiffView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(title).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
-                if truncated { Text("truncated to \(GitController.diffLineLimit) lines").font(.caption).foregroundStyle(.orange) }
+                if truncated { Text("truncated to \(GitController.diffLineLimit) lines").font(.caption).foregroundStyle(Theme.warning) }
             }
             .padding(.horizontal, 8).frame(height: 22)
             Divider()
             ScrollView([.vertical, .horizontal]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                        if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(.secondary).padding(8) }
+                        if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
                         ForEach(Array(file.hunks.enumerated()), id: \.offset) { _, hunk in
                             Text(hunk.header).font(.system(size: 11, design: .monospaced)).foregroundStyle(.blue).padding(.horizontal, 8).padding(.vertical, 2)
                             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
@@ -260,7 +260,7 @@ struct DiffView: View {
                             }
                         }
                     }
-                    if files.isEmpty { Text("No diff").font(.caption).foregroundStyle(.secondary).padding(8) }
+                    if files.isEmpty { Text("No diff").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
                 }
                 .textSelection(.enabled)
             }

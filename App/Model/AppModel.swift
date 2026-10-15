@@ -52,6 +52,10 @@ final class AppModel {
     private(set) var workspace: WorkspaceController?
     var destination: Destination = .projects
     var paletteVisible = false
+    /// Developer Mode reveals technical detail; it never changes behaviour (Bible Part 2 §11).
+    var developerMode: Bool = UserDefaults.standard.bool(forKey: "developerMode") {
+        didSet { UserDefaults.standard.set(developerMode, forKey: "developerMode") }
+    }
     var messages: [UserMessage] = []
     let diagnostics = DiagnosticsReport.current()
     /// Set when a store could not be opened; the app then runs without persistence and says so.

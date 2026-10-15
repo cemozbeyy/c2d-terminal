@@ -21,14 +21,14 @@ struct TasksPanelView: View {
             TextField("Filter", text: $tasks.filterText).textFieldStyle(.roundedBorder).font(.caption).padding(.horizontal, 8).padding(.bottom, 6)
             Divider()
             if !tasks.isAvailable {
-                Text("Task storage is unavailable; tasks cannot be saved this session.").font(.caption).foregroundStyle(.orange).padding()
+                Text("Task storage is unavailable; tasks cannot be saved this session.").font(.caption).foregroundStyle(Theme.warning).padding()
             }
             HSplitView {
                 list.frame(minWidth: 180)
                 detail.frame(minWidth: 220)
             }
             if let err = tasks.lastError {
-                HStack { Text(err).font(.caption).foregroundStyle(.orange).lineLimit(2); Spacer(); Button("Dismiss") { tasks.lastError = nil }.font(.caption) }.padding(6)
+                HStack { Text(err).font(.caption).foregroundStyle(Theme.warning).lineLimit(2); Spacer(); Button("Dismiss") { tasks.lastError = nil }.font(.caption) }.padding(6)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,15 +50,15 @@ struct TasksPanelView: View {
                                 priorityDot(t.priority)
                                 Text(t.title).font(.caption).lineLimit(1)
                                 Spacer()
-                                if t.assignedAgentSessionID != nil { Image(systemName: "cpu").font(.system(size: 9)).foregroundStyle(.secondary) }
-                                if t.blockedReason != nil { Image(systemName: "hand.raised").font(.system(size: 9)).foregroundStyle(.orange) }
+                                if t.assignedAgentSessionID != nil { Image(systemName: "cpu").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
+                                if t.blockedReason != nil { Image(systemName: "hand.raised").font(.system(size: 9)).foregroundStyle(Theme.warning) }
                             }
                             .tag(t.id)
                         }
                     }
                 }
             }
-            if tasks.visibleTasks.isEmpty { Text(tasks.tasks.isEmpty ? "No tasks. Add one above." : "No match.").font(.caption).foregroundStyle(.secondary) }
+            if tasks.visibleTasks.isEmpty { Text(tasks.tasks.isEmpty ? "No tasks. Add one above." : "No match.").font(.caption).foregroundStyle(Theme.textSecondary) }
         }
         .listStyle(.inset)
     }
@@ -69,7 +69,7 @@ struct TasksPanelView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("Title", text: Binding(get: { t.title }, set: { v in var r = t; r.title = v; Task { await tasks.update(r) } })).font(.headline).textFieldStyle(.plain)
                     HStack {
-                        Text(statusLabel(t.status)).font(.caption).bold().padding(.horizontal, 6).padding(.vertical, 2).background(Color.accentColor.opacity(0.2), in: Capsule())
+                        Text(statusLabel(t.status)).font(.caption).bold().padding(.horizontal, 6).padding(.vertical, 2).background(Theme.accent.opacity(0.2), in: Capsule())
                         Picker("", selection: Binding(get: { t.priority }, set: { v in var r = t; r.priority = v; Task { await tasks.update(r) } })) {
                             ForEach(TaskPriority.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.pickerStyle(.menu).fixedSize().controlSize(.small)
@@ -83,7 +83,7 @@ struct TasksPanelView: View {
                         TextEditor(text: Binding(get: { t.acceptanceCriteria ?? "" }, set: { v in var r = t; r.acceptanceCriteria = v.isEmpty ? nil : v; Task { await tasks.update(r) } })).font(.system(size: 12)).frame(height: 50)
                     }
                     if let b = t.blockedReason {
-                        Label("Blocked: \(b)", systemImage: "hand.raised").font(.caption).foregroundStyle(.orange)
+                        Label("Blocked: \(b)", systemImage: "hand.raised").font(.caption).foregroundStyle(Theme.warning)
                         Button("Unblock → Ready") { Task { await tasks.unblock(t) } }.font(.caption)
                     } else if t.status.canTransition(to: .blocked) {
                         HStack {
@@ -96,7 +96,7 @@ struct TasksPanelView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(tasks.events) { e in
                                 HStack(alignment: .top, spacing: 6) {
-                                    Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 9)).foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                                    Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).frame(width: 110, alignment: .leading)
                                     Text(eventText(e)).font(.system(size: 10))
                                 }
                             }
@@ -111,7 +111,7 @@ struct TasksPanelView: View {
                 .padding(10)
             }
         } else {
-            Text("Select a task").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("Select a task").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -134,7 +134,7 @@ struct TasksPanelView: View {
                     if let p = r.panelID, workspace.layout.panels[p] != nil { Button("Show") { if workspace.layout.hidden.contains(p) { workspace.restore(p) }; workspace.activate(p) }.font(.caption) }
                     Button("Unlink") { Task { await tasks.assign(t, agentSessionID: nil) } }.font(.caption)
                 }
-                Text("An agent exiting does not complete the task; review its changes in Git first.").font(.system(size: 9)).foregroundStyle(.secondary)
+                Text("An agent exiting does not complete the task; review its changes in Git first.").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
             } else {
                 Button("Start agent for this task…") { launchFor = t }.font(.caption).disabled(t.status.isTerminal)
             }
@@ -142,7 +142,7 @@ struct TasksPanelView: View {
     }
 
     private func labeled<V: View>(_ title: String, @ViewBuilder _ content: () -> V) -> some View {
-        VStack(alignment: .leading, spacing: 4) { Text(title).font(.caption).bold().foregroundStyle(.secondary); content() }
+        VStack(alignment: .leading, spacing: 4) { Text(title).font(.caption).bold().foregroundStyle(Theme.textSecondary); content() }
     }
 
     private func priorityDot(_ p: TaskPriority) -> some View {

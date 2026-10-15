@@ -29,7 +29,7 @@ struct ExplorerPanelView: View {
                 .padding(.vertical, 4)
             }
             if let err = explorer.lastError {
-                Text(err).font(.caption).foregroundStyle(.orange).padding(6)
+                Text(err).font(.caption).foregroundStyle(Theme.warning).padding(6)
             }
         }
         .sheet(isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) { namingSheet }
@@ -65,9 +65,9 @@ struct ExplorerPanelView: View {
             } else {
                 Spacer().frame(width: 10)
             }
-            Image(systemName: entry.isDirectory ? "folder" : "doc.text").foregroundStyle(entry.isDirectory ? Color.accentColor : .secondary).font(.system(size: 11))
+            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.text").foregroundStyle(entry.isDirectory ? Theme.info : Theme.textSecondary).font(.system(size: 11))
             Text(entry.name).font(.system(size: 12)).lineLimit(1)
-            if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(.secondary) }
+            if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(Theme.textSecondary) }
             Spacer()
             if let badge = workspace.git.badges[entry.path] {
                 Text(badge).font(.system(size: 10, design: .monospaced)).bold()
@@ -76,7 +76,7 @@ struct ExplorerPanelView: View {
             }
         }
         .padding(.leading, CGFloat(depth) * 14 + 8).padding(.vertical, 2)
-        .background(explorer.selectedPath == entry.path ? Color.accentColor.opacity(0.2) : .clear)
+        .background(explorer.selectedPath == entry.path ? Theme.accentSoft : .clear)
         .contentShape(Rectangle())
         .onTapGesture {
             explorer.selectedPath = entry.path
@@ -100,7 +100,7 @@ struct ExplorerPanelView: View {
     private var namingSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(naming?.kind == "rename" ? "Rename" : naming?.kind == "folder" ? "New Folder" : "New File").font(.headline)
-            Text("In \(naming?.directory ?? "")").font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Text("In \(naming?.directory ?? "")").font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
             TextField("Name", text: $newName).textFieldStyle(.roundedBorder).onSubmit(commitNaming)
             HStack { Spacer(); Button("Cancel") { naming = nil }; Button("OK", action: commitNaming).keyboardShortcut(.defaultAction) }
         }

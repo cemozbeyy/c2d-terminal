@@ -10,8 +10,10 @@ struct TerminalSurfaceView: NSViewRepresentable {
     func makeNSView(context: Context) -> TerminalView {
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         view.terminalDelegate = controller
-        view.nativeBackgroundColor = NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.12, alpha: 1)
-        view.nativeForegroundColor = NSColor(calibratedWhite: 0.9, alpha: 1)
+        view.nativeBackgroundColor = NSColor(hex: 0x0B0E16)
+        view.nativeForegroundColor = NSColor(hex: 0xE8EAF1)
+        view.caretColor = NSColor(hex: 0x7C6CF0)
+        view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
         controller.attach(view)
         return view
     }

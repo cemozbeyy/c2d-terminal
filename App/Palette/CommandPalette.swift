@@ -105,23 +105,23 @@ struct CommandPaletteView: View {
                     .textFieldStyle(.plain).font(.title3)
                     .onSubmit { run(items.indices.contains(selection) ? items[selection] : items.first) }
                     .onChange(of: query) { selection = 0 }
-                Text("esc").font(.caption).foregroundStyle(.secondary)
+                Text("esc").font(.caption).foregroundStyle(Theme.textSecondary)
             }
             .padding(12)
             Divider()
             ScrollViewReader { proxy in
                 List(Array(items.enumerated()), id: \.element.id) { index, cmd in
                     HStack {
-                        Image(systemName: cmd.symbol).frame(width: 18).foregroundStyle(.secondary)
+                        Image(systemName: cmd.symbol).frame(width: 18).foregroundStyle(Theme.textSecondary)
                         VStack(alignment: .leading) {
                             Text(cmd.title).lineLimit(1)
-                            if let s = cmd.subtitle { Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+                            if let s = cmd.subtitle { Text(s).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle) }
                         }
                         Spacer()
                         Text(cmd.kind.rawValue).font(.caption2).foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 2)
-                    .listRowBackground(index == selection ? Color.accentColor.opacity(0.25) : Color.clear)
+                    .listRowBackground(index == selection ? Theme.accent.opacity(0.25) : Color.clear)
                     .contentShape(Rectangle())
                     .onTapGesture { run(cmd) }
                     .id(cmd.id)
@@ -130,7 +130,7 @@ struct CommandPaletteView: View {
                 .onChange(of: selection) { if items.indices.contains(selection) { proxy.scrollTo(items[selection].id) } }
             }
             .frame(height: 320)
-            if items.isEmpty { Text("No matching command").font(.caption).foregroundStyle(.secondary).padding(8) }
+            if items.isEmpty { Text("No matching command").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
         }
         .frame(width: 560)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))

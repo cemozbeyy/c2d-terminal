@@ -16,21 +16,24 @@ struct ProjectsView: View {
             if model.registry.projects.isEmpty {
                 VStack(spacing: 8) {
                     Text("No recent projects").font(.headline)
-                    Text("Open a local folder to start a terminal in it.").foregroundStyle(.secondary)
+                    Text("Open a local folder to start a terminal in it.").foregroundStyle(Theme.textSecondary)
                     Button("Open Folder…") { chooseFolder() }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(model.registry.projects) { project in
-                        ProjectRow(project: project, isActive: model.workspace?.projectPath == project.path,
-                                   open: { model.openProject(project) },
-                                   relocate: { relocating = project; chooseFolder() },
-                                   remove: { model.removeProject(project) },
-                                   pin: { model.setPinned(!project.pinned, project) })
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(model.registry.projects) { project in
+                            ProjectRow(project: project, isActive: model.workspace?.projectPath == project.path,
+                                       open: { model.openProject(project) },
+                                       relocate: { relocating = project; chooseFolder() },
+                                       remove: { model.removeProject(project) },
+                                       pin: { model.setPinned(!project.pinned, project) })
+                            .padding(10)
+                            .panelCard()
+                        }
                     }
                 }
-                .listStyle(.inset)
             }
         }
         .padding(16)
@@ -59,15 +62,14 @@ struct ProjectRow: View {
     var body: some View {
         let available = project.isAvailable
         HStack {
-            Image(systemName: available ? (project.pinned ? "pin.fill" : "folder") : "questionmark.folder")
-                .foregroundStyle(available ? Color.accentColor : .orange)
+            IconTile(symbol: available ? (project.pinned ? "pin.fill" : "folder.fill") : "questionmark.folder", tint: available ? Theme.accent : Theme.warning, size: 34)
             VStack(alignment: .leading) {
                 HStack(spacing: 6) {
                     Text(project.name).bold()
-                    if isActive { Text("active").font(.caption).foregroundStyle(.secondary) }
+                    if isActive { StatusChip(text: "active", color: Theme.success, symbol: "circle.fill") }
                 }
-                Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                if !available { Text("Folder not found").font(.caption).foregroundStyle(.orange) }
+                Text(project.path).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                if !available { Text("Folder not found").font(.caption).foregroundStyle(Theme.warning) }
             }
             Spacer()
             if available {

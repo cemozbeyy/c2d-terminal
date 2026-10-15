@@ -16,8 +16,8 @@ struct WorkspaceCanvas: View {
                 LayoutNodeView(node: workspace.layout.root, workspace: workspace)
             }
         }
-        .padding(4)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .padding(Theme.space2)
+        .background(Theme.window)
         .onAppear { DragMonitor.shared.install(workspace: workspace) }
         .alert("Stop this terminal?", isPresented: Binding(get: { workspace.closeConfirmation != nil }, set: { if !$0 { workspace.closeConfirmation = nil } })) {
             Button("Stop and Close", role: .destructive) { if let p = workspace.closeConfirmation { workspace.close(p) } }
@@ -96,7 +96,7 @@ struct SplitView: View {
 
     private func divider(at index: Int, total: CGFloat) -> some View {
         Rectangle()
-            .fill(Color.secondary.opacity(0.25))
+            .fill(Theme.window)
             .frame(width: orientation == .horizontal ? dividerThickness : nil,
                    height: orientation == .vertical ? dividerThickness : nil)
             .contentShape(Rectangle())
@@ -147,31 +147,30 @@ struct PanelGroupView: View {
             }
         }
         .frame(minWidth: 0, minHeight: 0)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
-        .clipped()
+        .panelCard()
     }
 
     private var tabBar: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             ForEach(panels, id: \.self) { id in
                 if let panel = workspace.layout.panels[id] {
                     PanelTab(panel: panel, title: tabTitle(panel), isActive: id == active, workspace: workspace)
                 }
             }
             Spacer(minLength: 0)
-            Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus") }
-                .buttonStyle(.plain).help("New terminal in this group")
+            Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("New terminal in this group")
             if workspace.layout.maximizedGroup == groupID {
-                Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
-                    .buttonStyle(.plain).help("Exit Focus Mode")
+                Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
             } else {
-                Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
-                    .buttonStyle(.plain).help("Focus Mode: this group fills the workspace")
+                Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
             }
         }
-        .padding(.horizontal, 6)
-        .frame(height: 28)
+        .padding(.horizontal, 8)
+        .frame(height: 32)
+        .background(Theme.panelHeader)
         .dropDestination(for: String.self) { items, _ in
             guard let id = Self.panelID(from: items) else { return false }
             workspace.move(id, toGroup: groupID)
@@ -208,7 +207,7 @@ struct PanelGroupView: View {
 
     private func zone(edge: DockEdge) -> some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(targetedEdge == edge ? 0.45 : 0.15))
+            .fill(Theme.accent.opacity(targetedEdge == edge ? 0.5 : 0.18))
             .overlay(Text(edge.rawValue.capitalized).font(.caption).foregroundStyle(.white))
             .dropDestination(for: String.self) { items, _ in
                 guard let id = Self.panelID(from: items) else { return false }
@@ -220,7 +219,7 @@ struct PanelGroupView: View {
 
     private var centerZone: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(targetedCenter ? 0.45 : 0.15))
+            .fill(Theme.accent.opacity(targetedCenter ? 0.5 : 0.18))
             .overlay(Text("Add as tab").font(.caption).foregroundStyle(.white))
             .dropDestination(for: String.self) { items, _ in
                 guard let id = Self.panelID(from: items) else { return false }
@@ -242,14 +241,16 @@ struct PanelTab: View {
     let workspace: WorkspaceController
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(title).lineLimit(1)
-            Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
-                .buttonStyle(.plain).help("Close panel")
+        let style = PanelKindStyle.style(for: panel.kind.rawValue)
+        HStack(spacing: 5) {
+            Image(systemName: style.symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(isActive ? style.tint : Theme.textMuted)
+            Text(title).lineLimit(1).font(.system(size: 11.5, weight: isActive ? .semibold : .regular))
+            Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Close panel")
         }
-        .font(.caption)
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(isActive ? Color.accentColor.opacity(0.25) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+        .foregroundStyle(isActive ? Theme.textPrimary : Theme.textSecondary)
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(isActive ? Theme.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
         .contentShape(Rectangle())
         .onTapGesture { workspace.activate(panel.id) }
         .onDrag {
@@ -320,32 +321,55 @@ struct UnavailablePanelView: View {
 }
 
 struct TerminalPanelView: View {
+    @Environment(AppModel.self) private var model
     let controller: TerminalPanelController
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle().fill(controller.isRunning ? Color.green : Color.secondary).frame(width: 7, height: 7)
-                Text(controller.statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: Theme.space2) {
+                Image(systemName: "terminal").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.success)
+                Text(controller.title).font(.system(size: 12, weight: .semibold))
+                StatusChip(text: chipText, color: chipColor, symbol: controller.isRunning ? "circle.fill" : "stop.fill")
+                if model.developerMode, let r = controller.record {
+                    Text("session \(r.id.prefix(8)) · \(r.initialDirectory)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                }
                 Spacer()
                 if controller.isRunning {
-                    Button("Stop") { Task { await controller.terminate() } }.font(.caption).help("SIGHUP, then SIGKILL after 2 s")
+                    Button("Stop") { Task { await controller.terminate() } }.controlSize(.small).help("SIGHUP, then SIGKILL after 2 s")
                 }
             }
-            .padding(.horizontal, 8).frame(height: 22)
+            .padding(.horizontal, Theme.space2).frame(height: 28)
+            .background(Theme.panel)
             if controller.isRunning || isStartingOrLive {
                 TerminalSurfaceView(controller: controller)
             } else {
                 VStack(spacing: 8) {
-                    Text(controller.statusText).foregroundStyle(.secondary)
+                    Text(controller.statusText).foregroundStyle(Theme.textSecondary)
                     if let r = controller.record, r.lifecycle == .endedByRestart {
                         Text("Shell: \(URL(fileURLWithPath: r.shell).lastPathComponent) · directory: \(r.initialDirectory)")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                            .font(.caption).foregroundStyle(Theme.textMuted).lineLimit(2).truncationMode(.middle)
                     }
-                    Button("New Session") { controller.startNewSession() }
+                    Button("New Session") { controller.startNewSession() }.tint(Theme.accent).buttonStyle(.borderedProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.terminalBackground)
             }
+        }
+    }
+
+    private var chipText: String {
+        switch controller.state {
+        case .running(let pid): model.developerMode ? "Running · pid \(pid)" : "Running"
+        default: controller.statusText
+        }
+    }
+
+    private var chipColor: Color {
+        switch controller.state {
+        case .running, .terminating: Theme.success
+        case .failed: Theme.error
+        case .exited(.exited(let code)): code == 0 ? Theme.textSecondary : Theme.warning
+        default: Theme.textSecondary
         }
     }
 

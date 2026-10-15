@@ -8,8 +8,8 @@ struct EditorPanelView: View {
         VStack(spacing: 0) {
             if editor.tabs.isEmpty {
                 VStack(spacing: 8) {
-                    Text("No file open").foregroundStyle(.secondary)
-                    Text("Select a file in the Explorer.").font(.caption).foregroundStyle(.secondary)
+                    Text("No file open").foregroundStyle(Theme.textSecondary)
+                    Text("Select a file in the Explorer.").font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -23,7 +23,7 @@ struct EditorPanelView: View {
             }
             if let err = editor.lastError {
                 HStack {
-                    Text(err).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    Text(err).font(.caption).foregroundStyle(Theme.warning).lineLimit(2)
                     Spacer()
                     Button("Dismiss") { editor.lastError = nil }.font(.caption)
                 }
@@ -48,7 +48,7 @@ struct EditorPanelView: View {
                     }
                     .font(.caption)
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(tab.id == editor.activeTabID ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                    .background(tab.id == editor.activeTabID ? Theme.accent.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
                     .contentShape(Rectangle())
                     .onTapGesture { editor.activate(tab) }
                     .help(tab.path)
@@ -62,7 +62,7 @@ struct EditorPanelView: View {
 
     private func conflictBanner(_ tab: EditorTab) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.warning)
             switch tab.externalChange {
             case .modified:
                 Text(tab.isDirty ? "This file changed on disk and you have unsaved edits." : "This file changed on disk.").font(.caption)
@@ -79,7 +79,7 @@ struct EditorPanelView: View {
             }
         }
         .padding(6)
-        .background(Color.orange.opacity(0.12))
+        .background(Theme.warning.opacity(0.12))
     }
 
     private func statusBar(_ tab: EditorTab) -> some View {
@@ -90,9 +90,9 @@ struct EditorPanelView: View {
             Text(SyntaxHighlighter.language(for: tab.document.languageHint)?.name ?? "Plain Text")
             Text("UTF-8")
             Text(tab.document.lineEnding.rawValue)
-            if tab.isDirty { Text("Unsaved").foregroundStyle(.orange) }
+            if tab.isDirty { Text("Unsaved").foregroundStyle(Theme.warning) }
         }
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 8).frame(height: 20)
     }
 }

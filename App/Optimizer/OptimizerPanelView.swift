@@ -15,7 +15,7 @@ struct OptimizerPanelView: View {
                     GroupBox("Prepared context") {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(est.tokens) tokens · \(est.source.label)").font(.caption).bold()
-                            Text(est.confidence).font(.system(size: 9)).foregroundStyle(.secondary)
+                            Text(est.confidence).font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
                             HStack {
                                 Stepper("Budget \(optimizer.budgetTokens)", value: $optimizer.budgetTokens, in: 1000...200_000, step: 1000).font(.caption)
                                 Button("Check budget") { optimizer.measureOnly() }.font(.caption)
@@ -30,7 +30,7 @@ struct OptimizerPanelView: View {
                 if let r = optimizer.result, let rep = optimizer.report { resultView(r, rep) }
                 history
                 if let err = optimizer.lastError {
-                    HStack { Text(err).font(.caption).foregroundStyle(.orange); Spacer(); Button("Dismiss") { optimizer.lastError = nil }.font(.caption) }
+                    HStack { Text(err).font(.caption).foregroundStyle(Theme.warning); Spacer(); Button("Dismiss") { optimizer.lastError = nil }.font(.caption) }
                 }
             }
             .padding(10)
@@ -47,7 +47,7 @@ struct OptimizerPanelView: View {
                     .background((optimizer.entitlement.isPremium ? Color.accentColor : Color.secondary).opacity(0.2), in: Capsule())
             }
             Text("All numbers here are heuristic estimates of prepared context. No provider reports usage to C2D yet, so nothing is shown as confirmed or saved.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
         }
     }
 
@@ -77,13 +77,13 @@ struct OptimizerPanelView: View {
                     HStack {
                         Text(item.kind.rawValue).font(.system(size: 9)).padding(.horizontal, 4).background(Color.secondary.opacity(0.15), in: Capsule())
                         Text(item.path.map { ($0 as NSString).lastPathComponent } ?? String(item.content.prefix(60).replacingOccurrences(of: "\n", with: " "))).font(.caption).lineLimit(1)
-                        if item.mandatory { Text("mandatory").font(.system(size: 9)).foregroundStyle(.orange) }
+                        if item.mandatory { Text("mandatory").font(.system(size: 9)).foregroundStyle(Theme.warning) }
                         Spacer()
-                        Text("~\(TokenEstimator.estimate(item.content).tokens)").font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                        Text("~\(TokenEstimator.estimate(item.content).tokens)").font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textSecondary)
                         Button { optimizer.remove(item.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.buttonStyle(.plain)
                     }
                 }
-                if optimizer.items.isEmpty { Text("Nothing selected. The optimizer never collects context on its own.").font(.caption).foregroundStyle(.secondary) }
+                if optimizer.items.isEmpty { Text("Nothing selected. The optimizer never collects context on its own.").font(.caption).foregroundStyle(Theme.textSecondary) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -92,10 +92,10 @@ struct OptimizerPanelView: View {
     @ViewBuilder private func budget(_ v: BudgetVerdict) -> some View {
         switch v {
         case .fits(let tokens, let budget):
-            Label("Fits: ~\(tokens) of \(budget) tokens (estimate)", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.green)
+            Label("Fits: ~\(tokens) of \(budget) tokens (estimate)", systemImage: "checkmark.circle").font(.caption).foregroundStyle(Theme.success)
         case .exceedsBy(let tokens, let candidates, let mandatory):
             VStack(alignment: .leading, spacing: 2) {
-                Label("Exceeds budget by ~\(tokens) tokens; mandatory items need \(mandatory). Nothing was removed — choose what to drop:", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label("Exceeds budget by ~\(tokens) tokens; mandatory items need \(mandatory). Nothing was removed — choose what to drop:", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Theme.warning)
                 ForEach(candidates, id: \.self) { id in
                     if let item = optimizer.items.first(where: { $0.id == id }) {
                         HStack { Text(item.path.map { ($0 as NSString).lastPathComponent } ?? item.kind.rawValue).font(.caption); Button("Drop") { optimizer.remove(id) }.font(.caption) }
@@ -111,7 +111,7 @@ struct OptimizerPanelView: View {
                 Text(rep.label).font(.caption).bold()
                 Text("Before ~\(r.before.tokens) · after ~\(r.after.tokens) · mandatory items kept: \(r.preservedMandatory)").font(.caption)
                 if r.actions.isEmpty {
-                    Text("No deterministic reduction applied (no exact duplicates or whitespace waste).").font(.caption).foregroundStyle(.secondary)
+                    Text("No deterministic reduction applied (no exact duplicates or whitespace waste).").font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(r.actions, id: \.self) { a in
                     Text("• \(a.kind.rawValue): \(a.reason) (\(a.tokensBefore) → \(a.tokensAfter)); original retained").font(.system(size: 10))
@@ -125,7 +125,7 @@ struct OptimizerPanelView: View {
     private var history: some View {
         GroupBox("History (this project)") {
             VStack(alignment: .leading, spacing: 4) {
-                if optimizer.totals.isEmpty { Text("No recorded measurements.").font(.caption).foregroundStyle(.secondary) }
+                if optimizer.totals.isEmpty { Text("No recorded measurements.").font(.caption).foregroundStyle(Theme.textSecondary) }
                 ForEach(optimizer.totals.keys.sorted { $0.rawValue < $1.rawValue }, id: \.self) { source in
                     if let t = optimizer.totals[source] {
                         Text("\(source.label): \(t.count) run(s), baseline ~\(t.baseline) → ~\(t.optimized)").font(.caption)
@@ -133,7 +133,7 @@ struct OptimizerPanelView: View {
                 }
                 ForEach(optimizer.history.prefix(10)) { rec in
                     Text("\(rec.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(rec.sourceDescription) · \(rec.baselineTokens)→\(rec.optimizedTokens) · \(rec.measurementSource.label)")
-                        .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
