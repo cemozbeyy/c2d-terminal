@@ -51,14 +51,17 @@ struct AgentLaunchSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let workspace: WorkspaceController
+    let linkedTask: TaskRecord?
     @State private var providerID = AgentProvider.claudeCode.id
     @State private var directory: String
     @State private var task = ""
     @State private var error: String?
 
-    init(workspace: WorkspaceController) {
+    init(workspace: WorkspaceController, task: TaskRecord? = nil) {
         self.workspace = workspace
-        _directory = State(initialValue: workspace.projectPath)
+        self.linkedTask = task
+        _directory = State(initialValue: task?.worktreePath ?? workspace.projectPath)
+        _task = State(initialValue: task.map { t in t.details.isEmpty ? t.title : "\(t.title)\n\n\(t.details)" } ?? "")
     }
 
     private var provider: AgentProvider { AgentProvider.builtIn.first { $0.id == providerID } ?? .claudeCode }
@@ -70,7 +73,7 @@ struct AgentLaunchSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Start an agent session").font(.headline)
+            Text(linkedTask.map { "Start an agent for “\($0.title)”" } ?? "Start an agent session").font(.headline)
             Picker("Provider", selection: $providerID) {
                 ForEach(AgentProvider.builtIn) { p in Text(p.displayName).tag(p.id) }
             }
@@ -105,7 +108,7 @@ struct AgentLaunchSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Launch") {
                     guard let plan else { error = "Provider is not ready."; return }
-                    workspace.launchAgent(plan)
+                    workspace.launchAgent(plan, task: linkedTask)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

@@ -10,13 +10,14 @@ struct UserMessage: Identifiable, Equatable {
 }
 
 enum Destination: String, CaseIterable, Identifiable {
-    case projects, workspace, agents, settings
+    case projects, workspace, agents, tasks, settings
     var id: String { rawValue }
     var label: String {
         switch self {
         case .projects: "Projects"
         case .workspace: "Workspace"
         case .agents: "Agents"
+        case .tasks: "Tasks"
         case .settings: "Settings"
         }
     }
@@ -25,6 +26,7 @@ enum Destination: String, CaseIterable, Identifiable {
         case .projects: "folder"
         case .workspace: "rectangle.3.group"
         case .agents: "cpu"
+        case .tasks: "checklist"
         case .settings: "gearshape"
         }
     }
@@ -35,12 +37,13 @@ enum Destination: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     /// Panel kinds this build can actually host. Presets and restoration degrade to these.
-    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges, .agentSession]
+    static let availableKinds: Set<PanelKind> = [.terminal, .projectExplorer, .editor, .gitChanges, .agentSession, .tasks]
 
     private(set) var registry: ProjectRegistry
     let layoutStore: LayoutStore?
     private(set) var sessions: TerminalSessionRegistry
     private(set) var agentSessions: AgentSessionRegistry
+    let taskStore: TaskStore?
     private(set) var providerStatuses: [String: AgentProviderStatus] = [:]
     private(set) var providerPaths: [String: String] = [:]
     private(set) var providersRefreshedAt: Date?
@@ -59,6 +62,7 @@ final class AppModel {
         layoutStore = (try? LayoutStore.standard())
         sessions = (try? TerminalSessionRegistry(store: store)) ?? (try! TerminalSessionRegistry(store: nil))
         agentSessions = (try? AgentSessionRegistry(store: store)) ?? (try! AgentSessionRegistry(store: nil))
+        taskStore = (try? TaskStore(path: TaskStore.standardPath())) ?? (try? TaskStore.inMemory())
         persistenceUnavailable = unavailable
         if unavailable != nil {
             messages.append(UserMessage(title: "Persistence unavailable", detail: "Settings and layouts will not be saved this session."))
@@ -96,6 +100,17 @@ final class AppModel {
                     git.commitMessage = msg
                     await git.commit()
                     debugTrace("c2dGitStageAllAndCommit: hash=\(git.lastCommitHash ?? "none") error=\(git.lastError ?? "none")")
+                }
+            }
+        }
+        // `-c2dCreateTask "<title>"` creates a task and moves it to Ready (runtime checks).
+        if let title = UserDefaults.standard.string(forKey: "c2dCreateTask") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let ws = self?.workspace else { return }
+                if let t = await ws.tasks.create(title: title) {
+                    await ws.tasks.transition(t, to: .ready)
+                    debugTrace("c2dCreateTask: id=\(t.id) tasks=\(ws.tasks.tasks.count) events=\(ws.tasks.events.count) error=\(ws.tasks.lastError ?? "none")")
                 }
             }
         }

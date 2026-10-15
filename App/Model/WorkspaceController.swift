@@ -14,6 +14,8 @@ final class WorkspaceController {
     private(set) var editors: [PanelID: EditorPanelController] = [:]
     let explorer: ExplorerController
     let git: GitController
+    let tasks: TaskController
+    unowned let app: AppModel
     @ObservationIgnored private var watcher: FileWatcher?
     private(set) var lastSaveError: String?
     private(set) var lastSavedAt: Date?
@@ -22,7 +24,6 @@ final class WorkspaceController {
     /// Panel asking for close confirmation because its session is still running.
     var closeConfirmation: PanelID?
 
-    @ObservationIgnored private unowned let app: AppModel
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     static let saveDebounce: Duration = .milliseconds(500)
 
@@ -33,6 +34,7 @@ final class WorkspaceController {
         self.restoredFromDisk = restoredFromDisk
         self.explorer = ExplorerController(rootPath: projectPath)
         self.git = GitController(projectPath: projectPath)
+        self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
         scheduleSave()   // a freshly created layout must survive a quit before the first edit
         do {
             watcher = try FileWatcher(root: projectPath) { [weak self] paths in
@@ -197,7 +199,7 @@ final class WorkspaceController {
     @ObservationIgnored private var pendingAgentPlans: [PanelID: AgentLaunchPlan] = [:]
 
     /// Creates the panel and starts the agent. The caller has already shown the pre-launch summary.
-    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil) {
+    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil, task: TaskRecord? = nil) {
         let panel = Panel(kind: .agentSession, title: plan.provider.displayName, attributes: ["provider": plan.provider.id])
         pendingAgentPlans[panel.id] = plan
         mutate("new agent session") { layout in
@@ -205,7 +207,16 @@ final class WorkspaceController {
                 layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
             }
         }
-        _ = agent(for: panel.id)
+        let controller = agent(for: panel.id)
+        // Linking is explicit user intent (the sheet was confirmed); status moves to In progress
+        // because the user started work, never because the agent did something (Bible Part 8 §5).
+        if let task, let agentID = controller.agentRecord?.id {
+            app.updateAgentSession(agentID) { $0.taskID = task.id; $0.taskSummary = task.title }
+            Task {
+                await tasks.assign(task, agentSessionID: agentID)
+                if task.status.canTransition(to: .inProgress) { await tasks.transition(task, to: .inProgress, note: "agent session started") }
+            }
+        }
     }
 
     /// Rebuilds a plan for "New Session" on a restored agent panel; validation happens again at launch.

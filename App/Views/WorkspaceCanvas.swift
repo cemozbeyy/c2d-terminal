@@ -291,6 +291,8 @@ struct PanelContentView: View {
             GitPanelView(git: workspace.git)
         case .agentSession:
             AgentPanelView(controller: workspace.agent(for: panel.id))
+        case .tasks:
+            TasksPanelView(tasks: workspace.tasks, workspace: workspace)
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }

@@ -10,6 +10,7 @@ public enum Log {
     public static let git = Logger(subsystem: subsystem, category: "git")
     public static let agents = Logger(subsystem: subsystem, category: "agents")
     public static let tasks = Logger(subsystem: subsystem, category: "tasks")
+    public static let optimizer = Logger(subsystem: subsystem, category: "optimizer")
 }
 
 /// Facts about the running build and host, for the About/diagnostics surface and bug reports.

@@ -26,6 +26,8 @@ struct MainWindowView: View {
         case .workspace:
             if let ws = model.workspace { WorkspaceCanvas(workspace: ws) } else { ProjectsView() }
         case .agents: AgentsDestinationView()
+        case .tasks:
+            if let ws = model.workspace { TasksPanelView(tasks: ws.tasks, workspace: ws).padding(8) } else { Text("Open a project to see its tasks.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
         case .settings: SettingsPlaceholderView()
         }
     }
