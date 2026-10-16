@@ -9,6 +9,8 @@ import Observation
 final class TaskController {
     let projectPath: String
     private(set) var tasks: [TaskRecord] = []
+    /// Every task in the project (terminal included), keyed by id, for dependency resolution and display.
+    private(set) var byID: [String: TaskRecord] = [:]
     private(set) var selected: TaskRecord?
     private(set) var events: [TaskEvent] = []
     var showTerminal = false
@@ -37,6 +39,8 @@ final class TaskController {
         guard let store else { return }
         do {
             tasks = try await store.tasks(projectPath: projectPath, includeTerminal: showTerminal)
+            let all = try await store.tasks(projectPath: projectPath, includeTerminal: true)
+            byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             if let s = selected {
                 if let fresh = tasks.first(where: { $0.id == s.id }) { selected = fresh } else { selected = try await store.task(id: s.id) }
                 await loadEvents()
@@ -72,9 +76,33 @@ final class TaskController {
         do { _ = try await store.update(record); await reload() } catch { lastError = "\(error)" }
     }
 
-    func transition(_ task: TaskRecord, to status: TaskStatus, note: String? = nil) async {
+    func transition(_ task: TaskRecord, to status: TaskStatus, note: String? = nil, override: Bool = false) async {
         guard let store else { return }
-        do { _ = try await store.transition(id: task.id, to: status, note: note); await reload() } catch { lastError = describe(error) }
+        do { _ = try await store.transition(id: task.id, to: status, note: note, override: override); await reload() } catch { lastError = describe(error) }
+    }
+
+    // MARK: Dependencies (Bible Part 8 §12)
+
+    /// Upstream tasks this one waits on; `completed` ones resolve, others still block.
+    func dependencies(of t: TaskRecord) -> [TaskRecord] { t.dependsOn.compactMap { byID[$0] } }
+    /// Tasks that depend on this one (why it can't be deleted yet).
+    func dependents(of t: TaskRecord) -> [TaskRecord] { byID.values.filter { $0.dependsOn.contains(t.id) }.sorted { $0.title < $1.title } }
+    func unmetDependencies(of t: TaskRecord) -> [TaskRecord] { t.unmetDependencies { byID[$0]?.status }.compactMap { byID[$0] } }
+    func isEligible(_ t: TaskRecord) -> Bool { t.unmetDependencies { byID[$0]?.status }.isEmpty }
+    /// Candidate upstreams for a new edge: same project, not self, not already a dependency. Cycles are
+    /// rejected by the store on add, so they are not pre-filtered here.
+    func dependencyCandidates(for t: TaskRecord) -> [TaskRecord] {
+        byID.values.filter { $0.id != t.id && !t.dependsOn.contains($0.id) }.sorted { $0.title < $1.title }
+    }
+
+    func addDependency(_ task: TaskRecord, on upstream: TaskRecord) async {
+        guard let store else { return }
+        do { _ = try await store.addDependency(id: task.id, dependsOn: upstream.id); await reload() } catch { lastError = describe(error) }
+    }
+
+    func removeDependency(_ task: TaskRecord, on upstreamID: String) async {
+        guard let store else { return }
+        do { _ = try await store.removeDependency(id: task.id, dependsOn: upstreamID); await reload() } catch { lastError = describe(error) }
     }
 
     func block(_ task: TaskRecord, reason: String) async {
@@ -105,7 +133,18 @@ final class TaskController {
     }
 
     private func describe(_ error: Error) -> String {
-        if case TaskError.invalidTransition(let from, let to)? = error as? TaskError { return "Cannot move a \(from.rawValue) task to \(to.rawValue)." }
-        return "\(error)"
+        switch error as? TaskError {
+        case .invalidTransition(let from, let to): return "Cannot move a \(from.rawValue) task to \(to.rawValue)."
+        case .dependenciesUnmet(let ids): return "Blocked by \(ids.count) unfinished task(s): \(names(ids)). Finish them, or start anyway."
+        case .hasDependents(let ids): return "\(names(ids)) still depend(s) on this task. Remove the dependency first."
+        case .dependencyCycle: return "That would create a dependency cycle."
+        case .selfDependency: return "A task cannot depend on itself."
+        case .crossProjectDependency: return "A task can only depend on tasks in the same project."
+        default: return "\(error)"
+        }
+    }
+
+    private func names(_ ids: [String]) -> String {
+        ids.map { byID[$0]?.title ?? $0 }.joined(separator: ", ")
     }
 }

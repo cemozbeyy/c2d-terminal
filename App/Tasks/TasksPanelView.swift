@@ -52,6 +52,7 @@ struct TasksPanelView: View {
                                 Spacer()
                                 if t.assignedAgentSessionID != nil { Image(systemName: "cpu").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
                                 if t.blockedReason != nil { Image(systemName: "hand.raised").font(.system(size: 9)).foregroundStyle(Theme.warning) }
+                                if !t.status.isTerminal && !t.dependsOn.isEmpty && !tasks.isEligible(t) { Image(systemName: "clock").font(.system(size: 9)).foregroundStyle(Theme.warning).help("Waiting on dependencies") }
                             }
                             .tag(t.id)
                         }
@@ -91,6 +92,7 @@ struct TasksPanelView: View {
                             Button("Block") { let r = blockReason; blockReason = ""; Task { await tasks.block(t, reason: r) } }.disabled(blockReason.isEmpty).font(.caption)
                         }
                     }
+                    dependencySection(t)
                     agentSection(t)
                     labeled("Activity") {
                         VStack(alignment: .leading, spacing: 3) {
@@ -118,8 +120,11 @@ struct TasksPanelView: View {
     private func transitions(_ t: TaskRecord) -> some View {
         HStack(spacing: 6) {
             ForEach(TaskStatus.allCases.filter { t.status.canTransition(to: $0) && $0 != .blocked }, id: \.self) { next in
-                Button(statusLabel(next)) { Task { await tasks.transition(t, to: next) } }.font(.caption).controlSize(.small)
-                    .help(next == .completed ? "Completion is your decision; nothing marks a task done automatically." : "")
+                let gated = next == .inProgress && !tasks.isEligible(t)
+                Button(gated ? "Start anyway" : statusLabel(next)) { Task { await tasks.transition(t, to: next, override: gated) } }
+                    .font(.caption).controlSize(.small).tint(gated ? Theme.warning : nil)
+                    .help(gated ? "Blocked by unfinished dependencies; starting now runs against incomplete prerequisites." :
+                          next == .completed ? "Completion is your decision; nothing marks a task done automatically." : "")
             }
         }
     }
@@ -137,6 +142,40 @@ struct TasksPanelView: View {
                 Text("An agent exiting does not complete the task; review its changes in Git first.").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
             } else {
                 Button("Start agent for this task…") { launchFor = t }.font(.caption).disabled(t.status.isTerminal)
+            }
+        }
+    }
+
+    @ViewBuilder private func dependencySection(_ t: TaskRecord) -> some View {
+        let deps = tasks.dependencies(of: t)
+        let dependents = tasks.dependents(of: t)
+        let candidates = tasks.dependencyCandidates(for: t)
+        labeled("Dependencies") {
+            if deps.isEmpty {
+                Text("No dependencies — can start whenever you are ready.").font(.system(size: 10)).foregroundStyle(Theme.textSecondary)
+            } else {
+                ForEach(deps) { d in
+                    HStack(spacing: 6) {
+                        Image(systemName: d.status == .completed ? "checkmark.circle.fill" : "clock")
+                            .font(.system(size: 10)).foregroundStyle(d.status == .completed ? Color.green : Theme.warning)
+                        Text(d.title).font(.caption).lineLimit(1)
+                        Text("(\(statusLabel(d.status)))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Button { Task { await tasks.removeDependency(t, on: d.id) } } label: { Image(systemName: "xmark.circle").font(.system(size: 10)) }
+                            .buttonStyle(.plain).help("Remove this dependency")
+                    }
+                }
+                if !tasks.isEligible(t) {
+                    Label("Waiting on \(tasks.unmetDependencies(of: t).count) unfinished task(s).", systemImage: "hand.raised").font(.system(size: 10)).foregroundStyle(Theme.warning)
+                }
+            }
+            if !candidates.isEmpty {
+                Menu("Add dependency…") {
+                    ForEach(candidates) { c in Button(c.title) { Task { await tasks.addDependency(t, on: c) } } }
+                }.font(.caption).fixedSize()
+            }
+            if !dependents.isEmpty {
+                Text("Blocks: \(dependents.map(\.title).joined(separator: ", "))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
         }
     }
@@ -167,6 +206,8 @@ struct TasksPanelView: View {
         case .blocked: "Blocked: \(e.detail ?? "")"
         case .unblocked: "Unblocked"
         case .note: e.detail ?? ""
+        case .dependencyAdded: "Now depends on \(tasks.byID[e.detail ?? ""]?.title ?? e.detail ?? "?")"
+        case .dependencyRemoved: "No longer depends on \(tasks.byID[e.detail ?? ""]?.title ?? e.detail ?? "?")"
         }
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 /// Record store for tasks and their events (ADR-011). Owns one SQLite database.
 /// It never completes a task on its own: completion is an explicit `transition` by a caller.
 public actor TaskStore {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     private let db: SQLiteDatabase
 
     public init(path: String) throws {
@@ -41,6 +41,11 @@ public actor TaskStore {
             }
             db.userVersion = 1
         }
+        if db.userVersion < 2 {
+            // Existing rows default to no dependencies; '[]' keeps the JSON-array contract uniform.
+            try db.inTransaction { try db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]';") }
+            db.userVersion = 2
+        }
     }
 
     // MARK: Writes
@@ -68,6 +73,7 @@ public actor TaskStore {
         guard let old = try task(id: record.id) else { throw TaskError.notFound(record.id) }
         var t = record
         t.status = old.status; t.createdAt = old.createdAt; t.completedAt = old.completedAt; t.blockedReason = old.blockedReason
+        t.dependsOn = old.dependsOn   // edited only via addDependency/removeDependency (cycle-checked)
         t.updatedAt = Self.now()
         var changed: [String] = []
         if old.title != t.title { changed.append("title") }
@@ -87,10 +93,17 @@ public actor TaskStore {
         return t
     }
 
+    /// `override` bypasses the dependency gate on a start (the caller showed the blockers and the
+    /// user chose to proceed). Nothing else may start a dependent against an unmet prerequisite.
     @discardableResult
-    public func transition(id: String, to next: TaskStatus, note: String? = nil) throws -> TaskRecord {
+    public func transition(id: String, to next: TaskStatus, note: String? = nil, override: Bool = false) throws -> TaskRecord {
         guard var t = try task(id: id) else { throw TaskError.notFound(id) }
         guard t.status.canTransition(to: next) else { throw TaskError.invalidTransition(from: t.status, to: next) }
+        if next == .inProgress, !override, !t.dependsOn.isEmpty {
+            let graph = try projectGraph(t.projectPath)
+            let unmet = t.unmetDependencies { graph[$0]?.status }
+            if !unmet.isEmpty { throw TaskError.dependenciesUnmet(unmet) }
+        }
         let from = t.status
         t.status = next
         t.updatedAt = Self.now()
@@ -140,9 +153,63 @@ public actor TaskStore {
     }
 
     /// Deletes the task and its events. Files, branches and worktrees are untouched (Part 8 §25).
+    /// Refuses while other tasks still depend on this one, so a dependent is never left blocked by a
+    /// prerequisite the user can no longer see (Bible Part 8 §12). Remove those edges first.
     public func delete(id: String) throws {
-        guard try task(id: id) != nil else { throw TaskError.notFound(id) }
+        guard let t = try task(id: id) else { throw TaskError.notFound(id) }
+        let dependents = try projectGraph(t.projectPath).values.filter { $0.dependsOn.contains(id) }.map(\.id)
+        if !dependents.isEmpty { throw TaskError.hasDependents(dependents) }
         try wrap { try db.run("DELETE FROM tasks WHERE id=?", [.text(id)]) }
+    }
+
+    // MARK: Dependencies (Bible Part 8 §12)
+
+    /// All tasks of a project keyed by id, terminal states included, for dependency resolution and
+    /// cycle detection — never the status-filtered snapshot the UI shows.
+    private func projectGraph(_ projectPath: String) throws -> [String: TaskRecord] {
+        let all = try wrap { try db.query(Self.selectSQL + " WHERE project_path=?", [.text(projectPath)], Self.row) }
+        return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// True if `target` is reachable from `start` by following `dependsOn` edges (used for cycles).
+    static func reaches(from start: String, to target: String, in graph: [String: TaskRecord]) -> Bool {
+        var stack = [start], seen = Set<String>()
+        while let cur = stack.popLast() {
+            if cur == target { return true }
+            guard seen.insert(cur).inserted, let node = graph[cur] else { continue }
+            stack.append(contentsOf: node.dependsOn)
+        }
+        return false
+    }
+
+    /// Adds `id depends on upstreamID`. Idempotent. Rejects self-, cross-project, missing, and cyclic edges.
+    @discardableResult
+    public func addDependency(id: String, dependsOn upstreamID: String) throws -> TaskRecord {
+        guard id != upstreamID else { throw TaskError.selfDependency }
+        guard var t = try task(id: id) else { throw TaskError.notFound(id) }
+        guard let upstream = try task(id: upstreamID) else { throw TaskError.notFound(upstreamID) }
+        guard upstream.projectPath == t.projectPath else { throw TaskError.crossProjectDependency }
+        if t.dependsOn.contains(upstreamID) { return t }
+        // Adding id→upstream forms a cycle iff upstream can already reach id by its own dependencies.
+        if Self.reaches(from: upstreamID, to: id, in: try projectGraph(t.projectPath)) { throw TaskError.dependencyCycle }
+        t.dependsOn.append(upstreamID); t.updatedAt = Self.now()
+        try wrap { try db.inTransaction {
+            try write(t)
+            try append(TaskEvent(taskID: id, kind: .dependencyAdded, detail: upstreamID))
+        } }
+        return t
+    }
+
+    @discardableResult
+    public func removeDependency(id: String, dependsOn upstreamID: String) throws -> TaskRecord {
+        guard var t = try task(id: id) else { throw TaskError.notFound(id) }
+        guard let idx = t.dependsOn.firstIndex(of: upstreamID) else { return t }
+        t.dependsOn.remove(at: idx); t.updatedAt = Self.now()
+        try wrap { try db.inTransaction {
+            try write(t)
+            try append(TaskEvent(taskID: id, kind: .dependencyRemoved, detail: upstreamID))
+        } }
+        return t
     }
 
     // MARK: Reads
@@ -180,32 +247,33 @@ public actor TaskStore {
 
     // MARK: SQL
 
-    private static let selectSQL = "SELECT id, project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at FROM tasks"
+    private static let selectSQL = "SELECT id, project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on FROM tasks"
 
     private static func row(_ r: SQLiteDatabase.Row) -> TaskRecord {
-        let labels = (try? JSONDecoder().decode([String].self, from: Data((r.string(7) ?? "[]").utf8))) ?? []
+        func json(_ s: String?) -> [String] { (try? JSONDecoder().decode([String].self, from: Data((s ?? "[]").utf8))) ?? [] }
         return TaskRecord(id: r.string(0)!, projectPath: r.string(1)!, title: r.string(2)!, details: r.string(3) ?? "",
                           acceptanceCriteria: r.string(4), status: TaskStatus(rawValue: r.string(5)!) ?? .inbox,
-                          priority: TaskPriority(rawValue: r.string(6)!) ?? .normal, labels: labels,
+                          priority: TaskPriority(rawValue: r.string(6)!) ?? .normal, labels: json(r.string(7)),
                           assignedAgentSessionID: r.string(8), worktreePath: r.string(9), blockedReason: r.string(10),
+                          dependsOn: json(r.string(14)),
                           createdAt: Date(timeIntervalSince1970: r.double(11)), updatedAt: Date(timeIntervalSince1970: r.double(12)),
                           completedAt: r.isNull(13) ? nil : Date(timeIntervalSince1970: r.double(13)))
     }
 
     private func params(_ t: TaskRecord) -> [SQLiteValue] {
-        let labels = String(decoding: (try? JSONEncoder().encode(t.labels)) ?? Data("[]".utf8), as: UTF8.self)
+        func json(_ a: [String]) -> String { String(decoding: (try? JSONEncoder().encode(a)) ?? Data("[]".utf8), as: UTF8.self) }
         return [.text(t.projectPath), .text(t.title), .text(t.details), .optText(t.acceptanceCriteria), .text(t.status.rawValue),
-                .text(t.priority.rawValue), .text(labels), .optText(t.assignedAgentSessionID), .optText(t.worktreePath),
+                .text(t.priority.rawValue), .text(json(t.labels)), .optText(t.assignedAgentSessionID), .optText(t.worktreePath),
                 .optText(t.blockedReason), .double(t.createdAt.timeIntervalSince1970), .double(t.updatedAt.timeIntervalSince1970),
-                .optDate(t.completedAt), .text(t.id)]
+                .optDate(t.completedAt), .text(json(t.dependsOn)), .text(t.id)]
     }
 
     private func insert(_ t: TaskRecord) throws {
-        try db.run("INSERT INTO tasks (project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params(t))
+        try db.run("INSERT INTO tasks (project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on, id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params(t))
     }
 
     private func write(_ t: TaskRecord) throws {
-        try db.run("UPDATE tasks SET project_path=?, title=?, details=?, acceptance_criteria=?, status=?, priority=?, labels=?, assigned_agent_session_id=?, worktree_path=?, blocked_reason=?, created_at=?, updated_at=?, completed_at=? WHERE id=?", params(t))
+        try db.run("UPDATE tasks SET project_path=?, title=?, details=?, acceptance_criteria=?, status=?, priority=?, labels=?, assigned_agent_session_id=?, worktree_path=?, blocked_reason=?, created_at=?, updated_at=?, completed_at=?, depends_on=? WHERE id=?", params(t))
     }
 
     private func append(_ e: TaskEvent) throws {

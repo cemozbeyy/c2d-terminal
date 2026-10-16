@@ -16,7 +16,7 @@ private let project = "/tmp/proj-a"
         #expect(try await reopened.task(id: t.id)?.title == "persisted")
         let db = try SQLiteDatabase(path: path)
         #expect(db.journalMode == "wal")
-        #expect(db.userVersion == 1)
+        #expect(db.userVersion == TaskStore.schemaVersion)
     }
 
     @Test func createAndReadRoundTrip() async throws {
@@ -132,6 +132,115 @@ private let project = "/tmp/proj-a"
         try db.inTransaction { try db.run("INSERT INTO t (v) VALUES (?)", [.text("kept")]) }
         #expect(try db.query("SELECT v FROM t", []) { $0.string(0) } == ["kept"])
         #expect(throws: SQLiteError.self) { try db.exec("NOT SQL") }
+    }
+
+    // MARK: Dependencies (Bible Part 8 §12)
+
+    @Test func dependencyGatesStartUntilUpstreamCompletes() async throws {
+        let store = try TaskStore.inMemory()
+        let a = try await store.create(TaskRecord(projectPath: project, title: "A upstream"))
+        let b = try await store.create(TaskRecord(projectPath: project, title: "B dependent"))
+        _ = try await store.addDependency(id: b.id, dependsOn: a.id)
+        // Resolve B through the store graph (terminal tasks included), not a filtered snapshot.
+        func unmet(_ id: String) async throws -> [String] {
+            let all = try await store.tasks(projectPath: project, includeTerminal: true)
+            let map = Dictionary(all.map { ($0.id, $0.status) }, uniquingKeysWith: { x, _ in x })
+            return try await store.task(id: id)!.unmetDependencies { map[$0] }
+        }
+        #expect(try await unmet(b.id) == [a.id])
+        // B cannot start while A is open.
+        _ = try await store.transition(id: b.id, to: .ready)
+        await #expect(throws: TaskError.dependenciesUnmet([a.id])) { try await store.transition(id: b.id, to: .inProgress) }
+        // override starts it anyway (informed consent).
+        _ = try await store.transition(id: b.id, to: .inProgress, override: true)
+        #expect(try await store.task(id: b.id)?.status == .inProgress)
+        _ = try await store.transition(id: b.id, to: .ready)
+        // Complete A → B is eligible and starts without override.
+        _ = try await store.transition(id: a.id, to: .ready)
+        _ = try await store.transition(id: a.id, to: .inProgress)
+        _ = try await store.transition(id: a.id, to: .completed)
+        #expect(try await unmet(b.id).isEmpty)
+        _ = try await store.transition(id: b.id, to: .inProgress)
+        #expect(try await store.task(id: b.id)?.status == .inProgress)
+    }
+
+    @Test func cancelledUpstreamKeepsDependentBlocked() async throws {
+        let store = try TaskStore.inMemory()
+        let a = try await store.create(TaskRecord(projectPath: project, title: "A"))
+        let b = try await store.create(TaskRecord(projectPath: project, title: "B"))
+        _ = try await store.addDependency(id: b.id, dependsOn: a.id)
+        _ = try await store.transition(id: a.id, to: .cancelled)   // upstream dropped, not completed
+        _ = try await store.transition(id: b.id, to: .ready)
+        // A cancelled prerequisite is not "satisfied": B must not run against a dropped assumption.
+        await #expect(throws: TaskError.dependenciesUnmet([a.id])) { try await store.transition(id: b.id, to: .inProgress) }
+    }
+
+    @Test func rejectsSelfCrossProjectMissingAndCyclicEdges() async throws {
+        let store = try TaskStore.inMemory()
+        let a = try await store.create(TaskRecord(projectPath: project, title: "A"))
+        let b = try await store.create(TaskRecord(projectPath: project, title: "B"))
+        let other = try await store.create(TaskRecord(projectPath: "/tmp/proj-b", title: "X"))
+        await #expect(throws: TaskError.selfDependency) { try await store.addDependency(id: a.id, dependsOn: a.id) }
+        await #expect(throws: TaskError.crossProjectDependency) { try await store.addDependency(id: a.id, dependsOn: other.id) }
+        await #expect(throws: TaskError.notFound("nope")) { try await store.addDependency(id: a.id, dependsOn: "nope") }
+        // A→B, then B→A would close a cycle.
+        _ = try await store.addDependency(id: a.id, dependsOn: b.id)
+        await #expect(throws: TaskError.dependencyCycle) { try await store.addDependency(id: b.id, dependsOn: a.id) }
+        // Three-node cycle: A→B→C, then C→A.
+        let c = try await store.create(TaskRecord(projectPath: project, title: "C"))
+        _ = try await store.addDependency(id: b.id, dependsOn: c.id)
+        await #expect(throws: TaskError.dependencyCycle) { try await store.addDependency(id: c.id, dependsOn: a.id) }
+    }
+
+    @Test func addIsIdempotentAndRemoveClearsTheEdge() async throws {
+        let store = try TaskStore.inMemory()
+        let a = try await store.create(TaskRecord(projectPath: project, title: "A"))
+        let b = try await store.create(TaskRecord(projectPath: project, title: "B"))
+        _ = try await store.addDependency(id: b.id, dependsOn: a.id)
+        _ = try await store.addDependency(id: b.id, dependsOn: a.id)   // idempotent
+        #expect(try await store.task(id: b.id)?.dependsOn == [a.id])
+        #expect(try await store.events(taskID: b.id).filter { $0.kind == .dependencyAdded }.count == 1)
+        _ = try await store.removeDependency(id: b.id, dependsOn: a.id)
+        #expect(try await store.task(id: b.id)?.dependsOn.isEmpty == true)
+        #expect(try await store.events(taskID: b.id).contains { $0.kind == .dependencyRemoved })
+    }
+
+    @Test func deleteRefusesWhileDependentsExist() async throws {
+        let store = try TaskStore.inMemory()
+        let a = try await store.create(TaskRecord(projectPath: project, title: "A"))
+        let b = try await store.create(TaskRecord(projectPath: project, title: "B"))
+        _ = try await store.addDependency(id: b.id, dependsOn: a.id)
+        await #expect(throws: TaskError.hasDependents([b.id])) { try await store.delete(id: a.id) }
+        #expect(try await store.task(id: a.id) != nil, "nothing deleted on refusal")
+        _ = try await store.removeDependency(id: b.id, dependsOn: a.id)
+        try await store.delete(id: a.id)   // now allowed
+        #expect(try await store.task(id: a.id) == nil)
+    }
+
+    @Test func migratesV1DatabaseAddingDependsOnColumn() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-tasks-v1-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("records.sqlite").path
+        // Build the v1 schema by hand (no depends_on column) and insert a row.
+        do {
+            let db = try SQLiteDatabase(path: path)
+            try db.exec("""
+            CREATE TABLE tasks (
+              id TEXT PRIMARY KEY, project_path TEXT NOT NULL, title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '',
+              acceptance_criteria TEXT, status TEXT NOT NULL, priority TEXT NOT NULL, labels TEXT NOT NULL DEFAULT '[]',
+              assigned_agent_session_id TEXT, worktree_path TEXT, blocked_reason TEXT,
+              created_at REAL NOT NULL, updated_at REAL NOT NULL, completed_at REAL);
+            """)
+            try db.run("INSERT INTO tasks (id, project_path, title, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                       [.text("old-1"), .text(project), .text("legacy"), .text("inbox"), .text("normal"), .double(1), .double(1)])
+            db.userVersion = 1
+        }
+        // Opening through TaskStore must migrate to v2 and read the row back with an empty dependsOn.
+        let store = try TaskStore(path: path)
+        let back = try await store.task(id: "old-1")
+        #expect(back?.title == "legacy" && back?.dependsOn == [])
+        #expect(try SQLiteDatabase(path: path).userVersion == 2)
     }
 
     @Test func twoHundredTasksSearchUnderASecond() async throws {

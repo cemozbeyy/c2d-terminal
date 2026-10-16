@@ -273,7 +273,9 @@ final class WorkspaceController {
             app.updateAgentSession(agentID) { $0.taskID = task.id; $0.taskSummary = task.title }
             Task {
                 await tasks.assign(task, agentSessionID: agentID)
-                if task.status.canTransition(to: .inProgress) { await tasks.transition(task, to: .inProgress, note: "agent session started") }
+                // The confirmed launch sheet (which shows any unmet dependencies) is the informed
+                // consent, so starting here overrides the dependency gate rather than failing silently.
+                if task.status.canTransition(to: .inProgress) { await tasks.transition(task, to: .inProgress, note: "agent session started", override: true) }
             }
         }
     }

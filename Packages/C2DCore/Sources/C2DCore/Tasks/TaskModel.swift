@@ -38,6 +38,8 @@ public struct TaskRecord: Codable, Hashable, Sendable, Identifiable {
     public var assignedAgentSessionID: String?
     public var worktreePath: String?
     public var blockedReason: String?
+    /// IDs of tasks (same project) that must complete before this one may start (Bible Part 8 §12).
+    public var dependsOn: [String]
     public var createdAt: Date
     public var updatedAt: Date
     public var completedAt: Date?
@@ -45,16 +47,25 @@ public struct TaskRecord: Codable, Hashable, Sendable, Identifiable {
     public init(id: String = UUID().uuidString, projectPath: String, title: String, details: String = "",
                 acceptanceCriteria: String? = nil, status: TaskStatus = .inbox, priority: TaskPriority = .normal,
                 labels: [String] = [], assignedAgentSessionID: String? = nil, worktreePath: String? = nil,
-                blockedReason: String? = nil, createdAt: Date = Date(), updatedAt: Date = Date(), completedAt: Date? = nil) {
+                blockedReason: String? = nil, dependsOn: [String] = [], createdAt: Date = Date(), updatedAt: Date = Date(), completedAt: Date? = nil) {
         self.id = id; self.projectPath = projectPath; self.title = title; self.details = details
         self.acceptanceCriteria = acceptanceCriteria; self.status = status; self.priority = priority
         self.labels = labels; self.assignedAgentSessionID = assignedAgentSessionID; self.worktreePath = worktreePath
-        self.blockedReason = blockedReason; self.createdAt = createdAt; self.updatedAt = updatedAt; self.completedAt = completedAt
+        self.blockedReason = blockedReason; self.dependsOn = dependsOn; self.createdAt = createdAt; self.updatedAt = updatedAt; self.completedAt = completedAt
+    }
+
+    /// IDs of this task's dependencies that are not yet satisfied. A dependency is satisfied only when
+    /// the upstream task is `.completed`; a cancelled, deleted (absent from `statusOf`) or still-running
+    /// upstream stays a blocker, so a dependent never proceeds against a dropped or outdated
+    /// prerequisite (Bible Part 8 §12: "do not silently run dependent tasks against missing or
+    /// outdated assumptions").
+    public func unmetDependencies(statusOf: (String) -> TaskStatus?) -> [String] {
+        dependsOn.filter { statusOf($0) != .completed }
     }
 }
 
 public enum TaskEventKind: String, Codable, Sendable {
-    case created, statusChanged, edited, assigned, blocked, unblocked, note
+    case created, statusChanged, edited, assigned, blocked, unblocked, note, dependencyAdded, dependencyRemoved
 }
 
 /// Append-only history (Part 8 §22). Editing a task never rewrites past events.
@@ -78,4 +89,11 @@ public enum TaskError: Error, Equatable, Sendable {
     case notFound(String)
     case invalidTransition(from: TaskStatus, to: TaskStatus)
     case storage(SQLiteError)
+    case selfDependency
+    case crossProjectDependency
+    case dependencyCycle
+    /// Starting is gated: these upstream task IDs are not yet complete (pass `override` to start anyway).
+    case dependenciesUnmet([String])
+    /// Deleting is refused: these task IDs still depend on the target (remove the edges first).
+    case hasDependents([String])
 }

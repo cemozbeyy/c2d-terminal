@@ -269,6 +269,36 @@ final class AppModel {
                 }
             }
         }
+        // `-c2dTaskDepCheck YES` exercises the task dependency gate end to end through the controller:
+        // B depends on A, B can't start while A is open, starts once A completes, and A can't be deleted
+        // while B depends on it. Creates and then deletes its own probe tasks.
+        if UserDefaults.standard.bool(forKey: "c2dTaskDepCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let tc = self?.workspace?.tasks, tc.isAvailable else { debugTrace("taskDepCheck: no task store"); return }
+                guard let a = await tc.create(title: "DepCheck A"), let b = await tc.create(title: "DepCheck B") else { debugTrace("taskDepCheck: create failed"); return }
+                @MainActor func b0() -> TaskRecord { tc.byID[b.id] ?? b }
+                @MainActor func a0() -> TaskRecord { tc.byID[a.id] ?? a }
+                await tc.addDependency(b0(), on: a0())
+                let blockedWhileOpen = !tc.isEligible(b0())
+                await tc.transition(b0(), to: .ready)
+                tc.lastError = nil
+                await tc.transition(b0(), to: .inProgress)   // no override → gated
+                let startRefused = tc.lastError != nil && tc.byID[b.id]?.status != .inProgress
+                await tc.transition(a0(), to: .ready); await tc.transition(a0(), to: .inProgress); await tc.transition(a0(), to: .completed)
+                let eligibleAfter = tc.isEligible(b0())
+                tc.lastError = nil
+                await tc.transition(b0(), to: .inProgress)   // now allowed
+                let startedAfter = tc.byID[b.id]?.status == .inProgress && tc.lastError == nil
+                tc.lastError = nil
+                await tc.delete(a0())   // A still has dependent B → refused
+                let deleteRefused = tc.lastError != nil && tc.byID[a.id] != nil
+                await tc.removeDependency(b0(), on: a.id)
+                await tc.delete(b0()); await tc.delete(a0())
+                let cleaned = tc.byID[a.id] == nil && tc.byID[b.id] == nil
+                debugTrace("taskDepCheck: blockedWhileOpen=\(blockedWhileOpen) startRefused=\(startRefused) eligibleAfter=\(eligibleAfter) startedAfter=\(startedAfter) deleteRefused=\(deleteRefused) cleaned=\(cleaned)")
+            }
+        }
         // `-c2dExplorerCheck YES` exercises the explorer file operations on disk under a scratch folder
         // and verifies each result, including the safety guards (no overwrite, no "/" in names, trash not delete).
         if UserDefaults.standard.bool(forKey: "c2dExplorerCheck") {

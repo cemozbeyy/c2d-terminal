@@ -119,6 +119,13 @@ struct AgentLaunchSheet: View {
                 Text("The agent runs with your user's full permissions and its own approval prompts inside the terminal. C2D does not sandbox it (Bible Part 7 §24).")
                     .font(.caption).foregroundStyle(Theme.textSecondary)
             }
+            if let t = linkedTask {
+                let unmet = workspace.tasks.unmetDependencies(of: t)
+                if !unmet.isEmpty {
+                    Label("This task waits on \(unmet.count) unfinished task(s): \(unmet.map(\.title).joined(separator: ", ")). Launching starts it against incomplete prerequisites.", systemImage: "hand.raised")
+                        .font(.caption).foregroundStyle(Theme.warning)
+                }
+            }
             if let error { Text(error).font(.caption).foregroundStyle(Theme.warning) }
             HStack {
                 Spacer()
