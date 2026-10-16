@@ -18,12 +18,19 @@ final class ExplorerController {
 
     init(rootPath: String) {
         self.rootPath = rootPath
-        expanded.insert(rootPath)
+        expanded.insert(Self.canonical(rootPath))
         reload(rootPath)
     }
 
+    /// Directory listings come back symlink-resolved (FileManager resolves /tmp → /private/tmp), while a
+    /// path handed in from the project root or built by string concat may not be. Keying everything by the
+    /// resolved form keeps `children` consistent, so an operation's reload refreshes what the view reads.
+    static func canonical(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
     func entries(in directory: String) -> [FileEntry] {
-        children[directory] ?? []
+        children[Self.canonical(directory)] ?? []
     }
 
     func toggle(_ entry: FileEntry) {
@@ -37,12 +44,13 @@ final class ExplorerController {
     }
 
     func reload(_ directory: String) {
+        let key = Self.canonical(directory)
         do {
-            children[directory] = try DirectoryListing.list(URL(fileURLWithPath: directory), includeHidden: includeHidden)
-            errors[directory] = nil
+            children[key] = try DirectoryListing.list(URL(fileURLWithPath: key), includeHidden: includeHidden)
+            errors[key] = nil
         } catch {
-            children[directory] = []
-            errors[directory] = error.localizedDescription
+            children[key] = []
+            errors[key] = error.localizedDescription
         }
     }
 
@@ -69,6 +77,7 @@ final class ExplorerController {
     // MARK: File operations (Bible Part 5 §3.4) — explicit targets, no silent overwrite
 
     func createFile(in directory: String, name: String) -> String? {
+        let directory = Self.canonical(directory)
         let target = URL(fileURLWithPath: directory).appendingPathComponent(name).path
         guard validName(name), !FileManager.default.fileExists(atPath: target) else { lastError = "\(name) already exists or is not a valid name."; return nil }
         guard FileManager.default.createFile(atPath: target, contents: Data()) else { lastError = "Could not create \(name)."; return nil }
@@ -77,6 +86,7 @@ final class ExplorerController {
     }
 
     func createFolder(in directory: String, name: String) {
+        let directory = Self.canonical(directory)
         let target = URL(fileURLWithPath: directory).appendingPathComponent(name).path
         guard validName(name), !FileManager.default.fileExists(atPath: target) else { lastError = "\(name) already exists or is not a valid name."; return }
         do { try FileManager.default.createDirectory(atPath: target, withIntermediateDirectories: false) } catch { lastError = "\(error.localizedDescription)" }

@@ -254,6 +254,35 @@ final class AppModel {
                 }
             }
         }
+        // `-c2dExplorerCheck YES` exercises the explorer file operations on disk under a scratch folder
+        // and verifies each result, including the safety guards (no overwrite, no "/" in names, trash not delete).
+        if UserDefaults.standard.bool(forKey: "c2dExplorerCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let ws = self?.workspace else { return }
+                let ex = ws.explorer
+                let root = ws.projectPath
+                let fm = FileManager.default
+                func exists(_ rel: String) -> Bool { fm.fileExists(atPath: root + "/" + rel) }
+                ex.createFolder(in: root, name: "c2d_probe")
+                let folderOK = exists("c2d_probe") && ex.entries(in: root).contains { $0.name == "c2d_probe" && $0.isDirectory }
+                guard let dir = ex.entries(in: root).first(where: { $0.name == "c2d_probe" })?.path else { debugTrace("explorerCheck: probe folder not listed at root"); return }
+                let filePath = ex.createFile(in: dir, name: "note.txt")
+                let fileOK = filePath != nil && exists("c2d_probe/note.txt") && ex.entries(in: dir).contains { $0.name == "note.txt" }
+                guard let entry = ex.entries(in: dir).first(where: { $0.name == "note.txt" }) else { debugTrace("explorerCheck: created file not listed"); return }
+                let renamed = ex.rename(entry, to: "renamed.md")
+                let renameOK = renamed != nil && exists("c2d_probe/renamed.md") && !exists("c2d_probe/note.txt")
+                // Guards: duplicate name and a path-separator name must both be refused.
+                ex.createFolder(in: dir, name: "renamed.md"); let dupRefused = ex.lastError != nil
+                let badName = ex.createFile(in: dir, name: "../escape"); let slashRefused = badName == nil && !exists("escape")
+                // Trash the renamed file, then the probe folder; both leave disk and the listing.
+                guard let r = ex.entries(in: dir).first(where: { $0.name == "renamed.md" }) else { debugTrace("explorerCheck: renamed file not listed"); return }
+                ex.trash(r); let fileTrashed = !exists("c2d_probe/renamed.md")
+                if let probe = ex.entries(in: root).first(where: { $0.name == "c2d_probe" }) { ex.trash(probe) }
+                let folderTrashed = !exists("c2d_probe")
+                debugTrace("explorerCheck: folder=\(folderOK) file=\(fileOK) rename=\(renameOK) dupRefused=\(dupRefused) slashRefused=\(slashRefused) fileTrashed=\(fileTrashed) folderTrashed=\(folderTrashed)")
+            }
+        }
         // `-c2dNewTerminal YES` starts a fresh shell (a restored layout shows last run's ended one).
         if UserDefaults.standard.bool(forKey: "c2dNewTerminal") {
             Task { [weak self] in try? await Task.sleep(for: .milliseconds(500)); self?.workspace?.newTerminal() }
