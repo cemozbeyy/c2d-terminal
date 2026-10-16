@@ -70,13 +70,7 @@ final class WorkspaceController {
         } else if let hiddenEditor = layout.hidden.first(where: { layout.panels[$0]?.kind == .editor }) {
             restore(hiddenEditor); target = hiddenEditor
         } else {
-            let panel = Panel(kind: .editor, title: "Editor")
-            mutate("new editor") { layout in
-                if let g = layout.groupIDs.first { try layout.add(panel, beside: g, edge: .right) } else {
-                    layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
-                }
-            }
-            target = panel.id
+            target = addPanel(.editor, title: "Editor", besideGroup: layout.groupIDs.first)
         }
         activate(target)
         editor(for: target).open(path: path)
@@ -86,12 +80,19 @@ final class WorkspaceController {
     func showOptimizerPanel() {
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
         if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }
-        let panel = Panel(kind: .tokenOptimizer, title: "Token Optimizer")
-        mutate("open optimizer") { layout in
-            if let g = layout.groupIDs.last { try layout.add(panel, beside: g, edge: .right) } else {
+        addPanel(.tokenOptimizer, title: "Token Optimizer", besideGroup: layout.groupIDs.last)
+    }
+
+    /// Adds a panel of any kind to the right of `besideGroup` (or as the only panel of an empty layout).
+    @discardableResult
+    func addPanel(_ kind: PanelKind, title: String, besideGroup: NodeID? = nil) -> PanelID {
+        let panel = Panel(kind: kind, title: title)
+        mutate("new \(kind.rawValue)") { layout in
+            if let g = besideGroup ?? layout.groupIDs.last { try layout.add(panel, beside: g, edge: .right) } else {
                 layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
             }
         }
+        return panel.id
     }
 
     func fileRenamed(from old: String, to new: String) {
@@ -195,7 +196,7 @@ final class WorkspaceController {
             if let t = terminals[id] { return t.isRunning || t.record != nil }
             return app.sessions.record(forPanel: id) != nil || app.agentSessions.record(forPanel: id) != nil
         case .editor:
-            return !(editors[id]?.tabs.isEmpty ?? true)
+            return !editor(for: id).tabs.isEmpty   // materializes a restored editor; its tabs live on disk until then
         default:
             return false   // explorer, git, tasks, optimizer are stateless views over shared state
         }
@@ -208,7 +209,7 @@ final class WorkspaceController {
             let keep: Bool
             switch panel.kind {
             case .terminal, .agentSession: keep = terminals[id]?.isRunning ?? false
-            case .editor: keep = !(editors[id]?.tabs.isEmpty ?? true)
+            case .editor: keep = !editor(for: id).tabs.isEmpty
             default: keep = false
             }
             if !keep { close(id) }

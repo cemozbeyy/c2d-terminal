@@ -186,6 +186,57 @@ final class AppModel {
                 }
             }
         }
+        // `-c2dHiddenPanelCheck setup|cleanup` exercises "Remove empty and ended hidden panels".
+        // setup: hides a running terminal, an exited terminal, an editor with a tab, an empty editor and a
+        // Git panel, then cleans up. cleanup (next launch): cleans the restored hidden list, where the editor
+        // with a tab has no controller yet and the terminal ended with the previous run.
+        if let mode = UserDefaults.standard.string(forKey: "c2dHiddenPanelCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                @MainActor func describe(_ tag: String) {
+                    let items = ws.layout.hidden.map { id -> String in
+                        let kind = ws.layout.panels[id]?.kind.rawValue ?? "?"
+                        var st = ""
+                        if let t = ws.terminals[id] { st = t.isRunning ? "running" : "ended" }
+                        else if let r = self.sessions.record(forPanel: id) { st = "record:\(r.lifecycle)" }
+                        if let e = ws.editors[id] { st = "tabs=\(e.tabs.count)" }
+                        return "\(id.rawValue.prefix(6)):\(kind)[\(st)]"
+                    }
+                    debugTrace("hiddenPanelCheck \(tag): hidden=\(items) visible=\(ws.layout.visiblePanelIDs.count) panels=\(ws.layout.panels.count)")
+                }
+                if mode == "setup" {
+                    // A restored layout shows last run's ended shell instead of respawning, so start two fresh ones.
+                    ws.newTerminal(); ws.newTerminal()
+                    for _ in 0..<50 { try? await Task.sleep(for: .milliseconds(200)); if ws.terminals.values.filter({ $0.isRunning }).count >= 2 { break } }
+                    let live = ws.terminals.values.filter { $0.isRunning }
+                    guard live.count >= 2 else { debugTrace("hiddenPanelCheck: shells never ran (\(live.count))"); return }
+                    let running = live[0], ended = live[1]
+                    ended.write(Data("exit\n".utf8))
+                    for _ in 0..<50 { try? await Task.sleep(for: .milliseconds(200)); if !ended.isRunning { break } }
+                    ws.openFile(path: ws.projectPath + "/src/a.swift")
+                    let withTab = ws.layout.visiblePanelIDs.first { ws.layout.panels[$0]?.kind == .editor }!
+                    let emptyEditor = ws.addPanel(.editor, title: "Editor")
+                    let git = ws.addPanel(.gitChanges, title: "Changes")
+                    for id in [running.panelID, ended.panelID, withTab, emptyEditor, git] { ws.hide(id) }
+                    describe("before")
+                    ws.cleanUpHiddenPanels()
+                    try? await Task.sleep(for: .milliseconds(300))
+                    describe("after")
+                    let pid = running.record?.pid ?? -1
+                    let gone = [ended.panelID, emptyEditor, git].allSatisfy { ws.layout.panels[$0] == nil && ws.terminals[$0] == nil && ws.editors[$0] == nil }
+                    debugTrace("hiddenPanelCheck verdict: runningKept=\(ws.layout.hidden.contains(running.panelID) && running.isRunning && kill(pid, 0) == 0) tabKept=\(ws.layout.hidden.contains(withTab) && ws.editors[withTab]?.tabs.count == 1) removed=\(gone)")
+                } else {
+                    describe("before")
+                    let editorsBefore = ws.editors.count
+                    ws.cleanUpHiddenPanels()
+                    try? await Task.sleep(for: .milliseconds(300))
+                    describe("after")
+                    let survivors = ws.layout.hidden.compactMap { ws.layout.panels[$0]?.kind.rawValue }
+                    debugTrace("hiddenPanelCheck verdict: editorsBefore=\(editorsBefore) survivors=\(survivors) tabs=\(ws.layout.hidden.compactMap { ws.editors[$0]?.tabs.count })")
+                }
+            }
+        }
         // `-c2dRunCommand "<line>"` types one line into the first terminal once its shell is running.
         // Debug builds only; exists so runtime checks can exercise the input path without a keyboard.
         if let line = UserDefaults.standard.string(forKey: "c2dRunCommand") {
