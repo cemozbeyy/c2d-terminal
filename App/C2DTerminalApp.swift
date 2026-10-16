@@ -59,6 +59,8 @@ struct C2DTerminalApp: App {
                     .disabled(model.workspace?.editors.values.contains { $0.activeTab != nil } != true)
             }
             CommandGroup(after: .textEditing) {
+                Button("Search Files & Commands…") { model.showPalette() }
+                    .keyboardShortcut("p", modifiers: .command)   // ⌘P, alongside ⌘K
                 Button("Find in Project…") { model.showPalette(prefill: "/") }
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                     .disabled(model.workspace == nil)
