@@ -334,6 +334,26 @@ final class AppModel {
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
             }
         }
+        // `-c2dStressSession <file>` churns the actual app (editor open/close, panel hide/restore) for
+        // a bounded number of iterations and reports resident memory + child-process count at start/end
+        // — the app-layer leak dimension the core StabilityTests do not cover. Needs -c2dOpenProject.
+        if let file = UserDefaults.standard.string(forKey: "c2dStressSession") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let ws = self?.workspace else { debugTrace("stressSession: no workspace"); return }
+                let rss0 = currentResidentMB(), kids0 = childProcessCount()
+                let iterations = 40
+                for _ in 0..<iterations {
+                    ws.openFile(path: file)
+                    if let editorPanel = ws.editors.first(where: { !$0.value.tabs.isEmpty })?.key { ws.close(editorPanel) }
+                    if let term = ws.terminals.keys.first { ws.hide(term); ws.restore(term) }
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+                let rss1 = currentResidentMB(), kids1 = childProcessCount()
+                debugTrace("stressSession: iterations=\(iterations) rss \(rss0)->\(rss1)MB children \(kids0)->\(kids1) editors=\(ws.editors.count) terminals=\(ws.terminals.count)")
+            }
+        }
         // `-c2dDividerCheck YES` exercises the divider-drag outcome (WorkspaceController.setWeights →
         // WorkspaceLayout.setWeights) and verifies the split's weights actually change. The SwiftUI
         // DragGesture itself stays manual (like the dock drop); its effect is what this checks.
@@ -706,4 +726,22 @@ private func firstTextView(_ v: NSView) -> NSTextView? {
     if let tv = v as? NSTextView { return tv }
     for sub in v.subviews { if let f = firstTextView(sub) { return f } }
     return nil
+}
+
+/// Current resident set size in whole MB (mach_task_basic_info), for e2e leak observation.
+private func currentResidentMB() -> Int {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        }
+    }
+    return kr == KERN_SUCCESS ? Int(info.resident_size) / 1_000_000 : -1
+}
+
+/// Number of direct child processes of this process.
+private func childProcessCount() -> Int {
+    let bytes = proc_listchildpids(getpid(), nil, 0)
+    return bytes <= 0 ? 0 : Int(bytes) / MemoryLayout<pid_t>.stride
 }
