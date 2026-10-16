@@ -13,6 +13,7 @@ struct MainWindowView: View {
                 CommandPaletteView(isPresented: $model.paletteVisible).padding(.top, 60).frame(maxHeight: .infinity, alignment: .top)
             }
         }
+        .tooltipLayer()                // hover tooltips render here, above everything, never clipped
         .preferredColorScheme(.dark)   // dark-first product (Bible §5.1); light tokens exist but are unverified
         .sheet(isPresented: Binding(get: { model.diagnosticsPreview != nil }, set: { if !$0 { model.diagnosticsPreview = nil } })) {
             DiagnosticsExportSheet(text: model.diagnosticsPreview ?? "").environment(model)

@@ -79,18 +79,37 @@ extension View {
     /// Pointing-hand cursor on hover, to mark a control as clickable.
     func clickCursor() -> some View { pointerStyle(.link) }
     /// A fast, readable hover tooltip (keeps `.help` for VoiceOver). Use for icon-only controls so it's
-    /// clear what they do. `edge` is where the bubble appears relative to the control.
-    func tooltip(_ text: String, edge: Edge = .bottom) -> some View {
-        modifier(TooltipModifier(text: text, edge: edge)).help(text)
+    /// clear what they do. The bubble is rendered at the window root (see `.tooltipLayer()`), so it is
+    /// never clipped by a panel or hidden behind sibling content.
+    func tooltip(_ text: String) -> some View {
+        modifier(TooltipSource(text: text)).help(text)
+    }
+
+    /// Install once at the window root: draws the active hover tooltip above everything.
+    func tooltipLayer() -> some View {
+        overlayPreferenceValue(TooltipKey.self) { data in
+            GeometryReader { geo in
+                if let data {
+                    let r = geo[data.anchor]
+                    TooltipBubble(text: data.text)
+                        .position(x: min(max(r.midX, 90), geo.size.width - 90), y: r.maxY + 16)
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 
-private struct TooltipModifier: ViewModifier {
+struct TooltipData: Equatable { let text: String; let anchor: Anchor<CGRect> }
+struct TooltipKey: PreferenceKey {
+    static let defaultValue: TooltipData? = nil
+    static func reduce(value: inout TooltipData?, nextValue: () -> TooltipData?) { if let n = nextValue() { value = n } }
+}
+
+private struct TooltipSource: ViewModifier {
     let text: String
-    let edge: Edge
     @State private var show = false
     @State private var pending: Task<Void, Never>?
-
     func body(content: Content) -> some View {
         content
             .onHover { inside in
@@ -99,26 +118,20 @@ private struct TooltipModifier: ViewModifier {
                     pending = Task { try? await Task.sleep(for: .milliseconds(350)); if !Task.isCancelled { show = true } }
                 } else { show = false }
             }
-            .overlay(alignment: alignment) { if show { bubble.offset(offset).transition(.opacity).zIndex(999) } }
-            .animation(.easeOut(duration: 0.1), value: show)
+            .anchorPreference(key: TooltipKey.self, value: .bounds) { show ? TooltipData(text: text, anchor: $0) : nil }
     }
+}
 
-    private var bubble: some View {
+private struct TooltipBubble: View {
+    let text: String
+    var body: some View {
         Text(text)
             .font(Theme.Typography.metadata).foregroundStyle(Theme.textPrimary)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderStrong))
-            .fixedSize().shadow(color: .black.opacity(0.3), radius: 6, y: 2)
-            .allowsHitTesting(false)
-    }
-
-    private var alignment: Alignment {
-        switch edge { case .bottom: .bottom; case .top: .top; case .leading: .leading; default: .trailing }
-    }
-    private var offset: CGSize {
-        switch edge { case .bottom: .init(width: 0, height: 30); case .top: .init(width: 0, height: -30)
-        case .leading: .init(width: -8, height: 0); default: .init(width: 8, height: 0) }
+            .fixedSize().shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+            .transition(.opacity)
     }
 }
 
