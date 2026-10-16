@@ -17,6 +17,13 @@ public enum GitError: Error, Equatable, Sendable {
     case conflictMarkersRemain(lines: [Int])
     /// The path is not in a conflicted state (nothing to resolve).
     case notConflicted
+    // Remote synchronization (Bible Part 6 §10).
+    case authenticationRequired
+    case networkUnavailable
+    case pushRejected(stderr: String)
+    case noUpstreamConfigured
+    /// The operation was terminated (e.g. the 30s timeout); the remote state is unknown, not failed.
+    case operationTimedOut
 }
 
 /// Which merge-conflict shape a path is in, from `git status --porcelain=v2` `u` XY codes.
@@ -463,6 +470,62 @@ public actor GitRepository {
             throw GitError.commandFailed(code: r.code, stderr: r.stderr)
         }
         return try await run(["rev-parse", "HEAD"]).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: Remote synchronization (Bible Part 6 §10) — fetch, pull, push as distinct operations.
+
+    /// Maps a failed remote command to a specific error. Order matters: "rejected" also appears in auth
+    /// failures, so auth is checked first. A terminated process (timeout) is `operationTimedOut`.
+    static func classifyRemoteFailure(code: Int32, stderr: String) -> GitError {
+        if code == 15 || code == 143 || code < 0 { return .operationTimedOut }
+        let s = stderr.lowercased()
+        if s.contains("authentication failed") || s.contains("could not read username") || s.contains("could not read password")
+            || s.contains("permission denied") || s.contains("permission to") || s.contains("403 forbidden")
+            || s.contains("terminal prompts disabled") || s.contains("invalid username or password") {
+            return .authenticationRequired
+        }
+        if s.contains("could not resolve host") || s.contains("unable to access") || s.contains("connection refused")
+            || s.contains("connection timed out") || s.contains("could not connect") || s.contains("network is unreachable")
+            || s.contains("failed to connect") {
+            return .networkUnavailable
+        }
+        if s.contains("[rejected]") || s.contains("non-fast-forward") || s.contains("fetch first")
+            || s.contains("updates were rejected") || s.contains("failed to push") {
+            return .pushRejected(stderr: stderr)
+        }
+        if s.contains("no upstream") || s.contains("has no upstream branch") || s.contains("no configured push destination") {
+            return .noUpstreamConfigured
+        }
+        return .commandFailed(code: code, stderr: stderr)
+    }
+
+    /// Updates remote-tracking refs from `remote`. Never changes the working tree; ahead/behind in a
+    /// later `status()` reflect the fetched refs.
+    public func fetch(remote: String = "origin") async throws {
+        let r = try await run(["fetch", remote], allowFailure: true)
+        guard r.code == 0 else { throw Self.classifyRemoteFailure(code: r.code, stderr: r.stderr) }
+    }
+
+    /// Fetches and merges the current branch's upstream (no rebase). Refuses on a dirty tree so a merge
+    /// can never leave an ambiguous half-merged state (§10, "never silently discard local changes"). A
+    /// merge conflict is NOT an error: it leaves a merge in progress that the conflict UI resolves.
+    public func pull() async throws {
+        if try await status().entries.contains(where: { !$0.isUntracked }) { throw GitError.dirtyWorkingTree }
+        let r = try await run(["pull", "--no-rebase"], allowFailure: true)
+        if r.code == 0 { return }
+        if try await operationInProgress() == .merge { return }   // conflicts → handled by the conflict view
+        throw Self.classifyRemoteFailure(code: r.code, stderr: r.stderr)
+    }
+
+    /// Pushes the current branch to its configured upstream. Requires an upstream (never sets one
+    /// implicitly, §10) and never force-pushes from the UI.
+    public func push(force: Bool = false) async throws {
+        let up = try await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], allowFailure: true)
+        guard up.code == 0, !up.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw GitError.noUpstreamConfigured }
+        var args = ["push"]
+        if force { args.append("--force-with-lease") }
+        let r = try await run(args, allowFailure: true)
+        guard r.code == 0 else { throw Self.classifyRemoteFailure(code: r.code, stderr: r.stderr) }
     }
 
     // MARK: Branches and history

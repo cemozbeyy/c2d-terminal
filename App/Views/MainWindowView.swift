@@ -111,16 +111,31 @@ struct TopBar: View {
                 .help(ws.projectPath)
 
                 if ws.git.isAvailable {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.branch").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
-                        Text(ws.git.branchLabel).font(Theme.Typography.body).fontWeight(.medium).lineLimit(1).foregroundStyle(Theme.textPrimary)
-                        Circle().fill(ws.git.status?.isClean == true ? Theme.success : Theme.warning).frame(width: 7, height: 7)
-                            .accessibilityLabel(ws.git.status?.isClean == true ? "clean" : "changes")
+                    Menu {
+                        Button("Fetch") { Task { await ws.git.fetch() } }
+                        Button(ws.git.behindCount > 0 ? "Pull (↓\(ws.git.behindCount))" : "Pull") { Task { await ws.git.pull() } }
+                        Button(ws.git.aheadCount > 0 ? "Push (↑\(ws.git.aheadCount))" : "Push") { Task { await ws.git.push() } }
+                        if !ws.git.hasUpstream {
+                            Divider()
+                            Text("No upstream — set one from the terminal: git push -u origin \(ws.git.status?.branch ?? "")")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.branch").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                            Text(ws.git.branchLabel).font(Theme.Typography.body).fontWeight(.medium).lineLimit(1).foregroundStyle(Theme.textPrimary)
+                            if ws.git.isBusy {
+                                ProgressView().controlSize(.mini).scaleEffect(0.7)
+                            } else {
+                                Circle().fill(ws.git.status?.isClean == true ? Theme.success : Theme.warning).frame(width: 7, height: 7)
+                                    .accessibilityLabel(ws.git.status?.isClean == true ? "clean" : "changes")
+                            }
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                     }
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-                    .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Repository: \(ws.git.repository?.root ?? "")")
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .disabled(ws.git.isBusy)
+                    .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Fetch / Pull / Push · \(ws.git.repository?.root ?? "")")
                 }
 
                 Menu {

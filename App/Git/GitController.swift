@@ -223,6 +223,19 @@ final class GitController {
         }
     }
 
+    // MARK: Remote sync (Bible Part 6 §10)
+
+    func fetch() async { await perform("Fetch") { try await $0.fetch() } }
+    func pull() async {
+        await perform("Pull") { try await $0.pull() }
+        await loadBranchesAndHistory()
+    }
+    func push() async { await perform("Push") { try await $0.push() } }
+
+    var aheadCount: Int { status?.ahead ?? 0 }
+    var behindCount: Int { status?.behind ?? 0 }
+    var hasUpstream: Bool { status?.upstream != nil }
+
     func stage(_ paths: [String]) async { await perform("Stage") { try await $0.stage(paths: paths) } }
     func unstage(_ paths: [String]) async { await perform("Unstage") { try await $0.unstage(paths: paths) } }
     func stageAll() async { await perform("Stage all") { try await $0.stageAll() } }
@@ -280,6 +293,11 @@ final class GitController {
         case .patchDoesNotApply(let stderr): "the hunk no longer applies to the index (nothing changed): \(stderr.isEmpty ? "refresh and retry" : stderr)"
         case .conflictMarkersRemain(let lines): "conflict markers are still present (lines \(lines.prefix(5).map(String.init).joined(separator: ", "))\(lines.count > 5 ? "…" : "")); remove them before marking resolved"
         case .notConflicted: "this file is no longer in a conflicted state"
+        case .authenticationRequired: "authentication failed — set up your Git credentials or SSH key (nothing was changed)"
+        case .networkUnavailable: "could not reach the remote — check your network connection (nothing was changed)"
+        case .pushRejected(let stderr): "push rejected: the remote has commits you don't have. Pull first, then push. \(stderr)"
+        case .noUpstreamConfigured: "this branch has no upstream — in the terminal run: git push -u origin \(status?.branch ?? "<branch>")"
+        case .operationTimedOut: "timed out — the remote state is unknown; fetch or refresh to re-check"
         case .none: "\(error)"
         }
     }

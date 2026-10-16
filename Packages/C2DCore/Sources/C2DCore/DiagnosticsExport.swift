@@ -124,6 +124,11 @@ public enum DiagnosticClassifier {
                 // A process we terminated (SIGTERM/143) leaves the real outcome unknown, not failed.
                 let terminated = code == 15 || code == 143 || code < 0
                 return (.git, "GitError", terminated ? "terminated" : nil, code, terminated ? .unknown : .failure)
+            case .authenticationRequired: return (.permission, "GitError", "authenticationRequired", nil, .failure)
+            case .networkUnavailable: return (.network, "GitError", "networkUnavailable", nil, .failure)
+            case .pushRejected: return (.git, "GitError", "pushRejected", nil, .failure)
+            case .noUpstreamConfigured: return (.invalidConfiguration, "GitError", "noUpstreamConfigured", nil, .failure)
+            case .operationTimedOut: return (.timeout, "GitError", "operationTimedOut", nil, .unknown)
             }
         }
         if let t = error as? TaskError {

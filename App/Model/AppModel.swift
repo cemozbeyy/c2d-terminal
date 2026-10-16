@@ -465,6 +465,24 @@ final class AppModel {
                 debugTrace("diagnosticsExport: bytes=\(text.count) containsToken=\(text.contains(token)) containsAKIA=\(text.contains("AKIAZZZZZZZZZZZZZZZZ")) events=\(await self.diagnosticsRecorder.snapshot().count)")
             }
         }
+        // `-c2dGitSync YES` exercises fetch/pull/push through the controller against a LOCAL remote
+        // (prepared by the caller): fetch should surface behind>0, pull clear it, commit make ahead>0,
+        // push clear it. Makes a local commit + pushes to a local bare remote only.
+        if UserDefaults.standard.bool(forKey: "c2dGitSync") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let git = self?.workspace?.git, git.isAvailable else { debugTrace("gitSync: no git"); return }
+                await git.refresh(); let behind0 = git.behindCount
+                await git.fetch(); await git.refresh(); let afterFetch = git.behindCount
+                await git.pull(); let afterPull = git.behindCount
+                let p = (git.projectPath as NSString).appendingPathComponent("sync-\(Int(Date().timeIntervalSince1970)).txt")
+                try? "local\n".write(toFile: p, atomically: true, encoding: .utf8)
+                await git.stageAll(); git.commitMessage = "git sync hook commit"; await git.commit()
+                let aheadAfterCommit = git.aheadCount
+                await git.push(); await git.refresh(); let aheadAfterPush = git.aheadCount
+                debugTrace("gitSync: behind0=\(behind0) afterFetch=\(afterFetch) afterPull=\(afterPull) aheadAfterCommit=\(aheadAfterCommit) aheadAfterPush=\(aheadAfterPush) err=\(git.lastError ?? "none")")
+            }
+        }
         // `-c2dConflictCheck YES` — on a repo already left mid-merge with a conflict, selects the
         // conflicted file, confirms detection/stages/operation, resolves it with "ours", and verifies.
         if UserDefaults.standard.bool(forKey: "c2dConflictCheck") {
