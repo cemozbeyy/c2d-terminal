@@ -44,6 +44,7 @@ struct MainWindowView: View {
         case .agents: AgentsDestinationView()
         case .tasks:
             if let ws = model.workspace { TasksPanelView(tasks: ws.tasks, workspace: ws).padding(Theme.space3) } else { Text("Open a project to see its tasks.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
+        case .marketplace: MarketplaceView()
         case .settings: SettingsPlaceholderView()
         }
     }

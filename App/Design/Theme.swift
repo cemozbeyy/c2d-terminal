@@ -5,31 +5,36 @@ import SwiftUI
 /// Dark-first (§5.1: deep charcoal/navy, restrained violet accent); light values are provided so
 /// the system appearance still works, but the product is designed and verified dark-first.
 enum Theme {
+    // Color tokens read the active theme (ThemeManager); reading them in a view body makes the view
+    // observe the current palette, so applying a theme re-renders everything. Geometry/typography below
+    // are not themed. (Values live in ThemeManager.swift as ThemePalette; see the Marketplace.)
+    private static var p: ThemePalette { ThemeManager.shared.current }
+
     // MARK: Surfaces
-    static let window = dynamic(dark: 0x0C0E14, light: 0xF4F5F8)
-    static let rail = dynamic(dark: 0x0F121A, light: 0xECEEF3)
-    static let panel = dynamic(dark: 0x151925, light: 0xFFFFFF)
-    static let panelHeader = dynamic(dark: 0x1A1F2E, light: 0xF1F2F6)
-    static let elevated = dynamic(dark: 0x1F2436, light: 0xFFFFFF)
-    static let terminalBackground = dynamic(dark: 0x0B0E16, light: 0x1B1F2B)
-    static let field = dynamic(dark: 0x11141D, light: 0xFFFFFF)
+    static var window: Color { p.window }
+    static var rail: Color { p.rail }
+    static var panel: Color { p.panel }
+    static var panelHeader: Color { p.panelHeader }
+    static var elevated: Color { p.elevated }
+    static var terminalBackground: Color { p.terminalBackground }
+    static var field: Color { p.field }
 
     // MARK: Lines
-    static let borderSubtle = dynamic(dark: 0x262B3B, light: 0xD9DCE5)
-    static let borderStrong = dynamic(dark: 0x343A4F, light: 0xBFC4D2)
+    static var borderSubtle: Color { p.borderSubtle }
+    static var borderStrong: Color { p.borderStrong }
 
     // MARK: Text
-    static let textPrimary = dynamic(dark: 0xE8EAF1, light: 0x171A22)
-    static let textSecondary = dynamic(dark: 0xA3A8B8, light: 0x5A6070)
-    static let textMuted = dynamic(dark: 0x6B7186, light: 0x8A90A0)
+    static var textPrimary: Color { p.textPrimary }
+    static var textSecondary: Color { p.textSecondary }
+    static var textMuted: Color { p.textMuted }
 
     // MARK: Accent and states (never the only signal for a state — §4.4)
-    static let accent = dynamic(dark: 0x7C6CF0, light: 0x5B4BE0)
-    static let accentSoft = dynamic(dark: 0x2A2650, light: 0xE6E2FF)
-    static let success = dynamic(dark: 0x3DD68C, light: 0x1F9D5B)
-    static let warning = dynamic(dark: 0xF5B84B, light: 0xB8771A)
-    static let error = dynamic(dark: 0xF26B6B, light: 0xC43B3B)
-    static let info = dynamic(dark: 0x5DA9F6, light: 0x2F6FD3)
+    static var accent: Color { p.accent }
+    static var accentSoft: Color { p.accentSoft }
+    static var success: Color { p.success }
+    static var warning: Color { p.warning }
+    static var error: Color { p.error }
+    static var info: Color { p.info }
     /// Foreground placed on top of an accent/state fill (e.g. drop-zone label); always light.
     static let onAccent = Color.white
     /// Dimming scrim behind modal overlays (the palette). Alpha is applied at the call site.

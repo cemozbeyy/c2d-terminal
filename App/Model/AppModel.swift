@@ -11,7 +11,7 @@ struct UserMessage: Identifiable, Equatable {
 }
 
 enum Destination: String, CaseIterable, Identifiable {
-    case projects, workspace, agents, tasks, settings
+    case projects, workspace, agents, tasks, marketplace, settings
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -19,6 +19,7 @@ enum Destination: String, CaseIterable, Identifiable {
         case .workspace: "Workspace"
         case .agents: "Agents"
         case .tasks: "Tasks"
+        case .marketplace: "Market"
         case .settings: "Settings"
         }
     }
@@ -28,6 +29,7 @@ enum Destination: String, CaseIterable, Identifiable {
         case .workspace: "rectangle.3.group"
         case .agents: "cpu"
         case .tasks: "checklist"
+        case .marketplace: "paintpalette"
         case .settings: "gearshape"
         }
     }
@@ -464,6 +466,10 @@ final class AppModel {
                 try? text.write(toFile: path, atomically: true, encoding: .utf8)
                 debugTrace("diagnosticsExport: bytes=\(text.count) containsToken=\(text.contains(token)) containsAKIA=\(text.contains("AKIAZZZZZZZZZZZZZZZZ")) events=\(await self.diagnosticsRecorder.snapshot().count)")
             }
+        }
+        // `-c2dDestination <raw>` opens a specific nav destination at launch (debug/screenshots).
+        if let raw = UserDefaults.standard.string(forKey: "c2dDestination"), let d = Destination(rawValue: raw) {
+            Task { @MainActor [weak self] in try? await Task.sleep(for: .milliseconds(400)); self?.destination = d }
         }
         // `-c2dGitSync YES` exercises fetch/pull/push through the controller against a LOCAL remote
         // (prepared by the caller): fetch should surface behind>0, pull clear it, commit make ahead>0,
