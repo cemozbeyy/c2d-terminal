@@ -73,6 +73,12 @@ final class AppModel {
         var unavailable: String?
         var store: JSONDocumentStore?
         do { store = try JSONDocumentStore.applicationSupport() } catch { unavailable = "\(error)" }
+        // Retention (Bible Part 11 §12.3): sweep orphaned atomic-write temporaries left by an
+        // interrupted save/crash. Safe + idempotent; never touches documents or SQLite recovery data.
+        if let store {
+            let removed = store.cleanupOrphanedTemporaries()
+            if !removed.isEmpty { Log.app.info("retention: removed \(removed.count, privacy: .public) orphaned temp file(s)") }
+        }
         registry = (try? ProjectRegistry(store: store)) ?? (try! ProjectRegistry(store: nil))
         layoutStore = (try? LayoutStore.standard())
         sessions = (try? TerminalSessionRegistry(store: store)) ?? (try! TerminalSessionRegistry(store: nil))

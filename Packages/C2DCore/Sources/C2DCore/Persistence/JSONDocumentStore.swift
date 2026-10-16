@@ -58,4 +58,24 @@ public struct JSONDocumentStore: Sendable {
             .map { String($0.dropLast(5)) }
             .sorted()
     }
+
+    /// Removes orphaned atomic-write temporaries (`*.json.tmp`) left by an interrupted save or crash
+    /// (Bible Part 11 §12.3, "Failed operation artifacts"). Safe by construction: it touches ONLY our
+    /// own `.json.tmp` artifacts in THIS directory — never `.json` documents, `.sqlite`/`-wal`/`-shm`
+    /// recovery data, or anything else — and never files younger than `grace`, so an in-flight write is
+    /// not removed. Idempotent; per-file errors are swallowed so a vanished/locked file can't abort the
+    /// sweep. Returns the file names removed (observable). Non-destructive to user content by design.
+    @discardableResult
+    public func cleanupOrphanedTemporaries(olderThan grace: TimeInterval = 60, now: Date = Date()) -> [String] {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return [] }
+        var removed: [String] = []
+        for name in names where name.hasSuffix(".json.tmp") {
+            let fileURL = directory.appendingPathComponent(name)
+            let modified = (try? fm.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+            if let modified, now.timeIntervalSince(modified) < grace { continue }   // too fresh — may be in flight
+            if (try? fm.removeItem(at: fileURL)) != nil { removed.append(name) }
+        }
+        return removed.sorted()
+    }
 }
