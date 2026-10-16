@@ -194,9 +194,9 @@ struct TopBar: View {
             .help("Show process ids, session ids and paths in panel headers (Bible Part 2 §11)")
 
             if let ws = model.workspace {
-                barButton("plus.rectangle", "New Terminal (⌘T)") { ws.newTerminal() }
-                barButton("cpu", "New Agent…") { showAgentLaunch = true }
-                barButton("gauge.with.dots.needle.33percent", "Token Optimizer (estimates only)") { ws.showOptimizerPanel() }
+                barButton("plus.rectangle", "New terminal — opens a shell in this project (⌘T)") { ws.newTerminal() }
+                barButton("cpu", "New agent — launch a Claude Code session for this project") { showAgentLaunch = true }
+                barButton("gauge.with.dots.needle.33percent", "Token Optimizer — estimate & trim context (estimates only, not billed)") { ws.showOptimizerPanel() }
             }
         }
         .padding(.horizontal, Theme.space3)
@@ -212,7 +212,7 @@ struct TopBar: View {
                 .frame(width: 30, height: 28)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
         }
-        .buttonStyle(.plain).clickCursor().help(help).accessibilityLabel(help)
+        .buttonStyle(.plain).clickCursor().tooltip(help).accessibilityLabel(help)
     }
 }
 

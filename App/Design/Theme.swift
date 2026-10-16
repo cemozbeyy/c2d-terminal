@@ -78,6 +78,48 @@ enum Theme {
 extension View {
     /// Pointing-hand cursor on hover, to mark a control as clickable.
     func clickCursor() -> some View { pointerStyle(.link) }
+    /// A fast, readable hover tooltip (keeps `.help` for VoiceOver). Use for icon-only controls so it's
+    /// clear what they do. `edge` is where the bubble appears relative to the control.
+    func tooltip(_ text: String, edge: Edge = .bottom) -> some View {
+        modifier(TooltipModifier(text: text, edge: edge)).help(text)
+    }
+}
+
+private struct TooltipModifier: ViewModifier {
+    let text: String
+    let edge: Edge
+    @State private var show = false
+    @State private var pending: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                pending?.cancel()
+                if inside {
+                    pending = Task { try? await Task.sleep(for: .milliseconds(350)); if !Task.isCancelled { show = true } }
+                } else { show = false }
+            }
+            .overlay(alignment: alignment) { if show { bubble.offset(offset).transition(.opacity).zIndex(999) } }
+            .animation(.easeOut(duration: 0.1), value: show)
+    }
+
+    private var bubble: some View {
+        Text(text)
+            .font(Theme.Typography.metadata).foregroundStyle(Theme.textPrimary)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderStrong))
+            .fixedSize().shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+            .allowsHitTesting(false)
+    }
+
+    private var alignment: Alignment {
+        switch edge { case .bottom: .bottom; case .top: .top; case .leading: .leading; default: .trailing }
+    }
+    private var offset: CGSize {
+        switch edge { case .bottom: .init(width: 0, height: 30); case .top: .init(width: 0, height: -30)
+        case .leading: .init(width: -8, height: 0); default: .init(width: 8, height: 0) }
+    }
 }
 
 extension NSColor {
