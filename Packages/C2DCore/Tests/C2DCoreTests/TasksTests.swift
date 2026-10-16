@@ -181,7 +181,7 @@ private let project = "/tmp/proj-a"
         let b = try await store.create(TaskRecord(projectPath: project, title: "B"))
         let other = try await store.create(TaskRecord(projectPath: "/tmp/proj-b", title: "X"))
         await #expect(throws: TaskError.selfDependency) { try await store.addDependency(id: a.id, dependsOn: a.id) }
-        await #expect(throws: TaskError.crossProjectDependency) { try await store.addDependency(id: a.id, dependsOn: other.id) }
+        await #expect(throws: TaskError.crossProject) { try await store.addDependency(id: a.id, dependsOn: other.id) }
         await #expect(throws: TaskError.notFound("nope")) { try await store.addDependency(id: a.id, dependsOn: "nope") }
         // A→B, then B→A would close a cycle.
         _ = try await store.addDependency(id: a.id, dependsOn: b.id)
@@ -259,7 +259,7 @@ private let project = "/tmp/proj-a"
         #expect(try await store.task(id: t.id)?.planID == p.id)
         // Cross-project assignment is refused.
         let other = try await store.createPlan(TaskPlan(projectPath: "/tmp/proj-b", goal: "x"))
-        await #expect(throws: TaskError.crossProjectDependency) { try await store.assign(taskID: t.id, toPlan: other.id) }
+        await #expect(throws: TaskError.crossProject) { try await store.assign(taskID: t.id, toPlan: other.id) }
         // Deleting the plan unassigns but keeps the task.
         try await store.deletePlan(id: p.id)
         #expect(try await store.plan(id: p.id) == nil)

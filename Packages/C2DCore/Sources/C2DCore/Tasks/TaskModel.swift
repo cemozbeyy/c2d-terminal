@@ -109,7 +109,8 @@ public enum TaskError: Error, Equatable, Sendable {
     case invalidTransition(from: TaskStatus, to: TaskStatus)
     case storage(SQLiteError)
     case selfDependency
-    case crossProjectDependency
+    /// A dependency edge or plan assignment crossed project boundaries.
+    case crossProject
     case dependencyCycle
     /// Starting is gated: these upstream task IDs are not yet complete (pass `override` to start anyway).
     case dependenciesUnmet([String])

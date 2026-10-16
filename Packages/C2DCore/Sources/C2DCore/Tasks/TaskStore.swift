@@ -203,7 +203,7 @@ public actor TaskStore {
         guard id != upstreamID else { throw TaskError.selfDependency }
         guard var t = try task(id: id) else { throw TaskError.notFound(id) }
         guard let upstream = try task(id: upstreamID) else { throw TaskError.notFound(upstreamID) }
-        guard upstream.projectPath == t.projectPath else { throw TaskError.crossProjectDependency }
+        guard upstream.projectPath == t.projectPath else { throw TaskError.crossProject }
         if t.dependsOn.contains(upstreamID) { return t }
         // Adding id→upstream forms a cycle iff upstream can already reach id by its own dependencies.
         if Self.reaches(from: upstreamID, to: id, in: try projectGraph(t.projectPath)) { throw TaskError.dependencyCycle }
@@ -269,7 +269,7 @@ public actor TaskStore {
         guard var t = try task(id: taskID) else { throw TaskError.notFound(taskID) }
         if let planID {
             guard let p = try plan(id: planID) else { throw TaskError.notFound(planID) }
-            guard p.projectPath == t.projectPath else { throw TaskError.crossProjectDependency }
+            guard p.projectPath == t.projectPath else { throw TaskError.crossProject }
         }
         t.planID = planID; t.updatedAt = Self.now()
         try wrap { try write(t) }

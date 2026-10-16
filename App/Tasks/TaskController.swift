@@ -171,7 +171,7 @@ final class TaskController {
         case .hasDependents(let ids): return "\(names(ids)) still depend(s) on this task. Remove the dependency first."
         case .dependencyCycle: return "That would create a dependency cycle."
         case .selfDependency: return "A task cannot depend on itself."
-        case .crossProjectDependency: return "A task can only depend on tasks in the same project."
+        case .crossProject: return "A task and its dependency or plan must be in the same project."
         default: return "\(error)"
         }
     }
