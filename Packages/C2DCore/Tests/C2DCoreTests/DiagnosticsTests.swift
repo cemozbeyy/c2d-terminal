@@ -78,11 +78,26 @@ import Testing
         #expect(obj["includesDetail"] as? Bool == false)
     }
 
-    @Test func verboseDetailIsRedactedNotRaw() async throws {
+    @Test func verboseDetailRunsTheRedactorAndKeepsItSafe() async throws {
+        // At verbose the detail path is actually exercised — this is the test that fails if the
+        // redactor regresses (the .normal structural test drops detail and would pass regardless).
         let rec = DiagnosticsRecorder(verbosity: .verbose)
-        await rec.record(module: "app", operation: "op", detail: "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+        let stderr = "auth failed https://bob:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com key AKIA1234567890ABCDEF jwt eyJaaa.eyJbbb.ccc\n-----BEGIN RSA PRIVATE KEY-----\nLEAKLINE\n-----END RSA PRIVATE KEY-----"
+        await rec.record(module: "app", operation: "op", detail: stderr)
         let json = try await rec.makeBundle(report: report()).serialized()
-        #expect(json.contains("detail") && !json.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"))
+        for secret in ["ghp_abcdefghijklmnopqrstuvwxyz0123456789", "AKIA1234567890ABCDEF", "bob:ghp", "LEAKLINE", "eyJaaa.eyJbbb"] {
+            #expect(!json.contains(secret), "verbose detail leaked \(secret)")
+        }
+        let obj = try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+        let event = (obj["events"] as! [[String: Any]])[0]
+        #expect(event["detail"] != nil, "detail must be present at verbose, so we know the redactor path ran")
+        #expect(Set(event.keys).isSubset(of: DiagnosticEvent.allowedKeys))
+    }
+
+    @Test func providerPatternsDoNotMatchOrdinaryWords() {
+        // \b-anchored, so "task-…" is not mistaken for an "sk-…" token.
+        #expect(SecretRedactor.redact("task-abcdefghijklmnop") == "task-abcdefghijklmnop")
+        #expect(SecretRedactor.redact("a basket-of-items here") == "a basket-of-items here")
     }
 
     @Test func bufferIsBounded() async throws {

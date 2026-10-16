@@ -194,12 +194,14 @@ final class GitController {
         guard let repo = repository, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
+        let start = ContinuousClock.now
         do {
             try await body(repo)
             lastError = nil
         } catch {
             lastError = "\(what): \(describe(error))"
-            if let diagnostics { Task { await diagnostics.record(module: "git", operation: what, error: error) } }
+            let ms = Int(start.duration(to: .now) / .milliseconds(1))
+            if let diagnostics { Task { await diagnostics.record(module: "git", operation: what, error: error, durationMS: ms) } }
         }
         await refresh()
     }

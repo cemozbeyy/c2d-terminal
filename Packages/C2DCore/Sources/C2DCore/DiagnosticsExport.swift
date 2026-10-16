@@ -24,14 +24,15 @@ public enum SecretRedactor {
         // sensitive key = value (quoted or bare).
         (sub("(?i)\\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|auth|credential|session)\\b\\s*[=:]\\s*(\"[^\"]*\"|'[^']*'|\\S+)"), "$1=[REDACTED]"),
         // Known provider token shapes (many are shorter than the 32-char generic catch below).
-        (sub("AKIA[0-9A-Z]{16}", []), "[REDACTED-TOKEN]"),
-        (sub("gh[pousr]_[A-Za-z0-9]{20,}", []), "[REDACTED-TOKEN]"),
-        (sub("github_pat_[A-Za-z0-9_]{20,}", []), "[REDACTED-TOKEN]"),
-        (sub("xox[baprs]-[A-Za-z0-9-]{10,}", []), "[REDACTED-TOKEN]"),
-        (sub("AIza[0-9A-Za-z_\\-]{30,}", []), "[REDACTED-TOKEN]"),
-        (sub("sk_(live|test)_[A-Za-z0-9]{10,}", []), "[REDACTED-TOKEN]"),
-        (sub("sk-[A-Za-z0-9_\\-]{10,}", []), "[REDACTED-TOKEN]"),
-        (sub("eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", []), "[REDACTED-JWT]"),
+        // Each is \b-anchored so it can't match inside an ordinary word (e.g. "task-123" ≠ "sk-…").
+        (sub("\\bAKIA[0-9A-Z]{16}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bgh[pousr]_[A-Za-z0-9]{20,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bgithub_pat_[A-Za-z0-9_]{20,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bxox[baprs]-[A-Za-z0-9-]{10,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bAIza[0-9A-Za-z_\\-]{30,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bsk_(live|test)_[A-Za-z0-9]{10,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\bsk-[A-Za-z0-9_\\-]{10,}", []), "[REDACTED-TOKEN]"),
+        (sub("\\beyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", []), "[REDACTED-JWT]"),
     ]
 
     public static func redact(_ input: String) -> String {
