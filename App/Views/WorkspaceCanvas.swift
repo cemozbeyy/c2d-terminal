@@ -70,6 +70,7 @@ struct SplitView: View {
     let weights: [Double]
     let workspace: WorkspaceController
     @State private var dragStart: [Double]?
+    @State private var hoveredDivider: Int?
 
     private let dividerThickness: CGFloat = 6
     private let minimumSize: CGFloat = 140
@@ -95,14 +96,15 @@ struct SplitView: View {
     }
 
     private func divider(at index: Int, total: CGFloat) -> some View {
+        // A visible, subtle line normally; it brightens to the accent on hover so it's clearly a
+        // draggable boundary, and the pointer becomes a column/row-resize cursor.
         Rectangle()
-            .fill(Theme.window)
+            .fill(hoveredDivider == index ? Theme.accent : Theme.borderSubtle)
             .frame(width: orientation == .horizontal ? dividerThickness : nil,
                    height: orientation == .vertical ? dividerThickness : nil)
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { (orientation == .horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
-            }
+            .pointerStyle(orientation == .horizontal ? .columnResize : .rowResize)
+            .onHover { inside in hoveredDivider = inside ? index : (hoveredDivider == index ? nil : hoveredDivider) }
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
@@ -159,13 +161,13 @@ struct PanelGroupView: View {
             }
             Spacer(minLength: 0)
             Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold) }
-                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("New terminal in this group")
+                .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("New terminal in this group")
             if workspace.layout.maximizedGroup == groupID {
                 Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
+                    .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
             } else {
                 Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
+                    .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
             }
         }
         .padding(.horizontal, 8)
@@ -246,7 +248,7 @@ struct PanelTab: View {
             Image(systemName: style.symbol).font(Theme.Typography.metadata).fontWeight(.semibold).foregroundStyle(isActive ? style.tint : Theme.textMuted)
             Text(title).lineLimit(1).font(.system(size: 11.5, weight: isActive ? .semibold : .regular))
             Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
-                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Close panel")
+                .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Close panel")
         }
         .foregroundStyle(isActive ? Theme.textPrimary : Theme.textSecondary)
         .padding(.horizontal, 9).padding(.vertical, 5)

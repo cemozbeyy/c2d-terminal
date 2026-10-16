@@ -69,7 +69,7 @@ struct NavigationRail: View {
                     .frame(width: 72, height: 52)
                     .background(selected ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).clickCursor()
                 .disabled(!enabled)
                 .opacity(enabled ? 1 : 0.4)
                 .help(enabled ? d.label : "Open a project first")
@@ -106,7 +106,7 @@ struct TopBar: View {
                         Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
                     }
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                 .help(ws.projectPath)
@@ -134,7 +134,7 @@ struct TopBar: View {
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
                     .disabled(ws.git.isBusy)
                     .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Fetch / Pull / Push · \(ws.git.repository?.root ?? "")")
                 }
@@ -150,7 +150,7 @@ struct TopBar: View {
                         Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
                     }
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Theme.textSecondary)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Theme.textSecondary).clickCursor()
 
                 if !ws.layout.hidden.isEmpty {
                     Menu {
@@ -163,7 +163,7 @@ struct TopBar: View {
                             Text("\(ws.layout.hidden.count) hidden").font(Theme.Typography.body).foregroundStyle(Theme.textSecondary)
                         }
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
                 }
             } else {
                 Text("C2D Terminal").font(Theme.Typography.title2).fontWeight(.semibold)
@@ -184,7 +184,7 @@ struct TopBar: View {
                 .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                 .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(Theme.borderSubtle))
             }
-            .buttonStyle(.plain).keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
+            .buttonStyle(.plain).clickCursor().keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
 
             Toggle(isOn: $model.developerMode) {
                 Label("Dev Mode", systemImage: "wrench.and.screwdriver").font(Theme.Typography.detail).fontWeight(.semibold)
@@ -212,7 +212,7 @@ struct TopBar: View {
                 .frame(width: 30, height: 28)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
         }
-        .buttonStyle(.plain).help(help).accessibilityLabel(help)
+        .buttonStyle(.plain).clickCursor().help(help).accessibilityLabel(help)
     }
 }
 

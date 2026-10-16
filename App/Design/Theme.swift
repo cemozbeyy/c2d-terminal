@@ -75,6 +75,11 @@ enum Theme {
     }
 }
 
+extension View {
+    /// Pointing-hand cursor on hover, to mark a control as clickable.
+    func clickCursor() -> some View { pointerStyle(.link) }
+}
+
 extension NSColor {
     convenience init(hex: UInt32) {
         self.init(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)

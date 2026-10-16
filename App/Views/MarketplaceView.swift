@@ -67,7 +67,7 @@ private struct ThemeCard: View {
                 if isActive {
                     Label("Active", systemImage: "checkmark.circle.fill").font(Theme.Typography.caption).foregroundStyle(Theme.success).labelStyle(.titleAndIcon)
                 } else {
-                    Button("Apply", action: apply).buttonStyle(.borderedProminent).controlSize(.small)
+                    Button("Apply", action: apply).buttonStyle(.borderedProminent).controlSize(.small).clickCursor()
                 }
             }
             Text("by \(theme.author)").font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
