@@ -243,7 +243,10 @@ public actor PTYSession {
     private func armExitWatcher(pid: pid_t) {
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
         source.setEventHandler { [weak self] in
-            Task { await self?.reapIfExited() }
+            // Bind strongly before spawning: Swift 6.1 (Xcode 16.4, the macOS 15 CI floor) rejects the weak
+            // box capture inside the `sending` Task closure; a `let` of actor type is Sendable.
+            guard let self else { return }
+            Task { await self.reapIfExited() }
         }
         exitSource = source
         source.resume()

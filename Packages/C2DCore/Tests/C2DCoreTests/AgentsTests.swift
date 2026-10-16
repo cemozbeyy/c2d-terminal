@@ -67,12 +67,15 @@ import Testing
         #expect(path.contains("/bin"), "login PATH: \(path.prefix(80))")
     }
 
-    @Test func locateFindsClaudeAndNotNonsense() {
+    @Test func locateRejectsNonsense() {
         let bogus = AgentProvider(id: "x", displayName: "x", executableNames: ["c2d-no-such-agent-\(UUID().uuidString)"], capabilities: .init())
         #expect(AgentDiscovery.locate(bogus) == nil)
-        guard let path = AgentDiscovery.locate(.claudeCode) else {
-            Issue.record("claude not installed on this machine — locate test skipped"); return
-        }
+    }
+
+    // Skipped (visibly) where Claude Code is not installed, e.g. CI runners.
+    @Test(.enabled(if: AgentDiscovery.locate(.claudeCode) != nil, "claude not installed on this machine"))
+    func locateFindsClaude() {
+        let path = AgentDiscovery.locate(.claudeCode)!
         #expect(path.hasSuffix("/claude") && access(path, X_OK) == 0)
     }
 
