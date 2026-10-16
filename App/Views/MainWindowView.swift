@@ -98,7 +98,7 @@ struct TopBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "folder.fill").foregroundStyle(Theme.warning)
-                        Text(ws.projectName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(ws.projectName).font(.system(size: 13, weight: .semibold)).lineLimit(1).foregroundStyle(Theme.textPrimary)
                         Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textMuted)
                     }
                 }
@@ -109,8 +109,8 @@ struct TopBar: View {
 
                 if ws.git.isAvailable {
                     HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11))
-                        Text(ws.git.branchLabel).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                        Text(ws.git.branchLabel).font(.system(size: 12, weight: .medium)).lineLimit(1).foregroundStyle(Theme.textPrimary)
                         Circle().fill(ws.git.status?.isClean == true ? Theme.success : Theme.warning).frame(width: 7, height: 7)
                             .accessibilityLabel(ws.git.status?.isClean == true ? "clean" : "changes")
                     }
@@ -126,8 +126,8 @@ struct TopBar: View {
                     Button("Save as Default Layout") { ws.saveAsGlobalDefault() }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "rectangle.3.group")
-                        Text(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout").font(.system(size: 12, weight: .medium))
+                        Image(systemName: "rectangle.3.group").foregroundStyle(Theme.textSecondary)
+                        Text(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textSecondary)
                         Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textMuted)
                     }
                 }
@@ -136,8 +136,13 @@ struct TopBar: View {
                 if !ws.layout.hidden.isEmpty {
                     Menu {
                         ForEach(ws.layout.hidden, id: \.self) { id in Button(ws.layout.panels[id]?.title ?? id.rawValue) { ws.restore(id) } }
+                        Divider()
+                        Button("Remove empty and ended hidden panels") { ws.cleanUpHiddenPanels() }
                     } label: {
-                        Label("\(ws.layout.hidden.count) hidden", systemImage: "eye.slash").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                        HStack(spacing: 5) {
+                            Image(systemName: "eye.slash").foregroundStyle(Theme.textSecondary)
+                            Text("\(ws.layout.hidden.count) hidden").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                        }
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 }

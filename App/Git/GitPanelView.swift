@@ -239,7 +239,16 @@ struct DiffView: View {
             }
             .padding(.horizontal, 8).frame(height: 22)
             Divider()
-            ScrollView([.vertical, .horizontal]) {
+            GeometryReader { geo in
+                ScrollView([.vertical, .horizontal]) {
+                    // A bidirectional scroll view centers content smaller than its viewport; pin it top-leading instead.
+                    diffBody.frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
+                }
+            }
+        }
+    }
+
+    private var diffBody: some View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(files.enumerated()), id: \.offset) { _, file in
                         if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
@@ -263,8 +272,6 @@ struct DiffView: View {
                     if files.isEmpty { Text("No diff").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
                 }
                 .textSelection(.enabled)
-            }
-        }
     }
 
     private func prefix(_ line: DiffLine) -> String {

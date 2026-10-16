@@ -169,17 +169,50 @@ final class WorkspaceController {
         mutate("close") { try $0.close(panel) }
     }
 
-    /// Applies a preset without touching sessions: existing panels become hidden, not closed.
+    /// Applies a preset without touching sessions: panels that hold state (a live or ended session,
+    /// open files) become hidden; empty ones are closed so the hidden list does not pile up.
     func apply(_ preset: LayoutPreset) {
         var next = preset.makeLayout(available: AppModel.availableKinds)
         next.id = UUID().uuidString
         next.isBuiltIn = false
         for (id, panel) in layout.panels {
-            next.panels[id] = panel
-            next.hidden.append(id)
+            if hasState(id, panel) {
+                next.panels[id] = panel
+                next.hidden.append(id)
+            } else {
+                terminals.removeValue(forKey: id)
+                editors.removeValue(forKey: id)
+            }
         }
         layout = next
         scheduleSave()
+    }
+
+    /// True when closing the panel would lose something the user may want (Bible Part 3 §7).
+    private func hasState(_ id: PanelID, _ panel: Panel) -> Bool {
+        switch panel.kind {
+        case .terminal, .agentSession:
+            if let t = terminals[id] { return t.isRunning || t.record != nil }
+            return app.sessions.record(forPanel: id) != nil || app.agentSessions.record(forPanel: id) != nil
+        case .editor:
+            return !(editors[id]?.tabs.isEmpty ?? true)
+        default:
+            return false   // explorer, git, tasks, optimizer are stateless views over shared state
+        }
+    }
+
+    /// Removes hidden panels that no longer hold state (ended sessions, empty editors, stateless views).
+    func cleanUpHiddenPanels() {
+        for id in layout.hidden {
+            guard let panel = layout.panels[id] else { continue }
+            let keep: Bool
+            switch panel.kind {
+            case .terminal, .agentSession: keep = terminals[id]?.isRunning ?? false
+            case .editor: keep = !(editors[id]?.tabs.isEmpty ?? true)
+            default: keep = false
+            }
+            if !keep { close(id) }
+        }
     }
 
     // MARK: Panel content
