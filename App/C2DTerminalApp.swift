@@ -58,6 +58,14 @@ struct C2DTerminalApp: App {
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(model.workspace?.editors.values.contains { $0.activeTab != nil } != true)
             }
+            CommandGroup(after: .textEditing) {
+                Button("Find in Project…") { model.showPalette(prefill: "/") }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                    .disabled(model.workspace == nil)
+                Button("Go to Line…") { model.showPalette(prefill: ":") }
+                    .keyboardShortcut("l", modifiers: .command)
+                    .disabled(model.workspace?.editors.values.contains { $0.activeTab != nil } != true)
+            }
             CommandMenu("Workspace") {
                 Button("Toggle Focus Mode") {
                     guard let ws = model.workspace else { return }

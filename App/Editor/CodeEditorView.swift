@@ -66,6 +66,19 @@ struct CodeEditorView: NSViewRepresentable {
             context.coordinator.applyHighlighting()
             container.gutter.needsDisplay = true
         }
+        if let line = tab.pendingLine {
+            let ns = tv.string as NSString
+            var location = 0, current = 1
+            while current < line, location < ns.length {
+                let r = ns.range(of: "\n", range: NSRange(location: location, length: ns.length - location))
+                guard r.location != NSNotFound else { break }
+                location = r.location + 1; current += 1
+            }
+            tv.setSelectedRange(NSRange(location: location, length: 0))
+            tv.scrollRangeToVisible(NSRange(location: location, length: 0))
+            tv.window?.makeFirstResponder(tv)
+            Task { @MainActor in tab.pendingLine = nil }   // clear outside the view update
+        }
     }
 
     @MainActor

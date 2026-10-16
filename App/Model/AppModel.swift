@@ -52,6 +52,10 @@ final class AppModel {
     private(set) var workspace: WorkspaceController?
     var destination: Destination = .projects
     var paletteVisible = false
+    /// Pre-filled palette text for ⌘L (":") and ⇧⌘F ("/"); consumed when the palette appears.
+    var paletteInitialQuery: String?
+
+    func showPalette(prefill: String? = nil) { paletteInitialQuery = prefill; paletteVisible = true }
     /// Developer Mode reveals technical detail; it never changes behaviour (Bible Part 2 §11).
     var developerMode: Bool = UserDefaults.standard.bool(forKey: "developerMode") {
         didSet { UserDefaults.standard.set(developerMode, forKey: "developerMode") }
@@ -138,9 +142,22 @@ final class AppModel {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
-                self.paletteVisible = true
-                let cmds = CommandCatalog.commands(model: self, query: q).filter { $0.title.lowercased().contains(q.lowercased()) || ($0.subtitle?.lowercased().contains(q.lowercased()) ?? false) }
+                self.showPalette(prefill: q)
+                var cmds = CommandCatalog.commands(model: self, query: q)
+                if q.hasPrefix("/"), let root = self.workspace?.projectPath {
+                    cmds = CommandCatalog.matchCommands(CommandCatalog.searchContent(root: root, query: String(q.dropFirst())), model: self)
+                } else if !CommandCatalog.isPrefixed(q) {
+                    cmds = cmds.filter { $0.title.lowercased().contains(q.lowercased()) || ($0.subtitle?.lowercased().contains(q.lowercased()) ?? false) }
+                }
                 debugTrace("c2dPaletteQuery '\(q)': \(cmds.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "))")
+                // `-c2dPaletteRunFirst YES` executes the first result and reports the editor caret afterwards.
+                if UserDefaults.standard.bool(forKey: "c2dPaletteRunFirst"), let first = cmds.first {
+                    self.paletteVisible = false
+                    first.run()
+                    try? await Task.sleep(for: .milliseconds(800))
+                    let tab = self.workspace?.editors.values.compactMap(\.activeTab).first
+                    debugTrace("c2dPaletteRunFirst: ran '\(first.title)' → tab=\(tab?.name ?? "none") line=\(tab?.cursorLine ?? 0) pending=\(String(describing: tab?.pendingLine))")
+                }
             }
         }
         // `-c2dCreateTask "<title>"` creates a task and moves it to Ready (runtime checks).
@@ -237,6 +254,10 @@ final class AppModel {
                 }
             }
         }
+        // `-c2dNewTerminal YES` starts a fresh shell (a restored layout shows last run's ended one).
+        if UserDefaults.standard.bool(forKey: "c2dNewTerminal") {
+            Task { [weak self] in try? await Task.sleep(for: .milliseconds(500)); self?.workspace?.newTerminal() }
+        }
         // `-c2dRunCommand "<line>"` types one line into the first terminal once its shell is running.
         // Debug builds only; exists so runtime checks can exercise the input path without a keyboard.
         if let line = UserDefaults.standard.string(forKey: "c2dRunCommand") {
@@ -247,6 +268,8 @@ final class AppModel {
                     if let t = ws.terminals.values.first(where: { $0.isRunning }) {
                         t.write(Data((line + "\n").utf8))
                         Log.app.info("c2dRunCommand delivered")
+                        try? await Task.sleep(for: .seconds(4))
+                        debugTrace("c2dRunCommand context: dir=\(t.displayDirectory ?? "nil") fg=\(t.context?.foregroundCommand ?? "nil")")
                         return
                     }
                 }

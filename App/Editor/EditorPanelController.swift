@@ -13,6 +13,8 @@ final class EditorTab: Identifiable {
     var lastError: String?
     var cursorLine = 1
     var cursorColumn = 1
+    /// Set by go-to-line; the text view consumes it (selects the line start, scrolls) and clears it.
+    var pendingLine: Int?
     /// Stays true after the user chose to keep local edits over an external change; cleared on save.
     var keepLocalOverExternal = false
 
@@ -91,6 +93,12 @@ final class EditorPanelController {
     }
 
     var activeTab: EditorTab? { tabs.first { $0.id == activeTabID } }
+
+    /// Go to a 1-based line in the active tab (Bible Part 5 §7.3). Out-of-range lines clamp.
+    func goTo(line: Int) {
+        guard let tab = activeTab else { return }
+        tab.pendingLine = max(1, line)
+    }
     var hasUnsavedChanges: Bool { tabs.contains { $0.isDirty } }
     private var stateName: String { "panel-\(panelID.rawValue)" }
 

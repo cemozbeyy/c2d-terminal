@@ -63,7 +63,7 @@ final class WorkspaceController {
     }
 
     /// Opens in the active editor panel, or creates one beside the first group (Bible Part 5 §3.3).
-    func openFile(path: String) {
+    func openFile(path: String, line: Int? = nil) {
         let target: PanelID
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .editor }) {
             target = visible
@@ -73,7 +73,9 @@ final class WorkspaceController {
             target = addPanel(.editor, title: "Editor", besideGroup: layout.groupIDs.first)
         }
         activate(target)
-        editor(for: target).open(path: path)
+        let e = editor(for: target)
+        e.open(path: path)
+        if let line { e.goTo(line: line) }
     }
 
     /// Opens (or reveals) the single optimizer panel for this workspace.

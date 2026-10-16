@@ -4,7 +4,7 @@ import SwiftUI
 
 /// One executable command. Only commands that are actually wired exist (Bible §2.3).
 struct PaletteCommand: Identifiable {
-    enum Kind: String { case action, project, file, layout, panel, task, branch, destination }
+    enum Kind: String { case action, project, file, layout, panel, task, branch, destination, match, line }
     let id: String
     let kind: Kind
     let title: String
@@ -16,10 +16,35 @@ struct PaletteCommand: Identifiable {
 /// Builds the command list from real state: deterministic, no AI suggestions (GAP-17 open).
 @MainActor
 enum CommandCatalog {
-    static let fileScanLimit = 5000
-    static let skippedDirectories: Set<String> = [".git", "node_modules", ".build", "DerivedData", "Pods", ".swiftpm", "dist", "build"]
+    nonisolated static let fileScanLimit = 5000
+    nonisolated static let skippedDirectories: Set<String> = [".git", "node_modules", ".build", "DerivedData", "Pods", ".swiftpm", "dist", "build"]
+
+    /// `/text` searches file contents, `:42` goes to a line in the active editor (Bible Part 5 §7.2–7.3).
+    static func isPrefixed(_ query: String) -> Bool { query.hasPrefix("/") || query.hasPrefix(":") }
 
     static func commands(model: AppModel, query: String) -> [PaletteCommand] {
+        if query.hasPrefix(":") {
+            guard let ws = model.workspace, let n = Int(query.dropFirst().trimmingCharacters(in: .whitespaces)), n > 0,
+                  let e = ws.editors.values.first(where: { $0.activeTab != nil }), let tab = e.activeTab else { return [] }
+            return [PaletteCommand(id: "goto-\(n)", kind: .line, title: "Go to line \(n)", subtitle: tab.name, symbol: "arrow.right.to.line") {
+                e.goTo(line: n); model.destination = .workspace
+            }]
+        }
+        if query.hasPrefix("/") { return [] }   // content matches are produced asynchronously by the view
+        return plainCommands(model: model, query: query)
+    }
+
+    static func matchCommands(_ hits: [ContentHit], model: AppModel) -> [PaletteCommand] {
+        guard let ws = model.workspace else { return [] }
+        return hits.map { hit in
+            let rel = relativePath(hit.path, root: ws.projectPath)
+            return PaletteCommand(id: "match-\(hit.path):\(hit.line)", kind: .match, title: "\(rel):\(hit.line)", subtitle: hit.text, symbol: "text.magnifyingglass") {
+                ws.openFile(path: hit.path, line: hit.line); model.destination = .workspace
+            }
+        }
+    }
+
+    private static func plainCommands(model: AppModel, query: String) -> [PaletteCommand] {
         var out: [PaletteCommand] = []
         out.append(PaletteCommand(id: "open-project", kind: .action, title: "Open Project…", subtitle: "Choose a local folder", symbol: "folder.badge.plus") {
             model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil)
@@ -54,12 +79,54 @@ enum CommandCatalog {
             let q = query.trimmingCharacters(in: .whitespaces)
             if q.count >= 2 {
                 for path in scanFiles(root: ws.projectPath, matching: q) {
-                    let rel = String(path.dropFirst(ws.projectPath.count + 1))
+                    let rel = relativePath(path, root: ws.projectPath)
                     out.append(PaletteCommand(id: "file-\(path)", kind: .file, title: rel, subtitle: "Open in editor", symbol: "doc.text") { ws.openFile(path: path); model.destination = .workspace })
                 }
             }
         }
         return out
+    }
+
+    struct ContentHit: Sendable, Hashable { let path: String; let line: Int; let text: String }
+
+    /// Project-relative display path. The enumerator reports symlinks resolved (`/private/tmp/…`)
+    /// while the project root may not be (`/tmp/…`); compare both resolved.
+    nonisolated static func relativePath(_ path: String, root: String) -> String {
+        let p = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        let r = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+        return p.hasPrefix(r + "/") ? String(p.dropFirst(r.count + 1)) : path
+    }
+    nonisolated static let contentFileLimit = 2000, contentMatchLimit = 100, contentFileSizeLimit = 512 * 1024
+
+    /// Case-insensitive literal search over UTF-8 text files (Bible Part 5 §7.2). Documented limits:
+    /// first 2000 eligible files, files ≤ 512 KB, 100 matches; the same directories are skipped as
+    /// for file search. Pure function; call off the main actor.
+    nonisolated static func searchContent(root: String, query: String) -> [ContentHit] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return [] }
+        var hits: [ContentHit] = []
+        var visited = 0
+        guard let e = FileManager.default.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { return [] }
+        for case let url as URL in e {
+            let v = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+            if v?.isDirectory == true {
+                if skippedDirectories.contains(url.lastPathComponent) { e.skipDescendants() }
+                continue
+            }
+            visited += 1
+            if visited > contentFileLimit || hits.count >= contentMatchLimit { break }
+            guard (v?.fileSize ?? 0) <= contentFileSizeLimit, let data = try? Data(contentsOf: url), !data.contains(0),
+                  let text = String(data: data, encoding: .utf8) else { continue }
+            var line = 0
+            for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                line += 1
+                if raw.range(of: q, options: .caseInsensitive) != nil {
+                    hits.append(ContentHit(path: url.path, line: line, text: String(raw.trimmingCharacters(in: .whitespaces).prefix(160))))
+                    if hits.count >= contentMatchLimit { break }
+                }
+            }
+        }
+        return hits
     }
 
     /// Bounded, synchronous walk; skips well-known generated directories. Documented limit: 5000 files.
@@ -88,9 +155,12 @@ struct CommandPaletteView: View {
     @Binding var isPresented: Bool
     @State private var query = ""
     @State private var selection = 0
+    @State private var hits: [CommandCatalog.ContentHit] = []
 
     private var filtered: [PaletteCommand] {
+        if query.hasPrefix("/") { return CommandCatalog.matchCommands(hits, model: model) }
         let all = CommandCatalog.commands(model: model, query: query)
+        if CommandCatalog.isPrefixed(query) { return all }
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         if q.isEmpty { return Array(all.prefix(30)) }
         return all.filter { $0.title.lowercased().contains(q) || ($0.subtitle?.lowercased().contains(q) ?? false) }.prefix(40).map { $0 }
@@ -101,10 +171,19 @@ struct CommandPaletteView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass")
-                TextField("Search files, commands, tasks, branches…", text: $query)
+                TextField("Search files, commands · /text in files · :line", text: $query)
                     .textFieldStyle(.plain).font(.title3)
                     .onSubmit { run(items.indices.contains(selection) ? items[selection] : items.first) }
                     .onChange(of: query) { selection = 0 }
+                    .onAppear { if let q = model.paletteInitialQuery { query = q; model.paletteInitialQuery = nil } }
+                    .task(id: query) {
+                        guard query.hasPrefix("/"), let root = model.workspace?.projectPath else { hits = []; return }
+                        let q = String(query.dropFirst())
+                        try? await Task.sleep(for: .milliseconds(250))   // debounce keystrokes
+                        guard !Task.isCancelled else { return }
+                        let found = await Task.detached { CommandCatalog.searchContent(root: root, query: q) }.value
+                        if !Task.isCancelled { hits = found }
+                    }
                 Text("esc").font(.caption).foregroundStyle(Theme.textSecondary)
             }
             .padding(12)
@@ -130,7 +209,7 @@ struct CommandPaletteView: View {
                 .onChange(of: selection) { if items.indices.contains(selection) { proxy.scrollTo(items[selection].id) } }
             }
             .frame(height: 320)
-            if items.isEmpty { Text("No matching command").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
+            if items.isEmpty { Text(query.hasPrefix("/") ? "No matches (first \(CommandCatalog.contentFileLimit) files, ≤ 512 KB each)" : "No matching command").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
         }
         .frame(width: 560)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
