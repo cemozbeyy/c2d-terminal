@@ -41,6 +41,48 @@ private func twoGroups() -> (WorkspaceLayout, Panel, Panel, NodeID, NodeID) {
         #expect(nested.last?.panelIDs == [d.id])
     }
 
+    // The drag-to-dock operation the canvas drop handlers call: move(_:beside:edge:). add(beside:)
+    // is covered above; this moves an *existing* panel out of its group into a new docked split.
+
+    @Test func moveBesideDocksExistingPanelAndPrunesSource() throws {
+        var (layout, a, b, ga, _) = twoGroups()
+        try layout.move(b.id, beside: ga, edge: .bottom)   // dock B below A's group
+        // gb emptied → pruned; the root is now a vertical split of A's group over B's new group.
+        guard case .split(_, let o, let children, _) = layout.root else { Issue.record("expected a split root"); return }
+        #expect(o == .vertical)
+        #expect(children.count == 2 && children[0].panelIDs == [a.id] && children[1].panelIDs == [b.id])
+        #expect(layout.group(containing: b.id) != nil && layout.group(containing: b.id) != ga)
+        #expect(layout.panels.count == 2, "docking moves, never drops or duplicates a panel")
+        #expect(layout.activePanel(in: layout.group(containing: b.id)!) == b.id)
+    }
+
+    @Test func moveBesideTopInsertsBeforeTarget() throws {
+        var (layout, a, b, ga, _) = twoGroups()
+        try layout.move(b.id, beside: ga, edge: .top)   // B's new group goes *before* A's
+        guard case .split(_, let o, let children, _) = layout.root else { Issue.record("expected split"); return }
+        #expect(o == .vertical)
+        #expect(children.first?.panelIDs == [b.id] && children.last?.panelIDs == [a.id])
+    }
+
+    @Test func moveBesideFromMultiPanelGroupKeepsSiblings() throws {
+        var (layout, a, b, ga, gb) = twoGroups()
+        let c = Panel(kind: .tasks, title: "C")
+        try layout.add(c, to: ga)                       // ga = [A, C]
+        try layout.move(c.id, beside: gb, edge: .right) // dock C to the right of B's group
+        #expect(layout.group(containing: a.id) == ga, "the sibling A stays in its group")
+        #expect(WorkspaceLayout.node(ga, in: layout.root)?.panelIDs == [a.id])
+        #expect(layout.group(containing: c.id) != ga && layout.group(containing: c.id) != gb)
+        #expect(layout.panels.count == 3)
+    }
+
+    @Test func moveBesideLonePanelIntoItsOwnGroupIsANoOp() throws {
+        var (layout, a, _, ga, _) = twoGroups()
+        let before = layout.root
+        try layout.move(a.id, beside: ga, edge: .left)   // A is alone in ga → nothing should change
+        #expect(layout.root == before, "no empty split created, no panel lost")
+        #expect(layout.group(containing: a.id) == ga)
+    }
+
     @Test func hideRestoreCloseAreDistinct() throws {
         var (layout, a, b, ga, gb) = twoGroups()
         try layout.hide(a.id)

@@ -307,6 +307,29 @@ final class AppModel {
                 debugTrace("taskDepCheck: blockedWhileOpen=\(blockedWhileOpen) startRefused=\(startRefused) eligibleAfter=\(eligibleAfter) startedAfter=\(startedAfter) deleteRefused=\(deleteRefused) planOK=\(planOK) cleaned=\(cleaned)")
             }
         }
+        // `-c2dDockCheck YES` exercises the drag-to-dock path the canvas drop handler calls
+        // (WorkspaceController.move(_:beside:edge:)) and verifies the resulting layout tree. It does
+        // not drive the SwiftUI drag gesture itself (that delivers the panel id; SwiftUI's own code).
+        if UserDefaults.standard.bool(forKey: "c2dDockCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let ws = self?.workspace else { debugTrace("dockCheck: no workspace"); return }
+                ws.apply(.development)
+                try? await Task.sleep(for: .milliseconds(300))
+                let before = ws.layout.visiblePanelIDs
+                guard before.count >= 2, let p = before.first, let src = ws.layout.group(containing: p),
+                      let target = ws.layout.groupIDs.first(where: { $0 != src }) else {
+                    debugTrace("dockCheck: need two groups (panels=\(before.count), groups=\(ws.layout.groupIDs.count))"); return
+                }
+                ws.move(p, beside: target, edge: .bottom)
+                try? await Task.sleep(for: .milliseconds(300))
+                let after = ws.layout.visiblePanelIDs
+                let newGroup = ws.layout.group(containing: p)
+                let movedToNewGroup = newGroup != nil && newGroup != src && newGroup != target
+                let noneLost = Set(after) == Set(before)
+                debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
+            }
+        }
         // `-c2dExplorerCheck YES` exercises the explorer file operations on disk under a scratch folder
         // and verifies each result, including the safety guards (no overwrite, no "/" in names, trash not delete).
         if UserDefaults.standard.bool(forKey: "c2dExplorerCheck") {
