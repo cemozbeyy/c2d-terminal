@@ -225,6 +225,23 @@ public actor PTYSession {
         exitWaiters.removeValue(forKey: id)?.resume(returning: nil)
     }
 
+    /// Kernel-reported working directory and foreground command of the running session
+    /// (Bible Part 4 §5.2). nil when not running. Cheap enough to poll every second or two.
+    public func processContext() -> PTYProcessContext? {
+        guard case .running = state, let pid, let fd = master.descriptor else { return nil }
+        var context = PTYProcessContext(currentDirectory: ProcessProbe.currentDirectory(of: pid))
+        let foreground = tcgetpgrp(fd)
+        // Shells with job control hand the terminal to the job's process group; zsh keeps simple
+        // lists in its own group, so fall back to the shell's first live child.
+        var command: pid_t? = foreground > 0 && foreground != pid ? foreground : nil
+        if command == nil { command = ProcessProbe.children(of: pid).first { ProcessProbe.name(of: $0) != nil } }
+        if let command {
+            context.foregroundPID = command
+            context.foregroundCommand = ProcessProbe.name(of: command)
+        }
+        return context
+    }
+
     /// Releases the master descriptor and ends the `output` and `stateChanges` streams.
     /// Does not reap or wait for the child; use `terminate()` first if it must be stopped.
     public func close() {

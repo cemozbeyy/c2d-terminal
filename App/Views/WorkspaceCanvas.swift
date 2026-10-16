@@ -329,9 +329,13 @@ struct TerminalPanelView: View {
             HStack(spacing: Theme.space2) {
                 Image(systemName: "terminal").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.success)
                 Text(controller.title).font(.system(size: 12, weight: .semibold))
-                StatusChip(text: chipText, color: chipColor, symbol: controller.isRunning ? "circle.fill" : "stop.fill")
+                StatusChip(text: chipText, color: chipColor, symbol: controller.isRunning ? "circle.fill" : "stop.fill").layoutPriority(1)
+                if let dir = controller.displayDirectory {
+                    Text(dir).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                        .help("Current directory (from the kernel): \(controller.context?.currentDirectory ?? "")")
+                }
                 if model.developerMode, let r = controller.record {
-                    Text("session \(r.id.prefix(8)) · \(r.initialDirectory)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                    Text("session \(r.id.prefix(8)) · started in \(r.initialDirectory)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
                 }
                 Spacer()
                 if controller.isRunning {
@@ -359,8 +363,10 @@ struct TerminalPanelView: View {
 
     private var chipText: String {
         switch controller.state {
-        case .running(let pid): model.developerMode ? "Running · pid \(pid)" : "Running"
-        default: controller.statusText
+        case .running(let pid):
+            let fg = controller.context?.foregroundCommand.map { " · \($0)" } ?? ""
+            return model.developerMode ? "Running · pid \(pid)\(fg)" : "Running\(fg)"
+        default: return controller.statusText
         }
     }
 

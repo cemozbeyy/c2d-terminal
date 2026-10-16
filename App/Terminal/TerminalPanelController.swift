@@ -19,6 +19,9 @@ final class TerminalPanelController: NSObject {
     private(set) var state: PTYSessionState?
     /// True when a surface is attached and output is being fed.
     private(set) var attached = false
+    /// Kernel-reported cwd / foreground command, refreshed while running (Bible Part 4 §5.2). nil = unknown.
+    private(set) var context: PTYProcessContext?
+    @ObservationIgnored private var contextTask: Task<Void, Never>?
 
     @ObservationIgnored private unowned let app: AppModel
     @ObservationIgnored private var session: PTYSession?
@@ -140,10 +143,12 @@ final class TerminalPanelController: NSObject {
                 let agentID = self.agentRecord?.id
                 switch s {
                 case .running(let pid):
+                    self.pollContext(session)
                     self.app.updateSession(id) { $0.lifecycle = .running; $0.pid = pid }
                     self.record?.lifecycle = .running; self.record?.pid = pid
                     if let agentID { self.app.updateAgentSession(agentID) { $0.lifecycle = .running }; self.agentRecord?.lifecycle = .running }
                 case .exited(let status):
+                    self.contextTask?.cancel(); self.contextTask = nil; self.context = nil
                     self.app.updateSession(id) {
                         $0.lifecycle = .exited; $0.endedAt = Date(); $0.pid = nil
                         if case .exited(let c) = status { $0.exitCode = c }
@@ -165,6 +170,32 @@ final class TerminalPanelController: NSObject {
                 }
             }
         }
+    }
+
+    private func pollContext(_ session: PTYSession) {
+        contextTask?.cancel()
+        contextTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let ctx = await session.processContext()
+                guard let self, !Task.isCancelled else { return }
+                if ctx != self.context { self.context = ctx }
+                try? await Task.sleep(for: .milliseconds(1500))   // ponytail: polling; shell integration (OSC 7) if latency matters
+            }
+        }
+    }
+
+    /// Current directory for display: "~" for home, "." for the project root, "./sub" inside it.
+    var displayDirectory: String? {
+        guard let dir = context?.currentDirectory else { return nil }
+        // The kernel reports symlinks resolved (/private/tmp/…); Foundation's resolvingSymlinksInPath
+        // strips /private again, so use realpath(3) for the roots.
+        func real(_ p: String) -> String { guard let r = realpath(p, nil) else { return p }; defer { free(r) }; return String(cString: r) }
+        let project = real(projectPath), home = real(NSHomeDirectory())
+        if dir == project { return "." }
+        if dir.hasPrefix(project + "/") { return "./" + dir.dropFirst(project.count + 1) }
+        if dir == home { return "~" }
+        if dir.hasPrefix(home + "/") { return "~/" + dir.dropFirst(home.count + 1) }
+        return dir
     }
 
     func attach(_ view: TerminalView) {

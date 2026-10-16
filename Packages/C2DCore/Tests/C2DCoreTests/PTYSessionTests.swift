@@ -127,6 +127,28 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
         }
     }
 
+    // Uses `sh` (not `zsh -i`): under a pty without job control, zsh's ZLE flushes typed-ahead input, so
+    // `cd` is dropped non-deterministically in the harness. The interactive-zsh path is covered at runtime
+    // (docs/evidence/terminal-process-context.png shows "./src" and "Running · sleep" from a real zsh -l).
+    @Test func processContextTracksDirectoryAndForegroundCommand() async throws {
+        try await withSession(program("/bin/sh", ["-i"])) { session in
+            try await session.start()
+            let collector = OutputCollector(session)
+            await collector.read { $0.contains("$ ") }
+            try await session.write(Data("cd /private/tmp\n".utf8))
+            var cwd: String?
+            for _ in 0..<50 { cwd = await session.processContext()?.currentDirectory; if cwd == "/private/tmp" { break }; try await Task.sleep(for: .milliseconds(100)) }
+            #expect(cwd == "/private/tmp")
+            #expect(await session.processContext()?.foregroundCommand == nil, "idle shell has no foreground command")
+            try await session.write(Data("sleep 30\n".utf8))
+            var fg: String?
+            for _ in 0..<50 { fg = await session.processContext()?.foregroundCommand; if fg == "sleep" { break }; try await Task.sleep(for: .milliseconds(100)) }
+            #expect(fg == "sleep")
+            _ = await session.terminate(gracePeriod: .milliseconds(200))
+            #expect(await session.processContext() == nil, "no context once the session ended")
+        }
+    }
+
     @Test func inputReachesChildAndIsEchoedBack() async throws {
         try await withSession(program("/bin/cat")) { session in
             try await session.start()
