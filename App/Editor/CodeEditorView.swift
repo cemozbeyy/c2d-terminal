@@ -74,10 +74,16 @@ struct CodeEditorView: NSViewRepresentable {
                 guard r.location != NSNotFound else { break }
                 location = r.location + 1; current += 1
             }
+            // Offset into the line for the column, clamped to the line's end.
+            if let col = tab.pendingColumn, col > 1 {
+                let lineEnd = ns.range(of: "\n", range: NSRange(location: location, length: ns.length - location)).location
+                let maxLoc = lineEnd == NSNotFound ? ns.length : lineEnd
+                location = min(location + (col - 1), maxLoc)
+            }
             tv.setSelectedRange(NSRange(location: location, length: 0))
             tv.scrollRangeToVisible(NSRange(location: location, length: 0))
             tv.window?.makeFirstResponder(tv)
-            Task { @MainActor in tab.pendingLine = nil }   // clear outside the view update
+            Task { @MainActor in tab.pendingLine = nil; tab.pendingColumn = nil }   // clear outside the view update
         }
     }
 

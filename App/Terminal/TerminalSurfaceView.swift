@@ -14,6 +14,10 @@ struct TerminalSurfaceView: NSViewRepresentable {
         view.nativeForegroundColor = NSColor(hex: 0xE8EAF1)
         view.caretColor = NSColor(hex: 0x7C6CF0)
         view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        // Cmd-click opens detected file paths and URLs (Bible Part 5 §7.3). Detection runs on hover/click,
+        // never on the output stream, so it adds no cost to rendering.
+        view.linkReporting = .implicit
+        view.linkHighlightMode = .hoverWithModifier
         controller.attach(view)
         return view
     }

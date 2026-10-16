@@ -198,6 +198,31 @@ final class TerminalPanelController: NSObject {
         return dir
     }
 
+    /// Directory a detected link's relative path is resolved against: the live cwd if known, else the
+    /// session's starting directory, else the project root.
+    var resolutionDirectory: String {
+        context?.currentDirectory ?? agentRecord?.workingDirectory ?? record?.initialDirectory ?? projectPath
+    }
+
+    /// Handles a path/URL that the terminal engine detected under a Cmd-click (Bible Part 5 §7.3).
+    /// A real URL opens with the system handler; a path that resolves to an existing file opens in the
+    /// C2D editor at its line/column; anything else reports a message and opens nothing.
+    /// Returns a short outcome string for runtime checks.
+    @discardableResult
+    func handleOpenLink(_ link: String) -> String {
+        let schemes: Set<String> = ["http", "https", "mailto", "ftp", "ssh"]
+        if let url = URL(string: link), let scheme = url.scheme, schemes.contains(scheme) {
+            NSWorkspace.shared.open(url)
+            return "url:\(scheme)"
+        }
+        guard let resolved = FileReference.resolve(link, relativeTo: resolutionDirectory) else {
+            app.report("Could not open \(link)", "No file matched that path under \(resolutionDirectory).")
+            return "unresolved"
+        }
+        app.workspace?.openFile(path: resolved.path, line: resolved.line, column: resolved.column)
+        return "opened:\(resolved.path):\(resolved.line ?? 0):\(resolved.column ?? 0)"
+    }
+
     func attach(_ view: TerminalView) {
         surface = view
         attached = true
@@ -285,9 +310,7 @@ extension TerminalPanelController: TerminalViewDelegate {
     }
     nonisolated func scrolled(source: TerminalView, position: Double) {}
     nonisolated func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        if let url = URL(string: link), ["http", "https"].contains(url.scheme ?? "") {
-            Task { @MainActor in NSWorkspace.shared.open(url) }
-        }
+        Task { @MainActor in self.handleOpenLink(link) }
     }
     nonisolated func bell(source: TerminalView) { Task { @MainActor in NSSound.beep() } }
     nonisolated func clipboardCopy(source: TerminalView, content: Data) {

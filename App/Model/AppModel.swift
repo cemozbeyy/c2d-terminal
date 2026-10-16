@@ -283,6 +283,23 @@ final class AppModel {
                 debugTrace("explorerCheck: folder=\(folderOK) file=\(fileOK) rename=\(renameOK) dupRefused=\(dupRefused) slashRefused=\(slashRefused) fileTrashed=\(fileTrashed) folderTrashed=\(folderTrashed)")
             }
         }
+        // `-c2dOpenLink "<link>"` simulates a terminal Cmd-click on a detected path/URL and reports the
+        // outcome and the resulting editor caret. Verifies the controller + resolver wiring end-to-end
+        // (SwiftTerm's own detection is its tested responsibility and is not exercised here).
+        if let link = UserDefaults.standard.string(forKey: "c2dOpenLink") {
+            Task { [weak self] in
+                for _ in 0..<50 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard let self, let ws = self.workspace else { continue }
+                    guard let t = ws.terminals.values.first(where: { $0.isRunning }) else { continue }
+                    let outcome = t.handleOpenLink(link)
+                    try? await Task.sleep(for: .milliseconds(600))
+                    let tab = ws.editors.values.compactMap(\.activeTab).first
+                    debugTrace("c2dOpenLink '\(link)': \(outcome) → tab=\(tab?.name ?? "none") line=\(tab?.cursorLine ?? 0) col=\(tab?.cursorColumn ?? 0)")
+                    return
+                }
+            }
+        }
         // `-c2dNewTerminal YES` starts a fresh shell (a restored layout shows last run's ended one).
         if UserDefaults.standard.bool(forKey: "c2dNewTerminal") {
             Task { [weak self] in try? await Task.sleep(for: .milliseconds(500)); self?.workspace?.newTerminal() }
