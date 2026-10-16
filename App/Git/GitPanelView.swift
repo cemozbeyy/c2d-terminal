@@ -79,7 +79,9 @@ struct GitPanelView: View {
                 composer
             }
             .frame(maxWidth: .infinity, minHeight: 160)
-            DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated)
+            DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
+                     hunkActionTitle: git.hunkActionTitle,
+                     onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } })
                 .frame(maxWidth: .infinity, minHeight: 100)
         }
     }
@@ -229,6 +231,9 @@ struct DiffView: View {
     let files: [FileDiff]
     let title: String
     let truncated: Bool
+    /// `nil` hides the per-hunk button (binary, new/deleted, conflicted, or nothing selected).
+    var hunkActionTitle: String? = nil
+    var onHunkAction: ((Int, DiffHunk) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -252,8 +257,15 @@ struct DiffView: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(files.enumerated()), id: \.offset) { _, file in
                         if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
-                        ForEach(Array(file.hunks.enumerated()), id: \.offset) { _, hunk in
-                            Text(hunk.header).font(.system(size: 11, design: .monospaced)).foregroundStyle(.blue).padding(.horizontal, 8).padding(.vertical, 2)
+                        ForEach(Array(file.hunks.enumerated()), id: \.offset) { hunkIndex, hunk in
+                            HStack(spacing: 6) {
+                                Text(hunk.header).font(.system(size: 11, design: .monospaced)).foregroundStyle(.blue)
+                                Spacer()
+                                if let title = hunkActionTitle, let action = onHunkAction {
+                                    Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
+                                }
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 2)
                             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
                                 HStack(spacing: 0) {
                                     Text(line.oldLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing)

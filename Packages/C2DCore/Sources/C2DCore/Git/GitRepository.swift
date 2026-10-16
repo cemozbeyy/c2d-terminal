@@ -9,6 +9,10 @@ public enum GitError: Error, Equatable, Sendable {
     case emptyMessage
     case identityNotConfigured
     case invalidPath
+    /// The selected hunk no longer matches the index; `git apply` refused it (nothing changed).
+    case patchDoesNotApply(stderr: String)
+    /// The diff changed between display and apply (edit or external index change); nothing staged.
+    case staleDiff
 }
 
 /// One line of `git status --porcelain=v2`. Index and worktree states are kept apart (Bible Part 6 §3).
@@ -252,6 +256,54 @@ public actor GitRepository {
         return files
     }
 
+    // MARK: Partial (hunk) staging
+
+    /// A minimal patch containing only hunk `index` of a single-file unified diff: the file header
+    /// (everything before the first `@@`) plus that one hunk. Pure text slicing on `@@` boundaries,
+    /// so `\ No newline at end of file` markers and `-`-prefixed line content survive intact.
+    static func extractHunkPatch(from diffText: String, at index: Int) -> String? {
+        var lines = diffText.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() }   // trailing-newline artifact of the split
+        let hunkStarts = lines.indices.filter { lines[$0].hasPrefix("@@") }
+        guard index >= 0, index < hunkStarts.count, let first = hunkStarts.first, first > 0 else { return nil }
+        let start = hunkStarts[index]
+        let end = index + 1 < hunkStarts.count ? hunkStarts[index + 1] : lines.count
+        let patch = Array(lines[0..<first]) + Array(lines[start..<end])
+        return patch.joined(separator: "\n") + "\n"   // git apply requires a trailing newline
+    }
+
+    /// Stages exactly hunk `index` of `path` without touching other changes (Bible Part 6 §7, §21).
+    public func stageHunk(path: String, index: Int, expected: DiffHunk) async throws {
+        try await applyHunk(path: path, index: index, expected: expected, staged: false, reverse: false)
+    }
+
+    /// Unstages exactly hunk `index` of `path`'s staged diff by reverse-applying it to the index.
+    public func unstageHunk(path: String, index: Int, expected: DiffHunk) async throws {
+        try await applyHunk(path: path, index: index, expected: expected, staged: true, reverse: true)
+    }
+
+    private func applyHunk(path: String, index: Int, expected: DiffHunk, staged: Bool, reverse: Bool) async throws {
+        // Re-read the diff now; never trust the UI's copy. If the hunk differs (edited in place,
+        // external index change, reordered), refuse rather than stage the wrong text.
+        let fresh = try await diff(path: path, staged: staged)
+        let files = Self.parseUnifiedDiff(fresh)
+        guard let file = files.first, index < file.hunks.count, file.hunks[index] == expected,
+              let patch = Self.extractHunkPatch(from: fresh, at: index) else { throw GitError.staleDiff }
+        var args = ["apply", "--cached", "--whitespace=nowarn"]
+        if reverse { args.append("--reverse") }
+        args.append("-")
+        // ponytail: a small window remains between this read and apply; `isBusy` serializes in-app
+        // ops and `apply --cached` re-validates against the index, so a concurrent external change
+        // surfaces as patchDoesNotApply rather than a silent wrong stage.
+        let r = try await run(args, allowFailure: true, input: Data(patch.utf8))
+        guard r.code == 0 else {
+            if r.stderr.contains("does not apply") || r.stderr.contains("does not match index") || r.stderr.contains("patch failed") {
+                throw GitError.patchDoesNotApply(stderr: r.stderr)
+            }
+            throw GitError.commandFailed(code: r.code, stderr: r.stderr)
+        }
+    }
+
     // MARK: Index and commits
 
     public func stage(paths: [String]) async throws { guard !paths.isEmpty else { return }; _ = try await run(["add", "--"] + paths) }
@@ -359,8 +411,8 @@ public actor GitRepository {
     struct Result: Sendable { let stdout: String; let stderr: String; let code: Int32 }
 
     @discardableResult
-    func run(_ args: [String], allowFailure: Bool = false) async throws -> Result {
-        let data = try await execute(args)
+    func run(_ args: [String], allowFailure: Bool = false, input: Data? = nil) async throws -> Result {
+        let data = try await execute(args, input: input)
         let result = Result(stdout: String(decoding: data.stdout, as: UTF8.self), stderr: String(decoding: data.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), code: data.code)
         if !allowFailure && result.code != 0 { throw GitError.commandFailed(code: result.code, stderr: result.stderr) }
         return result
@@ -372,7 +424,7 @@ public actor GitRepository {
         return d.stdout
     }
 
-    private func execute(_ args: [String]) async throws -> (stdout: Data, stderr: Data, code: Int32) {
+    private func execute(_ args: [String], input: Data? = nil) async throws -> (stdout: Data, stderr: Data, code: Int32) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gitPath)
         process.arguments = args
@@ -384,11 +436,19 @@ public actor GitRepository {
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
         process.standardError = err
-        process.standardInput = FileHandle.nullDevice
+        let inPipe: Pipe? = input != nil ? Pipe() : nil
+        process.standardInput = inPipe ?? FileHandle.nullDevice
         Log.git.debug("git \(args.first ?? "", privacy: .public)")
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try process.run() } catch { continuation.resume(throwing: GitError.gitUnavailable); return }
+                // Feed stdin off this thread so a patch larger than the pipe buffer can't wedge the read below.
+                if let inPipe, let input {
+                    DispatchQueue.global(qos: .utility).async {
+                        inPipe.fileHandleForWriting.write(input)
+                        try? inPipe.fileHandleForWriting.close()
+                    }
+                }
                 // Drain stderr concurrently with stdout so neither pipe can fill and deadlock the child.
                 let errBox = DataBox()
                 let group = DispatchGroup()

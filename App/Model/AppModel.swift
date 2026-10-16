@@ -113,6 +113,21 @@ final class AppModel {
                 await git.refresh()
                 await git.select(path: rel, staged: false)
                 debugTrace("c2dGitSelect: \(rel) hunks=\(git.selectedDiff.reduce(0) { $0 + $1.hunks.count })")
+                // `-c2dGitStageHunk <index>` stages that unstaged hunk, then reports the resulting split.
+                if UserDefaults.standard.object(forKey: "c2dGitStageHunk") != nil {
+                    let idx = UserDefaults.standard.integer(forKey: "c2dGitStageHunk")
+                    let hunks = git.selectedDiff.first?.hunks ?? []
+                    if idx >= 0, idx < hunks.count {
+                        await git.stageHunk(index: idx, hunk: hunks[idx])
+                        await git.select(path: rel, staged: true)
+                        let stagedHunks = git.selectedDiff.reduce(0) { $0 + $1.hunks.count }
+                        await git.select(path: rel, staged: false)
+                        let unstagedHunks = git.selectedDiff.reduce(0) { $0 + $1.hunks.count }
+                        debugTrace("c2dGitStageHunk: idx=\(idx) staged=\(stagedHunks) unstaged=\(unstagedHunks) error=\(git.lastError ?? "none")")
+                    } else {
+                        debugTrace("c2dGitStageHunk: idx=\(idx) out of range (hunks=\(hunks.count))")
+                    }
+                }
                 if let msg = UserDefaults.standard.string(forKey: "c2dGitStageAllAndCommit") {
                     await git.stageAll()
                     git.commitMessage = msg

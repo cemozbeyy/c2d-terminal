@@ -187,6 +187,102 @@ import Testing
         #expect(try await r.repo.branches().map(\.name).contains("wt-branch"), "removing a worktree never deletes its branch")
     }
 
+    // MARK: Partial (hunk) staging
+
+    /// Two edits separated by ≥8 unchanged lines so git keeps them as distinct hunks (7 lines of
+    /// context would otherwise merge them). Stage only the first; the second must stay unstaged.
+    private func makeTwoHunkRepo() async throws -> Repo {
+        let r = try await makeRepo()
+        let base = (1...20).map { "line \($0)\n" }.joined()
+        try r.write("f.txt", base); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "base")
+        var edited = (1...20).map { "line \($0)" }
+        edited[1] = "line 2 CHANGED"       // hunk around line 2
+        edited[17] = "line 18 CHANGED"     // hunk around line 18 (≥8 lines away)
+        try r.write("f.txt", edited.joined(separator: "\n") + "\n")
+        return r
+    }
+
+    @Test func extractHunkPatchSlicesOneHunkLosslessly() async throws {
+        let r = try await makeTwoHunkRepo(); defer { r.cleanup() }
+        let diff = try await r.repo.diff(path: "f.txt", staged: false)
+        #expect(GitRepository.parseUnifiedDiff(diff).first?.hunks.count == 2)
+        let p0 = GitRepository.extractHunkPatch(from: diff, at: 0)
+        let p1 = GitRepository.extractHunkPatch(from: diff, at: 1)
+        #expect(p0 != nil && p0!.contains("line 2 CHANGED") && !p0!.contains("line 18 CHANGED"))
+        #expect(p1 != nil && p1!.contains("line 18 CHANGED") && !p1!.contains("line 2 CHANGED"))
+        #expect(p0!.hasPrefix("diff --git") && p0!.hasSuffix("\n"))
+        #expect(GitRepository.extractHunkPatch(from: diff, at: 2) == nil)   // out of range
+        #expect(GitRepository.extractHunkPatch(from: "no hunks here", at: 0) == nil)
+    }
+
+    @Test func stageOneHunkLeavesOthersUnstaged() async throws {
+        let r = try await makeTwoHunkRepo(); defer { r.cleanup() }
+        let hunks = try await GitRepository.parseUnifiedDiff(r.repo.diff(path: "f.txt", staged: false)).first!.hunks
+        try await r.repo.stageHunk(path: "f.txt", index: 0, expected: hunks[0])
+
+        // Working file is untouched by staging; both edits are still on disk.
+        let onDisk = try r.read("f.txt")
+        #expect(onDisk.contains("line 2 CHANGED") && onDisk.contains("line 18 CHANGED"))
+        // Index now holds only the first edit; the second is still unstaged.
+        let staged = try await r.repo.diff(path: "f.txt", staged: true)
+        #expect(staged.contains("line 2 CHANGED") && !staged.contains("line 18 CHANGED"))
+        let unstaged = try await r.repo.diff(path: "f.txt", staged: false)
+        #expect(unstaged.contains("line 18 CHANGED") && !unstaged.contains("line 2 CHANGED"))
+        let e = try await r.repo.status().entries.first { $0.path == "f.txt" }!
+        #expect(e.hasStagedChange && e.hasUnstagedChange)
+    }
+
+    @Test func unstageHunkReversesTheStage() async throws {
+        let r = try await makeTwoHunkRepo(); defer { r.cleanup() }
+        try await r.repo.stageAll()
+        let stagedHunks = try await GitRepository.parseUnifiedDiff(r.repo.diff(path: "f.txt", staged: true)).first!.hunks
+        #expect(stagedHunks.count == 2)
+        try await r.repo.unstageHunk(path: "f.txt", index: 0, expected: stagedHunks[0])
+        let staged = try await r.repo.diff(path: "f.txt", staged: true)
+        #expect(!staged.contains("line 2 CHANGED") && staged.contains("line 18 CHANGED"))
+    }
+
+    @Test func stageAdditionAndDeletionHunks() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        let base = (1...20).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        try r.write("f.txt", base); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "base")
+        // Pure deletion near the top, pure addition near the bottom.
+        var lines = (1...20).map { "line \($0)" }
+        lines.remove(at: 1)                  // delete "line 2"
+        lines.insert("inserted", at: 18)     // add a line far below
+        try r.write("f.txt", lines.joined(separator: "\n") + "\n")
+        let hunks = try await GitRepository.parseUnifiedDiff(r.repo.diff(path: "f.txt", staged: false)).first!.hunks
+        #expect(hunks.count == 2)
+        try await r.repo.stageHunk(path: "f.txt", index: 0, expected: hunks[0])   // the deletion
+        let staged = try await r.repo.diff(path: "f.txt", staged: true)
+        #expect(staged.contains("-line 2") && !staged.contains("+inserted"))
+    }
+
+    @Test func stageHunkWithoutTrailingNewline() async throws {
+        // The case where raw text slicing (vs regenerating from a parsed hunk) earns its keep:
+        // the "\ No newline at end of file" marker must survive into the patch so apply accepts it.
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("f.txt", "alpha\n"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "base")
+        try "alpha\nbeta".write(toFile: r.root.appendingPathComponent("f.txt").path, atomically: true, encoding: .utf8)  // no final newline
+        let diff = try await r.repo.diff(path: "f.txt", staged: false)
+        #expect(diff.contains("No newline at end of file"))
+        let hunks = GitRepository.parseUnifiedDiff(diff).first!.hunks
+        try await r.repo.stageHunk(path: "f.txt", index: 0, expected: hunks[0])
+        #expect(try await r.repo.diff(path: "f.txt", staged: true).contains("+beta"))
+        #expect(try await r.repo.status().entries.first { $0.path == "f.txt" }!.hasStagedChange)
+    }
+
+    @Test func staleHunkIsRefusedNothingStaged() async throws {
+        let r = try await makeTwoHunkRepo(); defer { r.cleanup() }
+        let hunks = try await GitRepository.parseUnifiedDiff(r.repo.diff(path: "f.txt", staged: false)).first!.hunks
+        // Edit the file after capturing the diff so the first hunk no longer matches.
+        var edited = (1...20).map { "line \($0)" }
+        edited[1] = "line 2 TOTALLY DIFFERENT"; edited[17] = "line 18 CHANGED"
+        try r.write("f.txt", edited.joined(separator: "\n") + "\n")
+        await #expect(throws: GitError.staleDiff) { try await r.repo.stageHunk(path: "f.txt", index: 0, expected: hunks[0]) }
+        #expect(try await r.repo.diff(path: "f.txt", staged: true).isEmpty, "a stale hunk must stage nothing")
+    }
+
     @Test func commandFailureCarriesStderr() async throws {
         let r = try await makeRepo(); defer { r.cleanup() }
         do {

@@ -159,6 +159,23 @@ final class GitController {
         await refresh()
     }
 
+    /// `nil` when the selected file can't do per-hunk staging: binary, or a whole new/deleted file
+    /// (one hunk whose reverse is a whole-file unstage), or conflicted. Otherwise the button label.
+    var hunkActionTitle: String? {
+        guard selectedPath != nil, let f = selectedDiff.first, f.oldPath != nil, f.newPath != nil, !f.isBinary else { return nil }
+        if let e = status?.entries.first(where: { $0.path == selectedPath }), e.isConflicted { return nil }
+        return selectedIsStaged ? "Unstage hunk" : "Stage hunk"
+    }
+
+    func stageHunk(index: Int, hunk: DiffHunk) async {
+        guard let p = selectedPath else { return }
+        let staged = selectedIsStaged
+        await perform(staged ? "Unstage hunk" : "Stage hunk") { repo in
+            if staged { try await repo.unstageHunk(path: p, index: index, expected: hunk) }
+            else { try await repo.stageHunk(path: p, index: index, expected: hunk) }
+        }
+    }
+
     func stage(_ paths: [String]) async { await perform("Stage") { try await $0.stage(paths: paths) } }
     func unstage(_ paths: [String]) async { await perform("Unstage") { try await $0.unstage(paths: paths) } }
     func stageAll() async { await perform("Stage all") { try await $0.stageAll() } }
@@ -212,6 +229,8 @@ final class GitController {
         case .emptyMessage: "commit message is empty"
         case .identityNotConfigured: "git user.name / user.email are not configured"
         case .invalidPath: "invalid path"
+        case .staleDiff: "this diff changed since it was shown; nothing was staged — refresh and retry"
+        case .patchDoesNotApply(let stderr): "the hunk no longer applies to the index (nothing changed): \(stderr.isEmpty ? "refresh and retry" : stderr)"
         case .none: "\(error)"
         }
     }
