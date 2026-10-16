@@ -69,6 +69,7 @@ final class AppModel {
     private(set) var persistenceUnavailable: String?
 
     init() {
+        let initClock = ContinuousClock.now
         var unavailable: String?
         var store: JSONDocumentStore?
         do { store = try JSONDocumentStore.applicationSupport() } catch { unavailable = "\(error)" }
@@ -331,6 +332,22 @@ final class AppModel {
                 let movedToNewGroup = newGroup != nil && newGroup != src && newGroup != target
                 let noneLost = Set(after) == Set(before)
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
+            }
+        }
+        // `-c2dLaunchBench <projectPath>` records launch/restoration timing and memory (e2e, Bible
+        // Part 15 §14.1). forkToReady uses the kernel process start time (true cold-ish, incl. dyld);
+        // modelInit is from the first line of this init; restore is the openWorkspace build.
+        if let projectPath = UserDefaults.standard.string(forKey: "c2dLaunchBench") {
+            let modelInit = ContinuousClock.now - initClock
+            let fork = forkAgeSeconds()
+            debugTrace("launchBench: forkToReady=\(fork < 0 ? "n/a" : String(format: "%.0f", fork * 1000) + "ms") modelInit=\(perfMS(modelInit)) maxRSS=\(maxRSSMB())MB")
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard let self else { return }
+                let t = ContinuousClock.now
+                self.openProject(at: URL(fileURLWithPath: projectPath))
+                let restore = ContinuousClock.now - t
+                debugTrace("launchBench: restore(openWorkspace)=\(perfMS(restore)) panels=\(self.workspace?.layout.panels.count ?? 0) maxRSS=\(maxRSSMB())MB")
             }
         }
         // `-c2dThemeCheck YES` resolves the design tokens under dark appearance and verifies the
@@ -614,4 +631,29 @@ final class AppModel {
         await workspace?.terminateAllSessions()
         debugTrace("shutdown: all sessions ended")
     }
+}
+
+// MARK: - Launch benchmark helpers (Bible Part 15 §14.1)
+
+private func perfMS(_ d: Duration) -> String {
+    String(format: "%.0fms", Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15)
+}
+
+/// Peak resident set size in whole MB (getrusage ru_maxrss is bytes on Darwin).
+private func maxRSSMB() -> Int {
+    var ru = rusage()
+    guard getrusage(RUSAGE_SELF, &ru) == 0 else { return -1 }
+    return Int(ru.ru_maxrss) / 1_000_000
+}
+
+/// Seconds since this process was forked, from the kernel's recorded start time; `-1` if unavailable.
+private func forkAgeSeconds() -> Double {
+    var kp = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    let rc = mib.withUnsafeMutableBufferPointer { sysctl($0.baseAddress, u_int($0.count), &kp, &size, nil, 0) }
+    guard rc == 0 else { return -1 }
+    let start = kp.kp_proc.p_un.__p_starttime
+    let started = Double(start.tv_sec) + Double(start.tv_usec) / 1e6
+    return Date().timeIntervalSince1970 - started
 }
