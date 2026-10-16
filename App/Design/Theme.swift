@@ -30,6 +30,29 @@ enum Theme {
     static let warning = dynamic(dark: 0xF5B84B, light: 0xB8771A)
     static let error = dynamic(dark: 0xF26B6B, light: 0xC43B3B)
     static let info = dynamic(dark: 0x5DA9F6, light: 0x2F6FD3)
+    /// Foreground placed on top of an accent/state fill (e.g. drop-zone label); always light.
+    static let onAccent = Color.white
+    /// Dimming scrim behind modal overlays (the palette). Alpha is applied at the call site.
+    static let scrim = Color.black
+
+    // MARK: Typography (§3) — one token per distinct size/design; weight stays at the call site so
+    // every migration is a 1:1 swap with no appearance change. Monospaced tokens keep code aligned.
+    enum Typography {
+        static let heading = Font.headline
+        static let title2 = Font.system(size: 13)
+        static let body = Font.system(size: 12)
+        static let caption = Font.caption
+        static let caption2 = Font.caption2
+        static let detail = Font.system(size: 11)
+        static let badge = Font.system(size: 10.5)
+        static let metadata = Font.system(size: 10)
+        static let micro = Font.system(size: 9)
+        static let mono = Font.system(size: 12, design: .monospaced)
+        static let monoBody = Font.system(.caption, design: .monospaced)
+        static let monoDetail = Font.system(size: 11, design: .monospaced)
+        static let monoMetadata = Font.system(size: 10, design: .monospaced)
+        static let monoMicro = Font.system(size: 9, design: .monospaced)
+    }
 
     // MARK: Geometry (§6)
     static let panelRadius: CGFloat = 10

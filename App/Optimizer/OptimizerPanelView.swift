@@ -15,7 +15,7 @@ struct OptimizerPanelView: View {
                     GroupBox("Prepared context") {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(est.tokens) tokens · \(est.source.label)").font(.caption).bold()
-                            Text(est.confidence).font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                            Text(est.confidence).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                             HStack {
                                 Stepper("Budget \(optimizer.budgetTokens)", value: $optimizer.budgetTokens, in: 1000...200_000, step: 1000).font(.caption)
                                 Button("Check budget") { optimizer.measureOnly() }.font(.caption)
@@ -44,7 +44,7 @@ struct OptimizerPanelView: View {
                 Text("Token Optimizer").font(.headline)
                 Spacer()
                 Text(entitlementLabel).font(.caption).padding(.horizontal, 6).padding(.vertical, 2)
-                    .background((optimizer.entitlement.isPremium ? Color.accentColor : Color.secondary).opacity(0.2), in: Capsule())
+                    .background((optimizer.entitlement.isPremium ? Theme.accent : Theme.textMuted).opacity(0.2), in: Capsule())
             }
             Text("All numbers here are heuristic estimates of prepared context. No provider reports usage to C2D yet, so nothing is shown as confirmed or saved.")
                 .font(.caption).foregroundStyle(Theme.textSecondary)
@@ -75,12 +75,12 @@ struct OptimizerPanelView: View {
                 }
                 ForEach(optimizer.items) { item in
                     HStack {
-                        Text(item.kind.rawValue).font(.system(size: 9)).padding(.horizontal, 4).background(Color.secondary.opacity(0.15), in: Capsule())
+                        Text(item.kind.rawValue).font(Theme.Typography.micro).padding(.horizontal, 4).background(Theme.textMuted.opacity(0.15), in: Capsule())
                         Text(item.path.map { ($0 as NSString).lastPathComponent } ?? String(item.content.prefix(60).replacingOccurrences(of: "\n", with: " "))).font(.caption).lineLimit(1)
-                        if item.mandatory { Text("mandatory").font(.system(size: 9)).foregroundStyle(Theme.warning) }
+                        if item.mandatory { Text("mandatory").font(Theme.Typography.micro).foregroundStyle(Theme.warning) }
                         Spacer()
-                        Text("~\(TokenEstimator.estimate(item.content).tokens)").font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textSecondary)
-                        Button { optimizer.remove(item.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.buttonStyle(.plain)
+                        Text("~\(TokenEstimator.estimate(item.content).tokens)").font(Theme.Typography.monoMicro).foregroundStyle(Theme.textSecondary)
+                        Button { optimizer.remove(item.id) } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.plain)
                     }
                 }
                 if optimizer.items.isEmpty { Text("Nothing selected. The optimizer never collects context on its own.").font(.caption).foregroundStyle(Theme.textSecondary) }
@@ -114,7 +114,7 @@ struct OptimizerPanelView: View {
                     Text("No deterministic reduction applied (no exact duplicates or whitespace waste).").font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(r.actions, id: \.self) { a in
-                    Text("• \(a.kind.rawValue): \(a.reason) (\(a.tokensBefore) → \(a.tokensAfter)); original retained").font(.system(size: 10))
+                    Text("• \(a.kind.rawValue): \(a.reason) (\(a.tokensBefore) → \(a.tokensAfter)); original retained").font(Theme.Typography.metadata)
                 }
                 Button("Record this measurement") { Task { await optimizer.recordResult() } }.font(.caption).disabled(!optimizer.isStoreAvailable)
             }
@@ -133,7 +133,7 @@ struct OptimizerPanelView: View {
                 }
                 ForEach(optimizer.history.prefix(10)) { rec in
                     Text("\(rec.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(rec.sourceDescription) · \(rec.baselineTokens)→\(rec.optimizedTokens) · \(rec.measurementSource.label)")
-                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

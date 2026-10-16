@@ -197,7 +197,7 @@ struct CommandPaletteView: View {
                             if let s = cmd.subtitle { Text(s).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle) }
                         }
                         Spacer()
-                        Text(cmd.kind.rawValue).font(.caption2).foregroundStyle(.tertiary)
+                        Text(cmd.kind.rawValue).font(Theme.Typography.caption2).foregroundStyle(Theme.textMuted)
                     }
                     .padding(.vertical, 2)
                     .listRowBackground(index == selection ? Theme.accent.opacity(0.25) : Color.clear)
@@ -213,7 +213,7 @@ struct CommandPaletteView: View {
         }
         .frame(width: 560)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.3)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.textMuted.opacity(0.3)))
         .shadow(radius: 20)
         .onKeyPress(.downArrow) { selection = min(selection + 1, max(items.count - 1, 0)); return .handled }
         .onKeyPress(.upArrow) { selection = max(selection - 1, 0); return .handled }

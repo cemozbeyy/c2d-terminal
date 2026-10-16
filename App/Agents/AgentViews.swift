@@ -20,11 +20,11 @@ struct AgentPanelView: View {
                         StatusChip(text: agentChipText, color: controller.isRunning ? Theme.success : Theme.textSecondary, symbol: controller.isRunning ? "circle.fill" : "stop.fill")
                     }
                     HStack(spacing: 6) {
-                        Text(controller.agentPlan?.workingDirectory ?? controller.agentRecord?.workingDirectory ?? "").font(.system(size: 10)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
-                        if model.developerMode, let r = controller.agentRecord { Text("session \(r.id.prefix(8))").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted) }
+                        Text(controller.agentPlan?.workingDirectory ?? controller.agentRecord?.workingDirectory ?? "").font(Theme.Typography.metadata).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                        if model.developerMode, let r = controller.agentRecord { Text("session \(r.id.prefix(8))").font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textMuted) }
                     }
                     if let t = controller.agentPlan?.task ?? controller.agentRecord?.taskSummary, !t.isEmpty {
-                        Text("Task: \(t)").font(.system(size: 10.5)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Text("Task: \(t)").font(Theme.Typography.badge).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     }
                 }
                 Spacer()
@@ -109,7 +109,7 @@ struct AgentLaunchSheet: View {
             }
             if let plan {
                 GroupBox {
-                    Text(plan.displaySummary).font(.system(.caption, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(plan.displaySummary).font(Theme.Typography.monoBody).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 let others = workspace.liveAgents(in: directory)
                 if !others.isEmpty {
@@ -181,7 +181,7 @@ struct AgentsDestinationView: View {
                         }
                         .font(.caption)
                     }
-                    if let t = model.providersRefreshedAt { Text("Checked \(t.formatted(date: .omitted, time: .standard))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
+                    if let t = model.providersRefreshedAt { Text("Checked \(t.formatted(date: .omitted, time: .standard))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -191,18 +191,18 @@ struct AgentsDestinationView: View {
             } else {
                 List(model.agentSessions.records.sorted { $0.startedAt > $1.startedAt }) { r in
                     HStack {
-                        Circle().fill(r.isLive ? Color.green : Color.secondary).frame(width: 7, height: 7)
+                        Circle().fill(r.isLive ? Theme.success : Theme.textMuted).frame(width: 7, height: 7)
                         VStack(alignment: .leading) {
                             Text("\(AgentProvider.builtIn.first { $0.id == r.providerID }?.displayName ?? r.providerID) · \(r.lifecycle.rawValue)").font(.caption).bold()
-                            Text(r.workingDirectory).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
-                            if let t = r.taskSummary { Text(t).font(.system(size: 9)).lineLimit(1) }
+                            Text(r.workingDirectory).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                            if let t = r.taskSummary { Text(t).font(Theme.Typography.micro).lineLimit(1) }
                         }
                         Spacer()
-                        Text(r.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                        Text(r.startedAt.formatted(date: .abbreviated, time: .shortened)).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                         if let ws = model.workspace, ws.projectPath == r.projectPath, let p = r.panelID, ws.layout.panels[p] != nil {
                             Button("Show") { if ws.layout.hidden.contains(p) { ws.restore(p) }; ws.activate(p); model.destination = .workspace }.font(.caption)
                         } else {
-                            Text(r.projectPath.split(separator: "/").last.map(String.init) ?? "").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                            Text(r.projectPath.split(separator: "/").last.map(String.init) ?? "").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                         }
                     }
                 }

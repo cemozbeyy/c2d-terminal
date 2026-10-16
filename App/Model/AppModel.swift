@@ -2,6 +2,7 @@ import AppKit
 import C2DCore
 import Foundation
 import Observation
+import SwiftUI
 
 struct UserMessage: Identifiable, Equatable {
     let id = UUID()
@@ -331,6 +332,37 @@ final class AppModel {
                 let noneLost = Set(after) == Set(before)
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
             }
+        }
+        // `-c2dThemeCheck YES` resolves the design tokens under dark appearance and verifies the
+        // invariants that matter: surfaces are pairwise distinct, text luminance is ordered
+        // primary>secondary>muted, and every state color has ≥3:1 contrast on the panel surface.
+        if UserDefaults.standard.bool(forKey: "c2dThemeCheck") {
+            let appearance = NSAppearance(named: .darkAqua)!
+            func srgb(_ c: Color) -> (Double, Double, Double) {
+                var out = (0.0, 0.0, 0.0)
+                appearance.performAsCurrentDrawingAppearance {
+                    let ns = NSColor(c).usingColorSpace(.sRGB) ?? .black
+                    out = (Double(ns.redComponent), Double(ns.greenComponent), Double(ns.blueComponent))
+                }
+                return out
+            }
+            func lum(_ c: Color) -> Double {
+                let (r, g, b) = srgb(c)
+                func f(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+                return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+            }
+            func contrast(_ a: Color, _ b: Color) -> Double {
+                let la = lum(a), lb = lum(b); return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+            }
+            let surfaces: [(String, Color)] = [("window", Theme.window), ("rail", Theme.rail), ("panel", Theme.panel),
+                                               ("panelHeader", Theme.panelHeader), ("elevated", Theme.elevated), ("field", Theme.field)]
+            var distinct = true
+            for i in 0..<surfaces.count { for j in (i + 1)..<surfaces.count where srgb(surfaces[i].1) == srgb(surfaces[j].1) { distinct = false } }
+            let ordered = lum(Theme.textPrimary) > lum(Theme.textSecondary) && lum(Theme.textSecondary) > lum(Theme.textMuted)
+            let states: [(String, Color)] = [("accent", Theme.accent), ("success", Theme.success), ("warning", Theme.warning), ("error", Theme.error), ("info", Theme.info)]
+            var report = "", allPass = true
+            for (n, c) in states { let r = contrast(c, Theme.panel); report += " \(n)=\(String(format: "%.2f", r))"; if r < 3.0 { allPass = false } }
+            debugTrace("themeCheck: surfacesDistinct=\(distinct) textLumOrdered=\(ordered) stateContrast>=3:\(allPass)\(report)")
         }
         // `-c2dDiagnosticsExport <path>` seeds events carrying secrets, writes the bundle, and reports
         // whether the seeded secrets survive into the file (they must not).

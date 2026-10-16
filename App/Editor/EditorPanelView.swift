@@ -43,8 +43,8 @@ struct EditorPanelView: View {
                 ForEach(editor.tabs) { tab in
                     HStack(spacing: 4) {
                         Text(tab.name).lineLimit(1)
-                        if tab.isDirty { Circle().fill(Color.accentColor).frame(width: 6, height: 6).accessibilityLabel("unsaved") }
-                        Button { editor.requestClose(tab) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.buttonStyle(.plain)
+                        if tab.isDirty { Circle().fill(Theme.accent).frame(width: 6, height: 6).accessibilityLabel("unsaved") }
+                        Button { editor.requestClose(tab) } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.plain)
                     }
                     .font(.caption)
                     .padding(.horizontal, 8).padding(.vertical, 4)

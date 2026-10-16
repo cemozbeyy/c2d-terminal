@@ -137,11 +137,11 @@ struct GitPanelView: View {
         let change = staged ? e.staged : e.unstaged
         let letter = e.isConflicted ? "C" : e.isUntracked ? "U" : String(change.rawValue)
         return HStack(spacing: 6) {
-            Text(letter).font(.system(.caption, design: .monospaced)).bold().foregroundStyle(color(letter)).frame(width: 14)
+            Text(letter).font(Theme.Typography.monoBody).bold().foregroundStyle(color(letter)).frame(width: 14)
             VStack(alignment: .leading, spacing: 0) {
                 Text((e.path as NSString).lastPathComponent).font(.caption).lineLimit(1)
-                if let o = e.originalPath { Text("← \(o)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1) }
-                else { Text((e.path as NSString).deletingLastPathComponent).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                if let o = e.originalPath { Text("← \(o)").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                else { Text((e.path as NSString).deletingLastPathComponent).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1) }
             }
             Spacer()
             if showStage {
@@ -166,7 +166,7 @@ struct GitPanelView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $git.commitMessage).font(.system(size: 12)).frame(height: 52)
+            TextEditor(text: $git.commitMessage).font(Theme.Typography.body).frame(height: 52)
                 .overlay(alignment: .topLeading) { if git.commitMessage.isEmpty { Text("Commit message (staged changes only)").font(.caption).foregroundStyle(.tertiary).padding(6).allowsHitTesting(false) } }
             HStack {
                 Text("\(git.stagedCount) staged file(s)").font(.caption).foregroundStyle(Theme.textSecondary)
@@ -190,16 +190,16 @@ struct GitPanelView: View {
             Divider()
             List(git.branches, id: \.self) { b in
                 HStack {
-                    Image(systemName: b.isCurrent ? "checkmark.circle.fill" : "circle").foregroundStyle(b.isCurrent ? Color.accentColor : .secondary)
+                    Image(systemName: b.isCurrent ? "checkmark.circle.fill" : "circle").foregroundStyle(b.isCurrent ? Theme.accent : .secondary)
                     Text(b.name).font(.caption)
-                    if let u = b.upstream { Text("→ \(u)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
+                    if let u = b.upstream { Text("→ \(u)").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary) }
                     Spacer()
-                    Text(b.head.prefix(7)).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                    Text(b.head.prefix(7)).font(Theme.Typography.monoMicro).foregroundStyle(Theme.textSecondary)
                     if !b.isCurrent { Button("Switch") { Task { await git.checkout(b.name) } }.font(.caption).disabled(git.isBusy) }
                 }
             }
             .listStyle(.inset)
-            Text("Switching refuses when the working tree is dirty; nothing is stashed automatically.").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(6)
+            Text("Switching refuses when the working tree is dirty; nothing is stashed automatically.").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).padding(6)
         }
     }
 
@@ -225,25 +225,25 @@ struct GitPanelView: View {
                     Image(systemName: w.isMain ? "house" : "arrow.triangle.branch").foregroundStyle(Theme.textSecondary)
                     VStack(alignment: .leading) {
                         Text(w.branch ?? w.head?.prefix(7).description ?? "?").font(.caption).bold()
-                        Text(w.path).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                        Text(w.path).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
-                    if w.isLocked { Text("locked").font(.system(size: 9)).foregroundStyle(Theme.warning) }
+                    if w.isLocked { Text("locked").font(Theme.Typography.micro).foregroundStyle(Theme.warning) }
                     if !w.isMain { Button("Remove…") { git.worktreeRemoveRequest = w }.font(.caption).disabled(git.isBusy) }
                 }
             }
             .listStyle(.inset)
-            Text("Worktrees share repository data and are not a security sandbox (Bible Part 6 §14.2).").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(6)
+            Text("Worktrees share repository data and are not a security sandbox (Bible Part 6 §14.2).").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).padding(6)
         }
     }
 
     private var historyView: some View {
         List(git.history, id: \.self) { c in
             HStack(alignment: .top) {
-                Text(c.shortHash).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                Text(c.shortHash).font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textSecondary)
                 VStack(alignment: .leading) {
                     Text(c.subject).font(.caption).lineLimit(2)
-                    Text("\(c.author) · \(c.date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                    Text("\(c.author) · \(c.date.formatted(date: .abbreviated, time: .shortened))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                 }
             }
         }
@@ -284,7 +284,7 @@ struct DiffView: View {
                         if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
                         ForEach(Array(file.hunks.enumerated()), id: \.offset) { hunkIndex, hunk in
                             HStack(spacing: 6) {
-                                Text(hunk.header).font(.system(size: 11, design: .monospaced)).foregroundStyle(.blue)
+                                Text(hunk.header).font(Theme.Typography.monoDetail).foregroundStyle(Theme.info)
                                 Spacer()
                                 if let title = hunkActionTitle, let action = onHunkAction {
                                     Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
@@ -298,10 +298,10 @@ struct DiffView: View {
                                     Text(prefix(line)).frame(width: 14)
                                     Text(line.text).lineLimit(1)
                                 }
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(Theme.Typography.monoDetail)
                                 .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(line.kind == .context ? Color.primary : line.kind == .added ? Color.green : Color.red)
-                                .background(line.kind == .context ? Color.clear : (line.kind == .added ? Color.green : Color.red).opacity(0.12))
+                                .foregroundStyle(line.kind == .context ? Theme.textPrimary : line.kind == .added ? Theme.success : Theme.error)
+                                .background(line.kind == .context ? Color.clear : (line.kind == .added ? Theme.success : Theme.error).opacity(0.12))
                                 .padding(.horizontal, 8)
                             }
                         }
@@ -351,7 +351,7 @@ struct ConflictResolutionView: View {
                     stage("Theirs (incoming)", stages?.theirs, empty: theirsEmpty)
                     if kind?.hasBase == true { stage("Base (common ancestor)", stages?.base, empty: "—") }
                     Text("“Use ours/theirs” keeps one side and stages it. To combine both, open the file, remove the <<<<<<< markers, then Mark resolved. Resolving a file does not finish the merge — commit once every conflict is resolved.")
-                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(.top, 2)
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).padding(.top, 2)
                 }
                 .padding(8)
             }
@@ -363,7 +363,7 @@ struct ConflictResolutionView: View {
             Text(title).font(.caption).bold().foregroundStyle(Theme.textSecondary)
             switch content {
             case .text(let t):
-                Text(t.isEmpty ? "(empty)" : t).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                Text(t.isEmpty ? "(empty)" : t).font(Theme.Typography.monoDetail).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             case .binary:
                 Text("Binary content — resolve by choosing a side.").font(.caption).foregroundStyle(Theme.warning)

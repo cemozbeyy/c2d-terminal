@@ -15,7 +15,7 @@ struct DiagnosticsExportSheet: View {
             Text("This is exactly what will be saved. Secrets are redacted and only diagnostic fields are included — no file contents, environment values, command arguments, or terminal output.")
                 .font(.caption).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
-                Text(text).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                Text(text).font(Theme.Typography.monoDetail).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(6)
             }
             .frame(minHeight: 240).background(Theme.panel).clipShape(RoundedRectangle(cornerRadius: 6))

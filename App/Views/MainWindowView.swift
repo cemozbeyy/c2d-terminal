@@ -9,7 +9,7 @@ struct MainWindowView: View {
         ZStack {
             mainContent
             if model.paletteVisible {
-                Color.black.opacity(0.35).ignoresSafeArea().onTapGesture { model.paletteVisible = false }
+                Theme.scrim.opacity(0.35).ignoresSafeArea().onTapGesture { model.paletteVisible = false }
                 CommandPaletteView(isPresented: $model.paletteVisible).padding(.top, 60).frame(maxHeight: .infinity, alignment: .top)
             }
         }
@@ -101,8 +101,8 @@ struct TopBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "folder.fill").foregroundStyle(Theme.warning)
-                        Text(ws.projectName).font(.system(size: 13, weight: .semibold)).lineLimit(1).foregroundStyle(Theme.textPrimary)
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textMuted)
+                        Text(ws.projectName).font(Theme.Typography.title2).fontWeight(.semibold).lineLimit(1).foregroundStyle(Theme.textPrimary)
+                        Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
                     }
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -112,8 +112,8 @@ struct TopBar: View {
 
                 if ws.git.isAvailable {
                     HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
-                        Text(ws.git.branchLabel).font(.system(size: 12, weight: .medium)).lineLimit(1).foregroundStyle(Theme.textPrimary)
+                        Image(systemName: "arrow.triangle.branch").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                        Text(ws.git.branchLabel).font(Theme.Typography.body).fontWeight(.medium).lineLimit(1).foregroundStyle(Theme.textPrimary)
                         Circle().fill(ws.git.status?.isClean == true ? Theme.success : Theme.warning).frame(width: 7, height: 7)
                             .accessibilityLabel(ws.git.status?.isClean == true ? "clean" : "changes")
                     }
@@ -130,8 +130,8 @@ struct TopBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.3.group").foregroundStyle(Theme.textSecondary)
-                        Text(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textSecondary)
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textMuted)
+                        Text(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout").font(Theme.Typography.body).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
+                        Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
                     }
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Theme.textSecondary)
@@ -144,13 +144,13 @@ struct TopBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "eye.slash").foregroundStyle(Theme.textSecondary)
-                            Text("\(ws.layout.hidden.count) hidden").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                            Text("\(ws.layout.hidden.count) hidden").font(Theme.Typography.body).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 }
             } else {
-                Text("C2D Terminal").font(.system(size: 13, weight: .semibold))
+                Text("C2D Terminal").font(Theme.Typography.title2).fontWeight(.semibold)
             }
 
             Spacer(minLength: Theme.space2)
@@ -159,9 +159,9 @@ struct TopBar: View {
             Button { model.paletteVisible = true } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
-                    Text("Search files, commands, agents…").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
+                    Text("Search files, commands, agents…").font(Theme.Typography.body).foregroundStyle(Theme.textMuted).lineLimit(1)
                     Spacer(minLength: 0)
-                    Text("⌘K").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.textMuted)
+                    Text("⌘K").font(Theme.Typography.metadata).fontWeight(.medium).foregroundStyle(Theme.textMuted)
                 }
                 .padding(.horizontal, 10).frame(height: 28)
                 .frame(minWidth: 110, maxWidth: 260)
@@ -171,7 +171,7 @@ struct TopBar: View {
             .buttonStyle(.plain).keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
 
             Toggle(isOn: $model.developerMode) {
-                Label("Dev Mode", systemImage: "wrench.and.screwdriver").font(.system(size: 11, weight: .semibold))
+                Label("Dev Mode", systemImage: "wrench.and.screwdriver").font(Theme.Typography.detail).fontWeight(.semibold)
             }
             .toggleStyle(.button).controlSize(.small)
             .tint(Theme.accent)
@@ -192,7 +192,7 @@ struct TopBar: View {
 
     private func barButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textSecondary)
+            Image(systemName: symbol).font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
                 .frame(width: 30, height: 28)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
         }
@@ -222,7 +222,7 @@ struct StatusBar: View {
             Spacer()
             Text(model.diagnostics.summary).foregroundStyle(Theme.textMuted)
         }
-        .font(.system(size: 10.5))
+        .font(Theme.Typography.badge)
         .padding(.horizontal, Theme.space3)
         .frame(height: 24)
         .background(Theme.rail)

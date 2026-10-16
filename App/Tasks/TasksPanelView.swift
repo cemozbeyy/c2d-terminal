@@ -52,9 +52,9 @@ struct TasksPanelView: View {
                                 priorityDot(t.priority)
                                 Text(t.title).font(.caption).lineLimit(1)
                                 Spacer()
-                                if t.assignedAgentSessionID != nil { Image(systemName: "cpu").font(.system(size: 9)).foregroundStyle(Theme.textSecondary) }
-                                if t.blockedReason != nil { Image(systemName: "hand.raised").font(.system(size: 9)).foregroundStyle(Theme.warning) }
-                                if !t.status.isTerminal && !t.dependsOn.isEmpty && !tasks.isEligible(t) { Image(systemName: "clock").font(.system(size: 9)).foregroundStyle(Theme.warning).help("Waiting on dependencies") }
+                                if t.assignedAgentSessionID != nil { Image(systemName: "cpu").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary) }
+                                if t.blockedReason != nil { Image(systemName: "hand.raised").font(Theme.Typography.micro).foregroundStyle(Theme.warning) }
+                                if !t.status.isTerminal && !t.dependsOn.isEmpty && !tasks.isEligible(t) { Image(systemName: "clock").font(Theme.Typography.micro).foregroundStyle(Theme.warning).help("Waiting on dependencies") }
                             }
                             .tag(t.id)
                         }
@@ -80,10 +80,10 @@ struct TasksPanelView: View {
                     }
                     transitions(t)
                     labeled("Details") {
-                        TextEditor(text: Binding(get: { t.details }, set: { v in var r = t; r.details = v; Task { await tasks.update(r) } })).font(.system(size: 12)).frame(height: 70)
+                        TextEditor(text: Binding(get: { t.details }, set: { v in var r = t; r.details = v; Task { await tasks.update(r) } })).font(Theme.Typography.body).frame(height: 70)
                     }
                     labeled("Acceptance criteria") {
-                        TextEditor(text: Binding(get: { t.acceptanceCriteria ?? "" }, set: { v in var r = t; r.acceptanceCriteria = v.isEmpty ? nil : v; Task { await tasks.update(r) } })).font(.system(size: 12)).frame(height: 50)
+                        TextEditor(text: Binding(get: { t.acceptanceCriteria ?? "" }, set: { v in var r = t; r.acceptanceCriteria = v.isEmpty ? nil : v; Task { await tasks.update(r) } })).font(Theme.Typography.body).frame(height: 50)
                     }
                     if let b = t.blockedReason {
                         Label("Blocked: \(b)", systemImage: "hand.raised").font(.caption).foregroundStyle(Theme.warning)
@@ -101,8 +101,8 @@ struct TasksPanelView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(tasks.events) { e in
                                 HStack(alignment: .top, spacing: 6) {
-                                    Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 9)).foregroundStyle(Theme.textSecondary).frame(width: 110, alignment: .leading)
-                                    Text(eventText(e)).font(.system(size: 10))
+                                    Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).frame(width: 110, alignment: .leading)
+                                    Text(eventText(e)).font(Theme.Typography.metadata)
                                 }
                             }
                             HStack {
@@ -136,13 +136,13 @@ struct TasksPanelView: View {
         labeled("Agent") {
             if let id = t.assignedAgentSessionID, let r = workspace.app.agentSessions.record(id) {
                 HStack {
-                    Circle().fill(r.isLive ? Color.green : Color.secondary).frame(width: 7, height: 7)
+                    Circle().fill(r.isLive ? Theme.success : Theme.textMuted).frame(width: 7, height: 7)
                     Text("\(AgentProvider.builtIn.first { $0.id == r.providerID }?.displayName ?? r.providerID) · \(r.lifecycle.rawValue)").font(.caption)
                     Spacer()
                     if let p = r.panelID, workspace.layout.panels[p] != nil { Button("Show") { if workspace.layout.hidden.contains(p) { workspace.restore(p) }; workspace.activate(p) }.font(.caption) }
                     Button("Unlink") { Task { await tasks.assign(t, agentSessionID: nil) } }.font(.caption)
                 }
-                Text("An agent exiting does not complete the task; review its changes in Git first.").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                Text("An agent exiting does not complete the task; review its changes in Git first.").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
             } else {
                 Button("Start agent for this task…") { launchFor = t }.font(.caption).disabled(t.status.isTerminal)
             }
@@ -162,7 +162,7 @@ struct TasksPanelView: View {
                 Spacer()
                 if let p = tasks.plan(for: t) {
                     Text("\(tasks.tasks(inPlan: p.id).count) task(s), \(tasks.eligibleCount(inPlan: p.id)) ready")
-                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                 }
             }
             if creatingPlan {
@@ -174,7 +174,7 @@ struct TasksPanelView: View {
                 }
             }
             if let p = tasks.plan(for: t), let v = p.verification, !v.isEmpty {
-                Text("Verify: \(v)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                Text("Verify: \(v)").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
         }
     }
@@ -190,21 +190,21 @@ struct TasksPanelView: View {
         let candidates = tasks.dependencyCandidates(for: t)
         labeled("Dependencies") {
             if deps.isEmpty {
-                Text("No dependencies — can start whenever you are ready.").font(.system(size: 10)).foregroundStyle(Theme.textSecondary)
+                Text("No dependencies — can start whenever you are ready.").font(Theme.Typography.metadata).foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(deps) { d in
                     HStack(spacing: 6) {
                         Image(systemName: d.status == .completed ? "checkmark.circle.fill" : "clock")
-                            .font(.system(size: 10)).foregroundStyle(d.status == .completed ? Color.green : Theme.warning)
+                            .font(Theme.Typography.metadata).foregroundStyle(d.status == .completed ? Theme.success : Theme.warning)
                         Text(d.title).font(.caption).lineLimit(1)
-                        Text("(\(statusLabel(d.status)))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                        Text("(\(statusLabel(d.status)))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                         Spacer()
-                        Button { Task { await tasks.removeDependency(t, on: d.id) } } label: { Image(systemName: "xmark.circle").font(.system(size: 10)) }
+                        Button { Task { await tasks.removeDependency(t, on: d.id) } } label: { Image(systemName: "xmark.circle").font(Theme.Typography.metadata) }
                             .buttonStyle(.plain).help("Remove this dependency")
                     }
                 }
                 if !tasks.isEligible(t) {
-                    Label("Waiting on \(tasks.unmetDependencies(of: t).count) unfinished task(s).", systemImage: "hand.raised").font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    Label("Waiting on \(tasks.unmetDependencies(of: t).count) unfinished task(s).", systemImage: "hand.raised").font(Theme.Typography.metadata).foregroundStyle(Theme.warning)
                 }
             }
             if !candidates.isEmpty {
@@ -213,7 +213,7 @@ struct TasksPanelView: View {
                 }.font(.caption).fixedSize()
             }
             if !dependents.isEmpty {
-                Text("Blocks: \(dependents.map(\.title).joined(separator: ", "))").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                Text("Blocks: \(dependents.map(\.title).joined(separator: ", "))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
         }
     }
@@ -223,8 +223,8 @@ struct TasksPanelView: View {
     }
 
     private func priorityDot(_ p: TaskPriority) -> some View {
-        Circle().fill(p == .critical ? Color.red : p == .high ? Color.orange : p == .low ? Color.gray : p == .unprioritized ? Color.clear : Color.blue)
-            .frame(width: 7, height: 7).overlay(Circle().stroke(Color.secondary.opacity(0.4)))
+        Circle().fill(p == .critical ? Theme.error : p == .high ? Theme.warning : p == .low ? Theme.textMuted : p == .unprioritized ? Color.clear : Theme.info)
+            .frame(width: 7, height: 7).overlay(Circle().stroke(Theme.textMuted.opacity(0.4)))
             .accessibilityLabel("priority \(p.rawValue)")
     }
 

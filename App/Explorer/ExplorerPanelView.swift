@@ -61,17 +61,17 @@ struct ExplorerPanelView: View {
     private func row(_ entry: FileEntry, depth: Int) -> some View {
         HStack(spacing: 4) {
             if entry.isDirectory {
-                Image(systemName: explorer.expanded.contains(entry.path) ? "chevron.down" : "chevron.right").font(.system(size: 9)).frame(width: 10)
+                Image(systemName: explorer.expanded.contains(entry.path) ? "chevron.down" : "chevron.right").font(Theme.Typography.micro).frame(width: 10)
             } else {
                 Spacer().frame(width: 10)
             }
-            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.text").foregroundStyle(entry.isDirectory ? Theme.info : Theme.textSecondary).font(.system(size: 11))
-            Text(entry.name).font(.system(size: 12)).lineLimit(1)
+            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.text").foregroundStyle(entry.isDirectory ? Theme.info : Theme.textSecondary).font(Theme.Typography.detail)
+            Text(entry.name).font(Theme.Typography.body).lineLimit(1)
             if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(Theme.textSecondary) }
             Spacer()
             if let badge = workspace.git.badges[entry.path] {
-                Text(badge).font(.system(size: 10, design: .monospaced)).bold()
-                    .foregroundStyle(badge == "D" ? Color.red : badge == "U" || badge == "A" ? Color.green : Color.yellow)
+                Text(badge).font(Theme.Typography.monoMetadata).bold()
+                    .foregroundStyle(badge == "D" ? Theme.error : badge == "U" || badge == "A" ? Theme.success : Theme.warning)
                     .padding(.trailing, 8).accessibilityLabel("git status \(badge)")
             }
         }

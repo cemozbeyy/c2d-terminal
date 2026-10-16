@@ -158,13 +158,13 @@ struct PanelGroupView: View {
                 }
             }
             Spacer(minLength: 0)
-            Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(.system(size: 11, weight: .semibold)) }
+            Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold) }
                 .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("New terminal in this group")
             if workspace.layout.maximizedGroup == groupID {
-                Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .semibold)) }
+                Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(Theme.Typography.detail).fontWeight(.semibold) }
                     .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
             } else {
-                Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11, weight: .semibold)) }
+                Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(Theme.Typography.detail).fontWeight(.semibold) }
                     .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
             }
         }
@@ -208,7 +208,7 @@ struct PanelGroupView: View {
     private func zone(edge: DockEdge) -> some View {
         Rectangle()
             .fill(Theme.accent.opacity(targetedEdge == edge ? 0.5 : 0.18))
-            .overlay(Text(edge.rawValue.capitalized).font(.caption).foregroundStyle(.white))
+            .overlay(Text(edge.rawValue.capitalized).font(.caption).foregroundStyle(Theme.onAccent))
             .dropDestination(for: String.self) { items, _ in
                 guard let id = Self.panelID(from: items) else { return false }
                 workspace.move(id, beside: groupID, edge: edge)
@@ -220,7 +220,7 @@ struct PanelGroupView: View {
     private var centerZone: some View {
         Rectangle()
             .fill(Theme.accent.opacity(targetedCenter ? 0.5 : 0.18))
-            .overlay(Text("Add as tab").font(.caption).foregroundStyle(.white))
+            .overlay(Text("Add as tab").font(.caption).foregroundStyle(Theme.onAccent))
             .dropDestination(for: String.self) { items, _ in
                 guard let id = Self.panelID(from: items) else { return false }
                 workspace.move(id, toGroup: groupID)
@@ -243,7 +243,7 @@ struct PanelTab: View {
     var body: some View {
         let style = PanelKindStyle.style(for: panel.kind.rawValue)
         HStack(spacing: 5) {
-            Image(systemName: style.symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(isActive ? style.tint : Theme.textMuted)
+            Image(systemName: style.symbol).font(Theme.Typography.metadata).fontWeight(.semibold).foregroundStyle(isActive ? style.tint : Theme.textMuted)
             Text(title).lineLimit(1).font(.system(size: 11.5, weight: isActive ? .semibold : .regular))
             Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
                 .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Close panel")
@@ -270,7 +270,7 @@ struct EmptyGroupView: View {
     let workspace: WorkspaceController
     var body: some View {
         VStack(spacing: 8) {
-            Text("No panels").foregroundStyle(.secondary)
+            Text("No panels").foregroundStyle(Theme.textSecondary)
             Button("New Terminal") { workspace.newTerminal(in: groupID) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -312,7 +312,7 @@ struct UnavailablePanelView: View {
         VStack(spacing: 8) {
             Image(systemName: "questionmark.square.dashed").font(.largeTitle)
             Text("Panel type “\(panel.attributes["originalKind"] ?? panel.kind.rawValue)” is not available in this build.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).foregroundStyle(Theme.textSecondary)
             Button("Remove panel") { workspace.close(panel.id) }
         }
         .padding()
@@ -327,15 +327,15 @@ struct TerminalPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: Theme.space2) {
-                Image(systemName: "terminal").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.success)
-                Text(controller.title).font(.system(size: 12, weight: .semibold))
+                Image(systemName: "terminal").font(Theme.Typography.detail).fontWeight(.semibold).foregroundStyle(Theme.success)
+                Text(controller.title).font(Theme.Typography.body).fontWeight(.semibold)
                 StatusChip(text: chipText, color: chipColor, symbol: controller.isRunning ? "circle.fill" : "stop.fill").layoutPriority(1)
                 if let dir = controller.displayDirectory {
-                    Text(dir).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                    Text(dir).font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
                         .help("Current directory (from the kernel): \(controller.context?.currentDirectory ?? "")")
                 }
                 if model.developerMode, let r = controller.record {
-                    Text("session \(r.id.prefix(8)) · started in \(r.initialDirectory)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                    Text("session \(r.id.prefix(8)) · started in \(r.initialDirectory)").font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
                 }
                 Spacer()
                 if controller.isRunning {
