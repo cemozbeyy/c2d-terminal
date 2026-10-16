@@ -47,7 +47,7 @@ struct C2DTerminalApp: App {
         .defaultSize(width: 1240, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Open Project…") { model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil) }
+                Button("Open Project…") { model.promptOpenProject() }
                     .keyboardShortcut("o", modifiers: .command)
                 Button("New Terminal") { model.workspace?.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
@@ -87,10 +87,6 @@ struct C2DTerminalApp: App {
             }
         }
     }
-}
-
-extension Notification.Name {
-    static let c2dOpenProject = Notification.Name("works.c2d.terminal.openProject")
 }
 
 /// Quit terminates live shells after confirmation, like Terminal.app. Nothing is left orphaned.

@@ -47,7 +47,7 @@ enum CommandCatalog {
     private static func plainCommands(model: AppModel, query: String) -> [PaletteCommand] {
         var out: [PaletteCommand] = []
         out.append(PaletteCommand(id: "open-project", kind: .action, title: "Open Project…", subtitle: "Choose a local folder", symbol: "folder.badge.plus") {
-            model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil)
+            model.promptOpenProject()
         })
         for p in model.registry.projects where p.isAvailable {
             out.append(PaletteCommand(id: "project-\(p.path)", kind: .project, title: "Open \(p.name)", subtitle: p.path, symbol: "folder") { model.openProject(p) })

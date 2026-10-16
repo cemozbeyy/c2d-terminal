@@ -4,20 +4,19 @@ import SwiftUI
 
 struct ProjectsView: View {
     @Environment(AppModel.self) private var model
-    @State private var relocating: Project?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Projects").font(.title2)
                 Spacer()
-                Button { chooseFolder() } label: { Label("Open Folder…", systemImage: "folder.badge.plus") }
+                Button { model.promptOpenProject() } label: { Label("Open Folder…", systemImage: "folder.badge.plus") }
             }
             if model.registry.projects.isEmpty {
                 VStack(spacing: 8) {
                     Text("No recent projects").font(.headline)
                     Text("Open a local folder to start a terminal in it.").foregroundStyle(Theme.textSecondary)
-                    Button("Open Folder…") { chooseFolder() }
+                    Button("Open Folder…") { model.promptOpenProject() }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -26,7 +25,7 @@ struct ProjectsView: View {
                         ForEach(model.registry.projects) { project in
                             ProjectRow(project: project, isActive: model.workspace?.projectPath == project.path,
                                        open: { model.openProject(project) },
-                                       relocate: { relocating = project; chooseFolder() },
+                                       relocate: { model.promptRelocate(project) },
                                        remove: { model.removeProject(project) },
                                        pin: { model.setPinned(!project.pinned, project) })
                             .padding(10)
@@ -37,17 +36,6 @@ struct ProjectsView: View {
             }
         }
         .padding(16)
-        .onReceive(NotificationCenter.default.publisher(for: .c2dOpenProject)) { _ in chooseFolder() }
-    }
-
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = relocating == nil ? "Open Project" : "Locate \(relocating!.name)"
-        guard panel.runModal() == .OK, let url = panel.url else { relocating = nil; return }
-        if let r = relocating { model.relocateProject(r, to: url); relocating = nil } else { model.openProject(at: url) }
     }
 }
 

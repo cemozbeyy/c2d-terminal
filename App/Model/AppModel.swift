@@ -586,6 +586,28 @@ final class AppModel {
 
     // MARK: Projects
 
+    /// Shows a folder chooser and opens the selection as a project. Model-owned so every entry point
+    /// (top-bar menu, ⌘O, palette, Projects view) opens the panel directly — no cross-view notification
+    /// that can race view instantiation. Activates first so the panel reliably comes to the front.
+    func promptOpenProject() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.prompt = "Open Project"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        openProject(at: url)
+    }
+
+    /// Folder chooser for relocating a project whose folder moved.
+    func promptRelocate(_ project: Project) {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.prompt = "Locate \(project.name)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        relocateProject(project, to: url)
+    }
+
     func openProject(at url: URL) {
         do {
             let project = try registry.open(path: url.path)

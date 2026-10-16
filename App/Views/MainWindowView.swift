@@ -97,7 +97,7 @@ struct TopBar: View {
                         Button(p.name) { model.openProject(p) }
                     }
                     Divider()
-                    Button("Open Folder…") { model.destination = .projects; NotificationCenter.default.post(name: .c2dOpenProject, object: nil) }
+                    Button("Open Folder…") { model.promptOpenProject() }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "folder.fill").foregroundStyle(Theme.warning)
