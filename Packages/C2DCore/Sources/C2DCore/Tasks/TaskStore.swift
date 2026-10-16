@@ -3,7 +3,7 @@ import Foundation
 /// Record store for tasks and their events (ADR-011). Owns one SQLite database.
 /// It never completes a task on its own: completion is an explicit `transition` by a caller.
 public actor TaskStore {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     private let db: SQLiteDatabase
 
     public init(path: String) throws {
@@ -46,6 +46,20 @@ public actor TaskStore {
             try db.inTransaction { try db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]';") }
             db.userVersion = 2
         }
+        if db.userVersion < 3 {
+            // A plan is a named group of tasks with a goal (Bible Part 8 §12). plan_id is nullable;
+            // the grouping is organizational only — it never runs anything.
+            try db.inTransaction {
+                try db.exec("""
+                CREATE TABLE IF NOT EXISTS plans (
+                  id TEXT PRIMARY KEY, project_path TEXT NOT NULL, goal TEXT NOT NULL, verification TEXT,
+                  created_at REAL NOT NULL, updated_at REAL NOT NULL);
+                CREATE INDEX IF NOT EXISTS plans_project ON plans(project_path);
+                """)
+                try db.exec("ALTER TABLE tasks ADD COLUMN plan_id TEXT;")
+            }
+            db.userVersion = 3
+        }
     }
 
     // MARK: Writes
@@ -74,6 +88,7 @@ public actor TaskStore {
         var t = record
         t.status = old.status; t.createdAt = old.createdAt; t.completedAt = old.completedAt; t.blockedReason = old.blockedReason
         t.dependsOn = old.dependsOn   // edited only via addDependency/removeDependency (cycle-checked)
+        t.planID = old.planID         // edited only via assign(taskID:toPlan:)
         t.updatedAt = Self.now()
         var changed: [String] = []
         if old.title != t.title { changed.append("title") }
@@ -212,6 +227,60 @@ public actor TaskStore {
         return t
     }
 
+    // MARK: Plans (task groups, Bible Part 8 §12)
+
+    @discardableResult
+    public func createPlan(_ plan: TaskPlan) throws -> TaskPlan {
+        var p = plan; p.createdAt = Self.now(); p.updatedAt = p.createdAt
+        try wrap { try db.run("INSERT INTO plans (id, project_path, goal, verification, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                              [.text(p.id), .text(p.projectPath), .text(p.goal), .optText(p.verification), .double(p.createdAt.timeIntervalSince1970), .double(p.updatedAt.timeIntervalSince1970)]) }
+        return p
+    }
+
+    @discardableResult
+    public func updatePlan(_ plan: TaskPlan) throws -> TaskPlan {
+        guard try self.plan(id: plan.id) != nil else { throw TaskError.notFound(plan.id) }
+        var p = plan; p.updatedAt = Self.now()
+        try wrap { try db.run("UPDATE plans SET goal=?, verification=?, updated_at=? WHERE id=?",
+                              [.text(p.goal), .optText(p.verification), .double(p.updatedAt.timeIntervalSince1970), .text(p.id)]) }
+        return p
+    }
+
+    /// Deletes the plan and unassigns its tasks; the tasks themselves are kept (Bible Part 8 §25 spirit).
+    public func deletePlan(id: String) throws {
+        guard try plan(id: id) != nil else { throw TaskError.notFound(id) }
+        try wrap { try db.inTransaction {
+            try db.run("UPDATE tasks SET plan_id=NULL WHERE plan_id=?", [.text(id)])
+            try db.run("DELETE FROM plans WHERE id=?", [.text(id)])
+        } }
+    }
+
+    public func plan(id: String) throws -> TaskPlan? {
+        try wrap { try db.query("SELECT id, project_path, goal, verification, created_at, updated_at FROM plans WHERE id=?", [.text(id)], Self.planRow).first }
+    }
+
+    public func plans(projectPath: String) throws -> [TaskPlan] {
+        try wrap { try db.query("SELECT id, project_path, goal, verification, created_at, updated_at FROM plans WHERE project_path=? ORDER BY created_at", [.text(projectPath)], Self.planRow) }
+    }
+
+    /// Assigns a task to a plan (or `nil` to remove it from its plan). Both must share a project.
+    @discardableResult
+    public func assign(taskID: String, toPlan planID: String?) throws -> TaskRecord {
+        guard var t = try task(id: taskID) else { throw TaskError.notFound(taskID) }
+        if let planID {
+            guard let p = try plan(id: planID) else { throw TaskError.notFound(planID) }
+            guard p.projectPath == t.projectPath else { throw TaskError.crossProjectDependency }
+        }
+        t.planID = planID; t.updatedAt = Self.now()
+        try wrap { try write(t) }
+        return t
+    }
+
+    private static func planRow(_ r: SQLiteDatabase.Row) -> TaskPlan {
+        TaskPlan(id: r.string(0)!, projectPath: r.string(1)!, goal: r.string(2)!, verification: r.string(3),
+                 createdAt: Date(timeIntervalSince1970: r.double(4)), updatedAt: Date(timeIntervalSince1970: r.double(5)))
+    }
+
     // MARK: Reads
 
     public func task(id: String) throws -> TaskRecord? {
@@ -247,7 +316,7 @@ public actor TaskStore {
 
     // MARK: SQL
 
-    private static let selectSQL = "SELECT id, project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on FROM tasks"
+    private static let selectSQL = "SELECT id, project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on, plan_id FROM tasks"
 
     private static func row(_ r: SQLiteDatabase.Row) -> TaskRecord {
         func json(_ s: String?) -> [String] { (try? JSONDecoder().decode([String].self, from: Data((s ?? "[]").utf8))) ?? [] }
@@ -255,7 +324,7 @@ public actor TaskStore {
                           acceptanceCriteria: r.string(4), status: TaskStatus(rawValue: r.string(5)!) ?? .inbox,
                           priority: TaskPriority(rawValue: r.string(6)!) ?? .normal, labels: json(r.string(7)),
                           assignedAgentSessionID: r.string(8), worktreePath: r.string(9), blockedReason: r.string(10),
-                          dependsOn: json(r.string(14)),
+                          dependsOn: json(r.string(14)), planID: r.string(15),
                           createdAt: Date(timeIntervalSince1970: r.double(11)), updatedAt: Date(timeIntervalSince1970: r.double(12)),
                           completedAt: r.isNull(13) ? nil : Date(timeIntervalSince1970: r.double(13)))
     }
@@ -265,15 +334,15 @@ public actor TaskStore {
         return [.text(t.projectPath), .text(t.title), .text(t.details), .optText(t.acceptanceCriteria), .text(t.status.rawValue),
                 .text(t.priority.rawValue), .text(json(t.labels)), .optText(t.assignedAgentSessionID), .optText(t.worktreePath),
                 .optText(t.blockedReason), .double(t.createdAt.timeIntervalSince1970), .double(t.updatedAt.timeIntervalSince1970),
-                .optDate(t.completedAt), .text(json(t.dependsOn)), .text(t.id)]
+                .optDate(t.completedAt), .text(json(t.dependsOn)), .optText(t.planID), .text(t.id)]
     }
 
     private func insert(_ t: TaskRecord) throws {
-        try db.run("INSERT INTO tasks (project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on, id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params(t))
+        try db.run("INSERT INTO tasks (project_path, title, details, acceptance_criteria, status, priority, labels, assigned_agent_session_id, worktree_path, blocked_reason, created_at, updated_at, completed_at, depends_on, plan_id, id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params(t))
     }
 
     private func write(_ t: TaskRecord) throws {
-        try db.run("UPDATE tasks SET project_path=?, title=?, details=?, acceptance_criteria=?, status=?, priority=?, labels=?, assigned_agent_session_id=?, worktree_path=?, blocked_reason=?, created_at=?, updated_at=?, completed_at=?, depends_on=? WHERE id=?", params(t))
+        try db.run("UPDATE tasks SET project_path=?, title=?, details=?, acceptance_criteria=?, status=?, priority=?, labels=?, assigned_agent_session_id=?, worktree_path=?, blocked_reason=?, created_at=?, updated_at=?, completed_at=?, depends_on=?, plan_id=? WHERE id=?", params(t))
     }
 
     private func append(_ e: TaskEvent) throws {

@@ -11,6 +11,7 @@ final class TaskController {
     private(set) var tasks: [TaskRecord] = []
     /// Every task in the project (terminal included), keyed by id, for dependency resolution and display.
     private(set) var byID: [String: TaskRecord] = [:]
+    private(set) var plans: [TaskPlan] = []
     private(set) var selected: TaskRecord?
     private(set) var events: [TaskEvent] = []
     var showTerminal = false
@@ -41,6 +42,7 @@ final class TaskController {
             tasks = try await store.tasks(projectPath: projectPath, includeTerminal: showTerminal)
             let all = try await store.tasks(projectPath: projectPath, includeTerminal: true)
             byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            plans = try await store.plans(projectPath: projectPath)
             if let s = selected {
                 if let fresh = tasks.first(where: { $0.id == s.id }) { selected = fresh } else { selected = try await store.task(id: s.id) }
                 await loadEvents()
@@ -103,6 +105,36 @@ final class TaskController {
     func removeDependency(_ task: TaskRecord, on upstreamID: String) async {
         guard let store else { return }
         do { _ = try await store.removeDependency(id: task.id, dependsOn: upstreamID); await reload() } catch { lastError = describe(error) }
+    }
+
+    // MARK: Plans (task groups, Bible Part 8 §12)
+
+    func plan(for t: TaskRecord) -> TaskPlan? { t.planID.flatMap { id in plans.first { $0.id == id } } }
+    func tasks(inPlan id: String) -> [TaskRecord] { byID.values.filter { $0.planID == id }.sorted { $0.title < $1.title } }
+    func eligibleCount(inPlan id: String) -> Int { tasks(inPlan: id).filter { !$0.status.isTerminal && isEligible($0) }.count }
+
+    @discardableResult
+    func createPlan(goal: String) async -> TaskPlan? {
+        guard let store else { return nil }
+        let g = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !g.isEmpty else { return nil }
+        do { let p = try await store.createPlan(TaskPlan(projectPath: projectPath, goal: g)); await reload(); return p }
+        catch { lastError = describe(error); return nil }
+    }
+
+    func updatePlan(_ plan: TaskPlan) async {
+        guard let store else { return }
+        do { _ = try await store.updatePlan(plan); await reload() } catch { lastError = describe(error) }
+    }
+
+    func deletePlan(_ plan: TaskPlan) async {
+        guard let store else { return }
+        do { try await store.deletePlan(id: plan.id); await reload() } catch { lastError = describe(error) }
+    }
+
+    func assign(_ task: TaskRecord, toPlan planID: String?) async {
+        guard let store else { return }
+        do { _ = try await store.assign(taskID: task.id, toPlan: planID); await reload() } catch { lastError = describe(error) }
     }
 
     func block(_ task: TaskRecord, reason: String) async {

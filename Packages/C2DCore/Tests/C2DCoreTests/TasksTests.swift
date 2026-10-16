@@ -239,8 +239,34 @@ private let project = "/tmp/proj-a"
         // Opening through TaskStore must migrate to v2 and read the row back with an empty dependsOn.
         let store = try TaskStore(path: path)
         let back = try await store.task(id: "old-1")
-        #expect(back?.title == "legacy" && back?.dependsOn == [])
-        #expect(try SQLiteDatabase(path: path).userVersion == 2)
+        #expect(back?.title == "legacy" && back?.dependsOn == [] && back?.planID == nil)
+        #expect(try SQLiteDatabase(path: path).userVersion == TaskStore.schemaVersion)
+        // The v3 plan machinery works on the migrated db.
+        let p = try await store.createPlan(TaskPlan(projectPath: project, goal: "ship"))
+        _ = try await store.assign(taskID: "old-1", toPlan: p.id)
+        #expect(try await store.task(id: "old-1")?.planID == p.id)
+    }
+
+    @Test func planCrudAssignAndDeleteKeepsTasks() async throws {
+        let store = try TaskStore.inMemory()
+        let p = try await store.createPlan(TaskPlan(projectPath: project, goal: "Ship auth", verification: "e2e green"))
+        #expect(try await store.plans(projectPath: project).map(\.id) == [p.id])
+        var edited = p; edited.goal = "Ship auth v2"
+        _ = try await store.updatePlan(edited)
+        #expect(try await store.plan(id: p.id)?.goal == "Ship auth v2")
+        let t = try await store.create(TaskRecord(projectPath: project, title: "login"))
+        _ = try await store.assign(taskID: t.id, toPlan: p.id)
+        #expect(try await store.task(id: t.id)?.planID == p.id)
+        // Cross-project assignment is refused.
+        let other = try await store.createPlan(TaskPlan(projectPath: "/tmp/proj-b", goal: "x"))
+        await #expect(throws: TaskError.crossProjectDependency) { try await store.assign(taskID: t.id, toPlan: other.id) }
+        // Deleting the plan unassigns but keeps the task.
+        try await store.deletePlan(id: p.id)
+        #expect(try await store.plan(id: p.id) == nil)
+        #expect(try await store.task(id: t.id)?.planID == nil, "deleting a plan never deletes its tasks")
+        // Unassign via nil.
+        _ = try await store.assign(taskID: t.id, toPlan: nil)
+        #expect(try await store.task(id: t.id)?.planID == nil)
     }
 
     @Test func twoHundredTasksSearchUnderASecond() async throws {

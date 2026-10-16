@@ -40,6 +40,8 @@ public struct TaskRecord: Codable, Hashable, Sendable, Identifiable {
     public var blockedReason: String?
     /// IDs of tasks (same project) that must complete before this one may start (Bible Part 8 §12).
     public var dependsOn: [String]
+    /// Optional plan (task group) this belongs to; organizational only (Bible Part 8 §12).
+    public var planID: String?
     public var createdAt: Date
     public var updatedAt: Date
     public var completedAt: Date?
@@ -47,11 +49,11 @@ public struct TaskRecord: Codable, Hashable, Sendable, Identifiable {
     public init(id: String = UUID().uuidString, projectPath: String, title: String, details: String = "",
                 acceptanceCriteria: String? = nil, status: TaskStatus = .inbox, priority: TaskPriority = .normal,
                 labels: [String] = [], assignedAgentSessionID: String? = nil, worktreePath: String? = nil,
-                blockedReason: String? = nil, dependsOn: [String] = [], createdAt: Date = Date(), updatedAt: Date = Date(), completedAt: Date? = nil) {
+                blockedReason: String? = nil, dependsOn: [String] = [], planID: String? = nil, createdAt: Date = Date(), updatedAt: Date = Date(), completedAt: Date? = nil) {
         self.id = id; self.projectPath = projectPath; self.title = title; self.details = details
         self.acceptanceCriteria = acceptanceCriteria; self.status = status; self.priority = priority
         self.labels = labels; self.assignedAgentSessionID = assignedAgentSessionID; self.worktreePath = worktreePath
-        self.blockedReason = blockedReason; self.dependsOn = dependsOn; self.createdAt = createdAt; self.updatedAt = updatedAt; self.completedAt = completedAt
+        self.blockedReason = blockedReason; self.dependsOn = dependsOn; self.planID = planID; self.createdAt = createdAt; self.updatedAt = updatedAt; self.completedAt = completedAt
     }
 
     /// IDs of this task's dependencies that are not yet satisfied. A dependency is satisfied only when
@@ -61,6 +63,23 @@ public struct TaskRecord: Codable, Hashable, Sendable, Identifiable {
     /// outdated assumptions").
     public func unmetDependencies(statusOf: (String) -> TaskStatus?) -> [String] {
         dependsOn.filter { statusOf($0) != .completed }
+    }
+}
+
+/// A named group of tasks working toward one outcome (Bible Part 8 §12). Organizational only:
+/// a plan never executes anything; tasks keep their own status and dependencies.
+public struct TaskPlan: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var projectPath: String
+    public var goal: String
+    public var verification: String?
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    public init(id: String = UUID().uuidString, projectPath: String, goal: String, verification: String? = nil,
+                createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id; self.projectPath = projectPath; self.goal = goal; self.verification = verification
+        self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 }
 

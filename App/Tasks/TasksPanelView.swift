@@ -8,6 +8,8 @@ struct TasksPanelView: View {
     @State private var noteText = ""
     @State private var blockReason = ""
     @State private var launchFor: TaskRecord?
+    @State private var newPlanGoal = ""
+    @State private var creatingPlan = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,6 +94,7 @@ struct TasksPanelView: View {
                             Button("Block") { let r = blockReason; blockReason = ""; Task { await tasks.block(t, reason: r) } }.disabled(blockReason.isEmpty).font(.caption)
                         }
                     }
+                    planSection(t)
                     dependencySection(t)
                     agentSection(t)
                     labeled("Activity") {
@@ -144,6 +147,41 @@ struct TasksPanelView: View {
                 Button("Start agent for this task…") { launchFor = t }.font(.caption).disabled(t.status.isTerminal)
             }
         }
+    }
+
+    @ViewBuilder private func planSection(_ t: TaskRecord) -> some View {
+        labeled("Plan") {
+            HStack {
+                Menu(tasks.plan(for: t)?.goal ?? "No plan") {
+                    Button("No plan") { Task { await tasks.assign(t, toPlan: nil) } }
+                    if !tasks.plans.isEmpty { Divider() }
+                    ForEach(tasks.plans) { p in Button(p.goal) { Task { await tasks.assign(t, toPlan: p.id) } } }
+                    Divider()
+                    Button("New plan…") { creatingPlan = true }
+                }.font(.caption).fixedSize()
+                Spacer()
+                if let p = tasks.plan(for: t) {
+                    Text("\(tasks.tasks(inPlan: p.id).count) task(s), \(tasks.eligibleCount(inPlan: p.id)) ready")
+                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            if creatingPlan {
+                HStack {
+                    TextField("Plan goal", text: $newPlanGoal).textFieldStyle(.roundedBorder).font(.caption)
+                        .onSubmit { commitNewPlan(for: t) }
+                    Button("Create") { commitNewPlan(for: t) }.font(.caption).disabled(newPlanGoal.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { creatingPlan = false; newPlanGoal = "" }.font(.caption)
+                }
+            }
+            if let p = tasks.plan(for: t), let v = p.verification, !v.isEmpty {
+                Text("Verify: \(v)").font(.system(size: 9)).foregroundStyle(Theme.textSecondary).lineLimit(2)
+            }
+        }
+    }
+
+    private func commitNewPlan(for t: TaskRecord) {
+        let goal = newPlanGoal; newPlanGoal = ""; creatingPlan = false
+        Task { if let p = await tasks.createPlan(goal: goal) { await tasks.assign(t, toPlan: p.id) } }
     }
 
     @ViewBuilder private func dependencySection(_ t: TaskRecord) -> some View {

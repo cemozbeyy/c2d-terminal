@@ -290,13 +290,21 @@ final class AppModel {
                 tc.lastError = nil
                 await tc.transition(b0(), to: .inProgress)   // now allowed
                 let startedAfter = tc.byID[b.id]?.status == .inProgress && tc.lastError == nil
+                // Plan container: group A under a plan, confirm membership, delete the plan (A survives, unassigned).
+                var planOK = false
+                if let p = await tc.createPlan(goal: "DepCheck plan") {
+                    await tc.assign(a0(), toPlan: p.id)
+                    let assigned = tc.byID[a.id]?.planID == p.id && tc.tasks(inPlan: p.id).contains { $0.id == a.id }
+                    await tc.deletePlan(p)
+                    planOK = assigned && tc.byID[a.id] != nil && tc.byID[a.id]?.planID == nil && tc.plans.isEmpty
+                }
                 tc.lastError = nil
                 await tc.delete(a0())   // A still has dependent B → refused
                 let deleteRefused = tc.lastError != nil && tc.byID[a.id] != nil
                 await tc.removeDependency(b0(), on: a.id)
                 await tc.delete(b0()); await tc.delete(a0())
                 let cleaned = tc.byID[a.id] == nil && tc.byID[b.id] == nil
-                debugTrace("taskDepCheck: blockedWhileOpen=\(blockedWhileOpen) startRefused=\(startRefused) eligibleAfter=\(eligibleAfter) startedAfter=\(startedAfter) deleteRefused=\(deleteRefused) cleaned=\(cleaned)")
+                debugTrace("taskDepCheck: blockedWhileOpen=\(blockedWhileOpen) startRefused=\(startRefused) eligibleAfter=\(eligibleAfter) startedAfter=\(startedAfter) deleteRefused=\(deleteRefused) planOK=\(planOK) cleaned=\(cleaned)")
             }
         }
         // `-c2dExplorerCheck YES` exercises the explorer file operations on disk under a scratch folder
