@@ -330,6 +330,28 @@ final class AppModel {
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
             }
         }
+        // `-c2dConflictCheck YES` — on a repo already left mid-merge with a conflict, selects the
+        // conflicted file, confirms detection/stages/operation, resolves it with "ours", and verifies.
+        if UserDefaults.standard.bool(forKey: "c2dConflictCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let git = self?.workspace?.git else { debugTrace("conflictCheck: no git"); return }
+                await git.refresh()
+                guard let e = git.status?.entries.first(where: { $0.isConflicted }) else {
+                    debugTrace("conflictCheck: no conflicted entry (op=\(git.operation.map { $0.rawValue } ?? "nil"))"); return
+                }
+                let path = e.path
+                await git.select(path: path, staged: false)
+                let detected = git.selectedIsConflicted
+                let kind = git.selectedConflictKind.map { "\($0)" } ?? "nil"
+                let stages = git.selectedConflictStages != nil
+                let op = git.operation.map { $0.rawValue } ?? "nil"
+                await git.resolveConflict(path, using: .ours)
+                let resolved = !(git.status?.entries.contains { $0.path == path && $0.isConflicted } ?? true)
+                let opStillThere = git.operation != nil
+                debugTrace("conflictCheck: detected=\(detected) kind=\(kind) stages=\(stages) op=\(op) resolvedOurs=\(resolved) opStillInProgress=\(opStillThere) err=\(git.lastError ?? "none")")
+            }
+        }
         // `-c2dExplorerCheck YES` exercises the explorer file operations on disk under a scratch folder
         // and verifies each result, including the safety guards (no overwrite, no "/" in names, trash not delete).
         if UserDefaults.standard.bool(forKey: "c2dExplorerCheck") {

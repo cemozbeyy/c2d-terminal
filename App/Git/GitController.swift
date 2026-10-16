@@ -23,6 +23,13 @@ final class GitController {
     var selectedIsStaged = false
     private(set) var selectedDiff: [FileDiff] = []
     private(set) var selectedDiffTruncated = false
+    /// Set when the selected path is conflicted; drives the conflict-resolution view instead of the diff.
+    private(set) var selectedConflictKind: ConflictKind?
+    private(set) var selectedConflictStages: ConflictStages?
+    /// A multi-step operation (merge/rebase/cherry-pick/revert) is mid-flight, so an abort is offered.
+    private(set) var operation: MergeOperation?
+    /// Pending abort confirmation (high-risk: resets the whole working tree).
+    var abortRequest: MergeOperation?
     var commitMessage = ""
     private(set) var lastCommitHash: String?
     /// Path waiting for discard confirmation (destructive, Bible Part 6 §9).
@@ -94,12 +101,30 @@ final class GitController {
         do {
             let s = try await repo.status()
             status = s
+            operation = try? await repo.operationInProgress()
             lastRefreshedAt = Date()
-            if let p = selectedPath {
-                if s.entries.contains(where: { $0.path == p }) { await loadDiff(path: p, staged: selectedIsStaged) } else { selectedPath = nil; selectedDiff = [] }
-            }
+            await reloadSelection()
         } catch {
             lastError = describe(error)
+        }
+    }
+
+    /// Loads whatever the selected path needs: a conflict view when it is conflicted, otherwise its
+    /// diff. Keyed on the live entry's conflicted state, so a file flipping resolved clears the view.
+    private func reloadSelection() async {
+        guard let repo = repository, let p = selectedPath, let entry = status?.entries.first(where: { $0.path == p }) else {
+            if selectedPath != nil, status?.entries.contains(where: { $0.path == selectedPath }) == false { selectedPath = nil }
+            selectedDiff = []; selectedConflictKind = nil; selectedConflictStages = nil
+            return
+        }
+        if entry.isConflicted {
+            selectedConflictKind = entry.conflictKind
+            selectedDiff = []; selectedDiffTruncated = false
+            do { selectedConflictStages = try await repo.conflictStages(path: p) }
+            catch { lastError = describe(error); selectedConflictStages = nil }
+        } else {
+            selectedConflictKind = nil; selectedConflictStages = nil
+            await loadDiff(path: p, staged: selectedIsStaged)
         }
     }
 
@@ -121,7 +146,23 @@ final class GitController {
     func select(path: String, staged: Bool) async {
         selectedPath = path
         selectedIsStaged = staged
-        await loadDiff(path: path, staged: staged)
+        await reloadSelection()
+    }
+
+    var selectedIsConflicted: Bool { selectedConflictKind != nil }
+
+    func resolveConflict(_ path: String, using side: ConflictSide) async {
+        await perform("Resolve conflict") { try await $0.resolveConflict(path: path, using: side) }
+    }
+
+    func markResolved(_ path: String) async {
+        await perform("Mark resolved") { try await $0.markResolved(path: path) }
+    }
+
+    func abort(_ op: MergeOperation) async {
+        abortRequest = nil
+        await perform("Abort \(op.rawValue)") { try await $0.abortOperation(op) }
+        await loadBranchesAndHistory()
     }
 
     private func loadDiff(path: String, staged: Bool) async {
@@ -231,6 +272,8 @@ final class GitController {
         case .invalidPath: "invalid path"
         case .staleDiff: "this diff changed since it was shown; nothing was staged — refresh and retry"
         case .patchDoesNotApply(let stderr): "the hunk no longer applies to the index (nothing changed): \(stderr.isEmpty ? "refresh and retry" : stderr)"
+        case .conflictMarkersRemain(let lines): "conflict markers are still present (lines \(lines.prefix(5).map(String.init).joined(separator: ", "))\(lines.count > 5 ? "…" : "")); remove them before marking resolved"
+        case .notConflicted: "this file is no longer in a conflicted state"
         case .none: "\(error)"
         }
     }

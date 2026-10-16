@@ -13,7 +13,50 @@ public enum GitError: Error, Equatable, Sendable {
     case patchDoesNotApply(stderr: String)
     /// The diff changed between display and apply (edit or external index change); nothing staged.
     case staleDiff
+    /// Mark-resolved refused: the working file still has conflict markers on these 1-based lines.
+    case conflictMarkersRemain(lines: [Int])
+    /// The path is not in a conflicted state (nothing to resolve).
+    case notConflicted
 }
+
+/// Which merge-conflict shape a path is in, from `git status --porcelain=v2` `u` XY codes.
+public enum ConflictKind: String, Sendable, Hashable {
+    case bothModified   // UU
+    case bothAdded      // AA
+    case bothDeleted    // DD
+    case addedByUs      // AU
+    case addedByThem    // UA
+    case deletedByUs    // UD
+    case deletedByThem  // DU
+    case unknown
+
+    static func from(xy: String) -> ConflictKind {
+        switch xy {
+        case "UU": .bothModified; case "AA": .bothAdded; case "DD": .bothDeleted
+        // git short codes are <us><them>: UD = we modified / they deleted; DU = we deleted / they modified.
+        case "AU": .addedByUs; case "UA": .addedByThem; case "UD": .deletedByThem; case "DU": .deletedByUs
+        default: .unknown
+        }
+    }
+
+    /// Which merge stages carry content for this shape (stage 1 = base, 2 = ours, 3 = theirs).
+    public var hasBase: Bool { self == .bothModified }
+    public var hasOurs: Bool { [.bothModified, .bothAdded, .addedByUs, .deletedByThem].contains(self) }
+    public var hasTheirs: Bool { [.bothModified, .bothAdded, .addedByThem, .deletedByUs].contains(self) }
+}
+
+public enum ConflictSide: Sendable { case ours, theirs }
+
+/// One side of a conflict as it exists in the index.
+public enum MergeStageContent: Sendable, Hashable { case absent, binary, text(String) }
+
+public struct ConflictStages: Sendable, Hashable {
+    public let base: MergeStageContent
+    public let ours: MergeStageContent
+    public let theirs: MergeStageContent
+}
+
+public enum MergeOperation: String, Sendable, Hashable { case merge, rebase, cherryPick, revert }
 
 /// One line of `git status --porcelain=v2`. Index and worktree states are kept apart (Bible Part 6 §3).
 public struct GitStatusEntry: Hashable, Sendable {
@@ -24,6 +67,8 @@ public struct GitStatusEntry: Hashable, Sendable {
     public let unstaged: Change
     public let isUntracked: Bool
     public let isConflicted: Bool
+    /// Conflict shape when `isConflicted`; `nil` otherwise.
+    public var conflictKind: ConflictKind? = nil
     public var hasStagedChange: Bool { staged != .unmodified && !isUntracked && !isConflicted }
     public var hasUnstagedChange: Bool { unstaged != .unmodified && !isUntracked && !isConflicted }
 }
@@ -180,7 +225,8 @@ public actor GitRepository {
                 entries.append(GitStatusEntry(path: path, originalPath: original,
                                               staged: conflicted ? .unmerged : change(xy[0]),
                                               unstaged: conflicted ? .unmerged : change(xy[1]),
-                                              isUntracked: false, isConflicted: conflicted))
+                                              isUntracked: false, isConflicted: conflicted,
+                                              conflictKind: conflicted ? ConflictKind.from(xy: String(xy)) : nil))
             } else if f.hasPrefix("? ") {
                 entries.append(GitStatusEntry(path: String(f.dropFirst(2)), originalPath: nil, staged: .unmodified, unstaged: .unmodified, isUntracked: true, isConflicted: false))
             }
@@ -304,6 +350,91 @@ public actor GitRepository {
         }
     }
 
+    // MARK: Conflicts (Bible Part 6 §9 "Resolving or replacing conflicted files")
+
+    /// The three merge stages of a conflicted path, read raw from the index so textconv/smudge
+    /// filters never run and binary content is detected rather than corrupted into UTF-8.
+    public func conflictStages(path: String) async throws -> ConflictStages {
+        func stage(_ n: Int) async throws -> MergeStageContent {
+            let r = try await executeRaw(["cat-file", "blob", ":\(n):\(path)"])
+            guard r.code == 0 else { return .absent }
+            if r.stdout.prefix(8192).contains(0) { return .binary }
+            return .text(String(decoding: r.stdout, as: UTF8.self))
+        }
+        return try await ConflictStages(base: stage(1), ours: stage(2), theirs: stage(3))
+    }
+
+    /// Pure action table: the git commands that resolve a conflict of `kind` by keeping `side`.
+    /// No fallback branching — each shape maps to exactly one command sequence (unit-testable).
+    public static func resolutionCommands(kind: ConflictKind, side: ConflictSide, path: String) -> [[String]] {
+        let keep: [[String]] = [["checkout", side == .ours ? "--ours" : "--theirs", "--", path], ["add", "--", path]]
+        let remove: [[String]] = [["rm", "--", path]]
+        switch (kind, side) {
+        case (.bothModified, _), (.bothAdded, _): return keep
+        case (.deletedByUs, .ours), (.addedByThem, .ours): return remove      // our side has no content
+        case (.deletedByUs, .theirs), (.addedByThem, .theirs): return keep
+        case (.deletedByThem, .theirs), (.addedByUs, .theirs): return remove  // their side has no content
+        case (.deletedByThem, .ours), (.addedByUs, .ours): return keep
+        case (.bothDeleted, _): return remove
+        case (.unknown, _): return keep   // best effort; checkout fails loudly if the side is absent
+        }
+    }
+
+    /// Resolves one conflicted path by keeping `side`. Path-scoped, so unrelated changes are untouched.
+    public func resolveConflict(path: String, using side: ConflictSide) async throws {
+        guard let kind = try await conflictKind(of: path) else { throw GitError.notConflicted }
+        for cmd in Self.resolutionCommands(kind: kind, side: side, path: path) { _ = try await run(cmd) }
+    }
+
+    /// Marks a hand-edited conflicted file resolved by staging it — but refuses while conflict markers
+    /// remain, so a half-merged file is never staged silently. `=======` is matched exactly to avoid
+    /// eating unrelated content; a Markdown setext rule is an accepted false positive (documented).
+    public func markResolved(path: String) async throws {
+        guard try await conflictKind(of: path) != nil else { throw GitError.notConflicted }
+        let url = URL(fileURLWithPath: root).appendingPathComponent(path)
+        if let text = try? String(contentsOf: url, encoding: .utf8) {
+            var bad: [Int] = []
+            for (i, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                if line.hasPrefix("<<<<<<< ") || line.hasPrefix(">>>>>>> ") || line.hasPrefix("||||||| ") || line == "=======" { bad.append(i + 1) }
+            }
+            if !bad.isEmpty { throw GitError.conflictMarkersRemain(lines: bad) }
+        }
+        _ = try await run(["add", "--", path])
+    }
+
+    /// The conflict shape of `path` from live status, or `nil` when it is not conflicted.
+    private func conflictKind(of path: String) async throws -> ConflictKind? {
+        try await status().entries.first { $0.path == path && $0.isConflicted }?.conflictKind
+    }
+
+    /// Which multi-step operation (if any) is mid-flight, so the right abort is offered.
+    public func operationInProgress() async throws -> MergeOperation? {
+        if try await gitPathExists("MERGE_HEAD") { return .merge }
+        if try await gitPathExists("rebase-merge") { return .rebase }
+        if try await gitPathExists("rebase-apply") { return .rebase }
+        if try await gitPathExists("CHERRY_PICK_HEAD") { return .cherryPick }
+        if try await gitPathExists("REVERT_HEAD") { return .revert }
+        return nil
+    }
+
+    /// Aborts the whole operation (not one file): the working tree returns to its pre-operation state.
+    public func abortOperation(_ op: MergeOperation) async throws {
+        let verb: [String]
+        switch op {
+        case .merge: verb = ["merge", "--abort"]
+        case .rebase: verb = ["rebase", "--abort"]
+        case .cherryPick: verb = ["cherry-pick", "--abort"]
+        case .revert: verb = ["revert", "--abort"]
+        }
+        _ = try await run(verb)
+    }
+
+    private func gitPathExists(_ name: String) async throws -> Bool {
+        let p = try await run(["rev-parse", "--git-path", name]).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let full = p.hasPrefix("/") ? p : (root as NSString).appendingPathComponent(p)
+        return FileManager.default.fileExists(atPath: full)
+    }
+
     // MARK: Index and commits
 
     public func stage(paths: [String]) async throws { guard !paths.isEmpty else { return }; _ = try await run(["add", "--"] + paths) }
@@ -416,6 +547,13 @@ public actor GitRepository {
         let result = Result(stdout: String(decoding: data.stdout, as: UTF8.self), stderr: String(decoding: data.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), code: data.code)
         if !allowFailure && result.code != 0 { throw GitError.commandFailed(code: result.code, stderr: result.stderr) }
         return result
+    }
+
+    /// Raw stdout bytes plus exit code, never throwing on a non-zero exit — for binary-safe reads
+    /// (e.g. `cat-file blob`) where an absent object is an expected outcome, not an error.
+    func executeRaw(_ args: [String]) async throws -> (stdout: Data, code: Int32) {
+        let d = try await execute(args)
+        return (d.stdout, d.code)
     }
 
     func runData(_ args: [String]) async throws -> Data {

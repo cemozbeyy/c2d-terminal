@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GitPanelView: View {
     @Bindable var git: GitController
+    let workspace: WorkspaceController
     @State private var section = 0
     @State private var newBranch = ""
     @State private var newWorktreePath = ""
@@ -51,6 +52,23 @@ struct GitPanelView: View {
             Button("Remove", role: .destructive) { if let w = git.worktreeRemoveRequest { Task { await git.removeWorktree(w) } } }
             Button("Cancel", role: .cancel) { git.worktreeRemoveRequest = nil }
         } message: { Text("\(git.worktreeRemoveRequest?.path ?? "") is removed from disk and unregistered. The branch is kept. Git refuses if the worktree has uncommitted changes.") }
+        .alert("Abort \(git.abortRequest?.rawValue ?? "operation")?", isPresented: Binding(get: { git.abortRequest != nil }, set: { if !$0 { git.abortRequest = nil } })) {
+            Button("Abort", role: .destructive) { if let op = git.abortRequest { Task { await git.abort(op) } } }
+            Button("Cancel", role: .cancel) { git.abortRequest = nil }
+        } message: { Text("The entire \(git.abortRequest?.rawValue ?? "") is undone and the whole working tree returns to its state before it started. Uncommitted changes made after the \(git.abortRequest?.rawValue ?? "") began cannot be recovered. This affects all files, not just the selected one.") }
+    }
+
+    @ViewBuilder private var operationBanner: some View {
+        if let op = git.operation {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                Text("A \(op.rawValue) is in progress. Resolve the conflicts below, then commit — or abort to undo it.").font(.caption)
+                Spacer()
+                Button("Abort \(op.rawValue)…", role: .destructive) { git.abortRequest = op }.font(.caption)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5).background(Theme.warning.opacity(0.12))
+            Divider()
+        }
     }
 
     // MARK: Changes
@@ -58,6 +76,7 @@ struct GitPanelView: View {
     private var changes: some View {
         VSplitView {
             VStack(spacing: 0) {
+                operationBanner
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if let s = git.status {
@@ -79,10 +98,16 @@ struct GitPanelView: View {
                 composer
             }
             .frame(maxWidth: .infinity, minHeight: 160)
-            DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
-                     hunkActionTitle: git.hunkActionTitle,
-                     onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } })
-                .frame(maxWidth: .infinity, minHeight: 100)
+            Group {
+                if git.selectedIsConflicted, let path = git.selectedPath {
+                    ConflictResolutionView(git: git, workspace: workspace, path: path)
+                } else {
+                    DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
+                             hunkActionTitle: git.hunkActionTitle,
+                             onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } })
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 100)
         }
     }
 
@@ -288,5 +313,88 @@ struct DiffView: View {
 
     private func prefix(_ line: DiffLine) -> String {
         switch line.kind { case .added: "+"; case .removed: "-"; case .context: " " }
+    }
+}
+
+/// Conflict resolution for one file (Bible Part 6 §9). Shows ours/theirs (and base when a real
+/// three-way merge) and offers: keep a side (staged immediately), open the file to merge by hand,
+/// or mark the hand-edited file resolved. Resolving one file never finishes the merge.
+struct ConflictResolutionView: View {
+    @Bindable var git: GitController
+    let workspace: WorkspaceController
+    let path: String
+
+    private var kind: ConflictKind? { git.selectedConflictKind }
+    private var stages: ConflictStages? { git.selectedConflictStages }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Conflict — \(path)").font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                if let kind { Text(label(kind)).font(.caption).bold().foregroundStyle(Theme.warning) }
+            }
+            .padding(.horizontal, 8).frame(height: 22)
+            Divider()
+            HStack(spacing: 6) {
+                Button("Use ours") { Task { await git.resolveConflict(path, using: .ours) } }
+                Button("Use theirs") { Task { await git.resolveConflict(path, using: .theirs) } }
+                Button("Open in editor") { workspace.openFile(path: (git.projectPath as NSString).appendingPathComponent(path)) }
+                Button("Mark resolved") { Task { await git.markResolved(path) } }
+                Spacer()
+            }
+            .font(.caption).controlSize(.small).padding(.horizontal, 8).padding(.vertical, 4)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    stage("Ours (current branch)", stages?.ours, empty: oursEmpty)
+                    stage("Theirs (incoming)", stages?.theirs, empty: theirsEmpty)
+                    if kind?.hasBase == true { stage("Base (common ancestor)", stages?.base, empty: "—") }
+                    Text("“Use ours/theirs” keeps one side and stages it. To combine both, open the file, remove the <<<<<<< markers, then Mark resolved. Resolving a file does not finish the merge — commit once every conflict is resolved.")
+                        .font(.system(size: 9)).foregroundStyle(Theme.textSecondary).padding(.top, 2)
+                }
+                .padding(8)
+            }
+        }
+    }
+
+    @ViewBuilder private func stage(_ title: String, _ content: MergeStageContent?, empty: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).bold().foregroundStyle(Theme.textSecondary)
+            switch content {
+            case .text(let t):
+                Text(t.isEmpty ? "(empty)" : t).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .binary:
+                Text("Binary content — resolve by choosing a side.").font(.caption).foregroundStyle(Theme.warning)
+            case .absent, .none:
+                Text(empty).font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Theme.panel).clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    // Empty-side wording is derived from the conflict kind, never from stage absence alone.
+    private var oursEmpty: String {
+        switch kind {
+        case .deletedByUs: "We deleted this file."
+        case .addedByThem: "We don't have this file (added on the other side)."
+        default: "—"
+        }
+    }
+    private var theirsEmpty: String {
+        switch kind {
+        case .deletedByThem: "The other side deleted this file."
+        case .addedByUs: "The other side doesn't have this file."
+        default: "—"
+        }
+    }
+
+    private func label(_ k: ConflictKind) -> String {
+        switch k {
+        case .bothModified: "both modified"; case .bothAdded: "both added"; case .bothDeleted: "both deleted"
+        case .addedByUs: "added by us"; case .addedByThem: "added by them"
+        case .deletedByUs: "deleted by us"; case .deletedByThem: "deleted by them"; case .unknown: "conflict"
+        }
     }
 }

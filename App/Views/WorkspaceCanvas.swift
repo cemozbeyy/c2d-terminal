@@ -291,7 +291,7 @@ struct PanelContentView: View {
         case .editor:
             EditorPanelView(editor: workspace.editor(for: panel.id))
         case .gitChanges:
-            GitPanelView(git: workspace.git)
+            GitPanelView(git: workspace.git, workspace: workspace)
         case .agentSession:
             AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:

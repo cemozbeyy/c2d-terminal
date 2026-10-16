@@ -283,6 +283,101 @@ import Testing
         #expect(try await r.repo.diff(path: "f.txt", staged: true).isEmpty, "a stale hunk must stage nothing")
     }
 
+    // MARK: Conflicts (Bible Part 6 §9)
+
+    /// Leaves the repo mid-merge with `f.txt` conflicted in the requested shape, plus a clean tracked
+    /// `unrelated.txt` so a test can dirty it and check it survives resolution.
+    private func makeConflictRepo(_ kind: ConflictKind) async throws -> Repo {
+        let r = try await makeRepo()
+        try r.write("f.txt", "alpha\nbeta\ngamma\n"); try r.write("unrelated.txt", "untouched\n")
+        try await r.repo.stageAll(); _ = try await r.repo.commit(message: "base")
+        try await r.repo.createBranch("other", checkout: true)   // "theirs"
+        switch kind {
+        case .deletedByThem: try FileManager.default.removeItem(at: r.root.appendingPathComponent("f.txt"))
+        default: try r.write("f.txt", "alpha\nTHEIRS\ngamma\n")
+        }
+        try await r.repo.stageAll(); _ = try await r.repo.commit(message: "theirs")
+        try await r.repo.checkout(branch: "main")                // "ours"
+        switch kind {
+        case .deletedByUs: try FileManager.default.removeItem(at: r.root.appendingPathComponent("f.txt"))
+        default: try r.write("f.txt", "alpha\nOURS\ngamma\n")
+        }
+        try await r.repo.stageAll(); _ = try await r.repo.commit(message: "ours")
+        _ = try await r.repo.run(["merge", "other"], allowFailure: true)   // exits 1 on conflict
+        return r
+    }
+
+    @Test func resolutionCommandTableIsCorrectForEveryShape() {
+        let keepOurs = [["checkout", "--ours", "--", "f"], ["add", "--", "f"]]
+        let keepTheirs = [["checkout", "--theirs", "--", "f"], ["add", "--", "f"]]
+        let remove = [["rm", "--", "f"]]
+        #expect(GitRepository.resolutionCommands(kind: .bothModified, side: .ours, path: "f") == keepOurs)
+        #expect(GitRepository.resolutionCommands(kind: .bothModified, side: .theirs, path: "f") == keepTheirs)
+        #expect(GitRepository.resolutionCommands(kind: .deletedByThem, side: .ours, path: "f") == keepOurs)
+        #expect(GitRepository.resolutionCommands(kind: .deletedByThem, side: .theirs, path: "f") == remove)
+        #expect(GitRepository.resolutionCommands(kind: .deletedByUs, side: .ours, path: "f") == remove)
+        #expect(GitRepository.resolutionCommands(kind: .deletedByUs, side: .theirs, path: "f") == keepTheirs)
+        #expect(GitRepository.resolutionCommands(kind: .addedByUs, side: .theirs, path: "f") == remove)
+        #expect(GitRepository.resolutionCommands(kind: .addedByThem, side: .ours, path: "f") == remove)
+        #expect(GitRepository.resolutionCommands(kind: .bothDeleted, side: .ours, path: "f") == remove)
+    }
+
+    @Test func detectsBothModifiedConflictWithStagesAndOperation() async throws {
+        let r = try await makeConflictRepo(.bothModified); defer { r.cleanup() }
+        let e = try await r.repo.status().entries.first { $0.path == "f.txt" }
+        #expect(e?.isConflicted == true && e?.conflictKind == .bothModified)
+        #expect(try await r.repo.operationInProgress() == .merge)
+        let stages = try await r.repo.conflictStages(path: "f.txt")
+        guard case .text(let base) = stages.base, case .text(let ours) = stages.ours, case .text(let theirs) = stages.theirs else {
+            Issue.record("expected all three text stages for both-modified"); return
+        }
+        #expect(base.contains("beta") && ours.contains("OURS") && theirs.contains("THEIRS"))
+    }
+
+    @Test func resolveBothModifiedKeepsSideAndPreservesUnrelatedChange() async throws {
+        let r = try await makeConflictRepo(.bothModified); defer { r.cleanup() }
+        try r.write("unrelated.txt", "DIRTY EDIT\n")   // uncommitted, must survive
+        try await r.repo.resolveConflict(path: "f.txt", using: .ours)
+        #expect(try await !r.repo.status().entries.contains { $0.path == "f.txt" && $0.isConflicted })
+        #expect(try r.read("f.txt").contains("OURS") && !(try r.read("f.txt")).contains("THEIRS"))
+        #expect(try r.read("unrelated.txt") == "DIRTY EDIT\n", "resolving one file never touches unrelated changes")
+        #expect(try await r.repo.operationInProgress() == .merge, "resolving a file does not finish the merge")
+    }
+
+    @Test func resolveModifyDeleteBothDirections() async throws {
+        let keep = try await makeConflictRepo(.deletedByThem); defer { keep.cleanup() }
+        #expect(try await keep.repo.status().entries.first { $0.path == "f.txt" }?.conflictKind == .deletedByThem)
+        try await keep.repo.resolveConflict(path: "f.txt", using: .ours)   // keep our modified file
+        #expect(try await !keep.repo.status().entries.contains { $0.path == "f.txt" && $0.isConflicted })
+        #expect(FileManager.default.fileExists(atPath: keep.root.appendingPathComponent("f.txt").path))
+
+        let drop = try await makeConflictRepo(.deletedByThem); defer { drop.cleanup() }
+        try await drop.repo.resolveConflict(path: "f.txt", using: .theirs)  // accept the deletion
+        #expect(try await !drop.repo.status().entries.contains { $0.path == "f.txt" && $0.isConflicted })
+        #expect(!FileManager.default.fileExists(atPath: drop.root.appendingPathComponent("f.txt").path))
+    }
+
+    @Test func markResolvedRefusesWhileMarkersRemainThenStages() async throws {
+        let r = try await makeConflictRepo(.bothModified); defer { r.cleanup() }
+        do {
+            try await r.repo.markResolved(path: "f.txt")   // git wrote conflict markers
+            Issue.record("expected refusal while markers remain")
+        } catch let GitError.conflictMarkersRemain(lines) { #expect(!lines.isEmpty) }
+        try r.write("f.txt", "alpha\nMERGED\ngamma\n")
+        try await r.repo.markResolved(path: "f.txt")
+        let e = try await r.repo.status().entries.first { $0.path == "f.txt" }
+        #expect(e?.isConflicted != true)
+        #expect(try r.read("f.txt").contains("MERGED"))
+    }
+
+    @Test func abortMergeRestoresPreMergeState() async throws {
+        let r = try await makeConflictRepo(.bothModified); defer { r.cleanup() }
+        #expect(try await r.repo.operationInProgress() == .merge)
+        try await r.repo.abortOperation(.merge)
+        #expect(try await r.repo.operationInProgress() == nil)
+        #expect(try await r.repo.status().isClean && (try r.read("f.txt")).contains("OURS"))
+    }
+
     @Test func commandFailureCarriesStderr() async throws {
         let r = try await makeRepo(); defer { r.cleanup() }
         do {
