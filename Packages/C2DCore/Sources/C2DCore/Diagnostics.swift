@@ -15,7 +15,7 @@ public enum Log {
 
 /// Facts about the running build and host, for the About/diagnostics surface and bug reports.
 /// Contains no user data.
-public struct DiagnosticsReport: Sendable, Equatable {
+public struct DiagnosticsReport: Sendable, Equatable, Codable {
     public let appVersion: String
     public let buildNumber: String
     public let osVersion: String

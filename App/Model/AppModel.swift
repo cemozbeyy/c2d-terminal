@@ -45,6 +45,8 @@ final class AppModel {
     private(set) var agentSessions: AgentSessionRegistry
     let taskStore: TaskStore?
     let optimizationStore: OptimizationStore?
+    /// Bounded, redacted diagnostic buffer behind the "Export Diagnostics…" bundle (Bible Part 11 §18).
+    let diagnosticsRecorder = DiagnosticsRecorder()
     private(set) var entitlement = Entitlement()
     private(set) var providerStatuses: [String: AgentProviderStatus] = [:]
     private(set) var providerPaths: [String: String] = [:]
@@ -330,6 +332,21 @@ final class AppModel {
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
             }
         }
+        // `-c2dDiagnosticsExport <path>` seeds events carrying secrets, writes the bundle, and reports
+        // whether the seeded secrets survive into the file (they must not).
+        if let path = UserDefaults.standard.string(forKey: "c2dDiagnosticsExport") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self else { return }
+                let token = "ghp_SEED0123456789abcdefghijklmnopqrstuv"
+                await self.diagnosticsRecorder.record(module: "git", operation: "push", error: GitError.commandFailed(code: 128, stderr: "fatal: auth failed token=\(token)"))
+                // Awaited directly (not via report's fire-and-forget) so both secret sources are in the file.
+                await self.diagnosticsRecorder.record(module: "app", operation: "seed", detail: "message with \(token) and AKIAZZZZZZZZZZZZZZZZ key")
+                let text = (try? await self.diagnosticsRecorder.makeBundle(report: DiagnosticsReport.current()).serialized()) ?? "ERR"
+                try? text.write(toFile: path, atomically: true, encoding: .utf8)
+                debugTrace("diagnosticsExport: bytes=\(text.count) containsToken=\(text.contains(token)) containsAKIA=\(text.contains("AKIAZZZZZZZZZZZZZZZZ")) events=\(await self.diagnosticsRecorder.snapshot().count)")
+            }
+        }
         // `-c2dConflictCheck YES` — on a repo already left mid-merge with a conflict, selects the
         // conflicted file, confirms detection/stages/operation, resolves it with "ours", and verifies.
         if UserDefaults.standard.bool(forKey: "c2dConflictCheck") {
@@ -422,9 +439,27 @@ final class AppModel {
         #endif
     }
 
+    /// Non-nil presents the diagnostics export preview sheet (the exact text that would be saved).
+    var diagnosticsPreview: String?
+
+    /// Builds the redacted, allowlisted bundle and shows it for preview before any save (Bible §12.4).
+    func prepareDiagnosticsExport() {
+        Task {
+            let bundle = await diagnosticsRecorder.makeBundle(report: DiagnosticsReport.current())
+            diagnosticsPreview = (try? bundle.serialized()) ?? "{\n  \"error\": \"failed to serialize diagnostics\"\n}"
+        }
+    }
+
+    func saveDiagnostics(_ text: String, to url: URL) {
+        do { try text.write(to: url, atomically: true, encoding: .utf8) }
+        catch { report("Diagnostics export failed", "Could not write the file: \(error.localizedDescription)") }
+    }
+
     func report(_ title: String, _ detail: String) {
-        Log.app.error("\(title, privacy: .public): \(detail, privacy: .public)")
+        // The detail may carry git stderr etc.; redact before it reaches os_log (Bible: never log secrets).
+        Log.app.error("\(title, privacy: .public): \(SecretRedactor.redact(detail), privacy: .public)")
         messages.append(UserMessage(title: title, detail: detail))
+        Task { await diagnosticsRecorder.record(module: "app", operation: title, detail: detail) }
     }
 
     func dismiss(_ message: UserMessage) {

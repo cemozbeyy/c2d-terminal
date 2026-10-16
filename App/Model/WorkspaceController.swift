@@ -34,7 +34,7 @@ final class WorkspaceController {
         self.app = app
         self.restoredFromDisk = restoredFromDisk
         self.explorer = ExplorerController(rootPath: projectPath)
-        self.git = GitController(projectPath: projectPath)
+        self.git = GitController(projectPath: projectPath, diagnostics: app.diagnosticsRecorder)
         self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
         self.optimizer = OptimizerController(projectPath: projectPath, store: app.optimizationStore, app: app)
         scheduleSave()   // a freshly created layout must survive a quit before the first edit

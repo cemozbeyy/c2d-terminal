@@ -39,8 +39,11 @@ final class GitController {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     static let diffLineLimit = 5000
 
-    init(projectPath: String) {
+    @ObservationIgnored private let diagnostics: DiagnosticsRecorder?
+
+    init(projectPath: String, diagnostics: DiagnosticsRecorder? = nil) {
         self.projectPath = projectPath
+        self.diagnostics = diagnostics
         Task { await discover() }
     }
 
@@ -196,6 +199,7 @@ final class GitController {
             lastError = nil
         } catch {
             lastError = "\(what): \(describe(error))"
+            if let diagnostics { Task { await diagnostics.record(module: "git", operation: what, error: error) } }
         }
         await refresh()
     }

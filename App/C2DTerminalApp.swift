@@ -82,6 +82,9 @@ struct C2DTerminalApp: App {
                 Button("Save as Default Layout") { model.workspace?.saveAsGlobalDefault() }
                     .disabled(model.workspace == nil)
             }
+            CommandGroup(after: .help) {
+                Button("Export Diagnostics…") { model.prepareDiagnosticsExport() }
+            }
         }
     }
 }
