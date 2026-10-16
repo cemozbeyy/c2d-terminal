@@ -334,6 +334,49 @@ final class AppModel {
                 debugTrace("dockCheck: before=\(before.count) after=\(after.count) movedToNewGroup=\(movedToNewGroup) noneLost=\(noneLost)")
             }
         }
+        // `-c2dDividerCheck YES` exercises the divider-drag outcome (WorkspaceController.setWeights →
+        // WorkspaceLayout.setWeights) and verifies the split's weights actually change. The SwiftUI
+        // DragGesture itself stays manual (like the dock drop); its effect is what this checks.
+        if UserDefaults.standard.bool(forKey: "c2dDividerCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let ws = self?.workspace else { debugTrace("dividerCheck: no workspace"); return }
+                ws.apply(.development)
+                try? await Task.sleep(for: .milliseconds(300))
+                guard case .split(let id, _, let children, let before) = ws.layout.root, children.count >= 2 else {
+                    debugTrace("dividerCheck: root is not a split"); return
+                }
+                var next = Array(repeating: 1.0 / Double(children.count), count: children.count)
+                next[0] = 0.5; next[1] = max(0.05, next[1] - (0.5 - next[0]))   // shift weight onto the first pane
+                ws.setWeights(next, of: id)
+                try? await Task.sleep(for: .milliseconds(100))
+                guard case .split(_, _, _, let after) = ws.layout.root else { debugTrace("dividerCheck: split gone"); return }
+                debugTrace("dividerCheck: changed=\(after != before) before=\(before.map { String(format: "%.2f", $0) }) after=\(after.map { String(format: "%.2f", $0) })")
+            }
+        }
+        // `-c2dEditorUndoCheck YES` drives the live NSTextView (requires -c2dOpenProject + -c2dOpenFile):
+        // type text, undo, and verify the tab's model text actually reverts — a real state change,
+        // not click delivery. Find/undo are AppKit features we enable (usesFindBar/allowsUndo).
+        if UserDefaults.standard.bool(forKey: "c2dEditorUndoCheck") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, let tab = self.workspace?.editors.values.compactMap({ $0.activeTab ?? $0.tabs.first }).first else {
+                    debugTrace("editorUndoCheck: no editor tab (editors=\(self?.workspace?.editors.count ?? -1))"); return
+                }
+                guard let tv = NSApp.windows.lazy.compactMap({ $0.contentView.flatMap(firstTextView) }).first else {
+                    debugTrace("editorUndoCheck: no NSTextView in hierarchy"); return
+                }
+                tv.window?.makeFirstResponder(tv)
+                let before = tab.text
+                tv.setSelectedRange(NSRange(location: 0, length: 0))
+                tv.insertText("ZZZMARKER\n", replacementRange: NSRange(location: 0, length: 0))
+                let inserted = tab.text.contains("ZZZMARKER")
+                tv.undoManager?.undo()
+                let reverted = tab.text == before
+                let findAvailable = tv.responds(to: #selector(NSTextView.performFindPanelAction(_:)))
+                debugTrace("editorUndoCheck: inserted=\(inserted) undoReverted=\(reverted) findAvailable=\(findAvailable) usesFindBar=\(tv.usesFindBar) allowsUndo=\(tv.allowsUndo)")
+            }
+        }
         // `-c2dLaunchBench <projectPath>` records launch/restoration timing and memory (e2e, Bible
         // Part 15 §14.1). forkToReady uses the kernel process start time (true cold-ish, incl. dyld);
         // modelInit is from the first line of this init; restore is the openWorkspace build.
@@ -656,4 +699,11 @@ private func forkAgeSeconds() -> Double {
     let start = kp.kp_proc.p_un.__p_starttime
     let started = Double(start.tv_sec) + Double(start.tv_usec) / 1e6
     return Date().timeIntervalSince1970 - started
+}
+
+/// First NSTextView found in a view subtree (for the editor interaction debug check).
+private func firstTextView(_ v: NSView) -> NSTextView? {
+    if let tv = v as? NSTextView { return tv }
+    for sub in v.subviews { if let f = firstTextView(sub) { return f } }
+    return nil
 }
