@@ -478,6 +478,8 @@ final class AppModel {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(2))
                 guard let git = self?.workspace?.git, git.isAvailable else { debugTrace("gitSync: no git"); return }
+                // Hard guard: this hook commits and pushes, so it refuses anything but a local-path remote.
+                guard let origin = try? await git.repository?.remoteURL(), origin.hasPrefix("/") else { debugTrace("gitSync: refused — origin is not a local filesystem path"); return }
                 await git.refresh(); let behind0 = git.behindCount
                 await git.fetch(); await git.refresh(); let afterFetch = git.behindCount
                 await git.pull(); let afterPull = git.behindCount
@@ -487,6 +489,54 @@ final class AppModel {
                 let aheadAfterCommit = git.aheadCount
                 await git.push(); await git.refresh(); let aheadAfterPush = git.aheadCount
                 debugTrace("gitSync: behind0=\(behind0) afterFetch=\(afterFetch) afterPull=\(afterPull) aheadAfterCommit=\(aheadAfterCommit) aheadAfterPush=\(aheadAfterPush) err=\(git.lastError ?? "none")")
+            }
+        }
+        // `-c2dGitSyncRejected YES` — on a work clone whose LOCAL bare remote has advanced (prepared by the
+        // caller) and which has its own local commit: hides the Git panel, pushes, and reports whether the
+        // rejection reached the window-level banner, and that the local commit and a dirty file survived.
+        if UserDefaults.standard.bool(forKey: "c2dGitSyncRejected") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, let ws = self.workspace, ws.git.isAvailable else { debugTrace("gitSyncRejected: no git"); return }
+                guard let origin = try? await ws.git.repository?.remoteURL(), origin.hasPrefix("/") else { debugTrace("gitSyncRejected: refused — origin is not a local filesystem path"); return }
+                if let gitPanel = ws.layout.panels.first(where: { $0.value.kind == .gitChanges })?.key, !ws.layout.hidden.contains(gitPanel) { ws.hide(gitPanel) }
+                let gitPanelVisible = ws.layout.panels.contains { $0.value.kind == .gitChanges && !ws.layout.hidden.contains($0.key) }
+                let dirty = (ws.projectPath as NSString).appendingPathComponent("dirty-untracked.txt")
+                try? "unsaved work\n".write(toFile: dirty, atomically: true, encoding: .utf8)
+                let head0 = try? await ws.git.repository?.log(limit: 1).first?.hash
+                let before = self.messages.count
+                await ws.git.push()
+                await ws.git.push()   // same failure twice → still one banner
+                let titles = self.messages.dropFirst(before).map(\.title)
+                let head1 = try? await ws.git.repository?.log(limit: 1).first?.hash
+                let detailHasHome = self.messages.dropFirst(before).contains { $0.detail.contains(NSHomeDirectory()) }
+                debugTrace("gitSyncRejected: gitPanelVisible=\(gitPanelVisible) banners=\(titles) lastError=\(ws.git.lastError ?? "none") headUnchanged=\(head0 != nil && head0 == head1) dirtyFileKept=\(FileManager.default.fileExists(atPath: dirty)) detailLeaksHome=\(detailHasHome)")
+            }
+        }
+        // `-c2dScrollbackCheck <n>` — types `seq 1 n` into the first live terminal, waits for the last
+        // number, then reports whether line "1" is still in the buffer and the scroll-to-top position.
+        // Pair with `-c2dScrollbackLines 500` to show the probe fails at SwiftTerm's default.
+        if UserDefaults.standard.object(forKey: "c2dScrollbackCheck") != nil {
+            let n = max(UserDefaults.standard.integer(forKey: "c2dScrollbackCheck"), 1)
+            Task { @MainActor [weak self] in
+                for _ in 0..<50 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard let self, let ws = self.workspace else { return }
+                    guard let t = ws.terminals.values.first(where: { $0.isRunning }) else { continue }
+                    try? await Task.sleep(for: .seconds(1))   // let the prompt settle
+                    let rss0 = currentResidentMB()
+                    t.write(Data("seq 1 \(n)\n".utf8))
+                    var settled = false
+                    for _ in 0..<100 where !settled {
+                        try? await Task.sleep(for: .milliseconds(100))
+                        settled = t.screenText().split(separator: "\n").contains { $0.trimmingCharacters(in: .whitespaces) == "\(n)" }
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    let probe = t.scrollbackProbe(marker: "1")
+                    debugTrace("scrollbackCheck n=\(n) cap=\(TerminalSurfaceView.effectiveScrollbackLines) outputSettled=\(settled) bufferLines=\(probe?.lines ?? -1) retainsLine1=\(probe?.retainsMarker ?? false) scrollTopPosition=\(probe?.topPositionAfterScroll ?? -1) rssMB=\(rss0)→\(currentResidentMB())")
+                    return
+                }
+                debugTrace("scrollbackCheck: no running terminal within 10 s (a restored layout needs -c2dNewTerminal YES)")
             }
         }
         // `-c2dConflictCheck YES` — on a repo already left mid-merge with a conflict, selects the
@@ -600,6 +650,8 @@ final class AppModel {
     func report(_ title: String, _ detail: String) {
         // The detail may carry git stderr etc.; redact before it reaches os_log (Bible: never log secrets).
         Log.app.error("\(title, privacy: .public): \(SecretRedactor.redact(detail), privacy: .public)")
+        // The same failure reported twice in a row (e.g. a retried push) shows one banner, not a stack.
+        if let last = messages.last, last.title == title, last.detail == detail { return }
         messages.append(UserMessage(title: title, detail: detail))
         Task { await diagnosticsRecorder.record(module: "app", operation: title, detail: detail) }
     }

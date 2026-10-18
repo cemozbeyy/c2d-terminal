@@ -474,6 +474,21 @@ public actor GitRepository {
 
     // MARK: Remote synchronization (Bible Part 6 §10) — fetch, pull, push as distinct operations.
 
+    /// Short user-facing title for the outcome of a failed remote operation (`operation` is "Fetch",
+    /// "Pull" or "Push"). Pure, so the app's routing of remote failures to a window-level banner can
+    /// be tested here without the UI.
+    public static func remoteFailureTitle(_ error: GitError, operation: String) -> String {
+        switch error {
+        case .authenticationRequired: "\(operation) failed: authentication required"
+        case .networkUnavailable: "\(operation) failed: remote unreachable"
+        case .pushRejected: "Push rejected"
+        case .noUpstreamConfigured: "\(operation) failed: no upstream configured"
+        case .operationTimedOut: "\(operation) timed out — remote state unknown"
+        case .dirtyWorkingTree: "\(operation) refused: uncommitted changes"
+        default: "\(operation) failed"
+        }
+    }
+
     /// Maps a failed remote command to a specific error. Order matters: "rejected" also appears in auth
     /// failures, so auth is checked first. A terminated process (timeout) is `operationTimedOut`.
     static func classifyRemoteFailure(code: Int32, stderr: String) -> GitError {
@@ -493,7 +508,8 @@ public actor GitRepository {
             || s.contains("updates were rejected") || s.contains("failed to push") {
             return .pushRejected(stderr: stderr)
         }
-        if s.contains("no upstream") || s.contains("has no upstream branch") || s.contains("no configured push destination") {
+        if s.contains("no upstream") || s.contains("has no upstream branch") || s.contains("no configured push destination")
+            || s.contains("no tracking information") {
             return .noUpstreamConfigured
         }
         return .commandFailed(code: code, stderr: stderr)
@@ -511,6 +527,9 @@ public actor GitRepository {
     /// merge conflict is NOT an error: it leaves a merge in progress that the conflict UI resolves.
     public func pull() async throws {
         if try await status().entries.contains(where: { !$0.isUntracked }) { throw GitError.dirtyWorkingTree }
+        // Resolve the upstream explicitly (same signal `push` uses) instead of relying on git's localized
+        // "There is no tracking information" text; the classifier keeps that text as a fallback.
+        guard try await hasUpstream() else { throw GitError.noUpstreamConfigured }
         let r = try await run(["pull", "--no-rebase"], allowFailure: true)
         if r.code == 0 { return }
         if try await operationInProgress() == .merge { return }   // conflicts → handled by the conflict view
@@ -520,12 +539,26 @@ public actor GitRepository {
     /// Pushes the current branch to its configured upstream. Requires an upstream (never sets one
     /// implicitly, §10) and never force-pushes from the UI.
     public func push(force: Bool = false) async throws {
-        let up = try await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], allowFailure: true)
-        guard up.code == 0, !up.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw GitError.noUpstreamConfigured }
+        guard try await hasUpstream() else { throw GitError.noUpstreamConfigured }
         var args = ["push"]
         if force { args.append("--force-with-lease") }
         let r = try await run(args, allowFailure: true)
         guard r.code == 0 else { throw Self.classifyRemoteFailure(code: r.code, stderr: r.stderr) }
+    }
+
+    /// URL of a configured remote, or nil when it does not exist. Read-only; used by Debug hooks to
+    /// refuse running against anything that is not a local filesystem path.
+    public func remoteURL(_ name: String = "origin") async throws -> String? {
+        let r = try await run(["remote", "get-url", name], allowFailure: true)
+        guard r.code == 0 else { return nil }
+        let url = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return url.isEmpty ? nil : url
+    }
+
+    /// True when the current branch has a configured upstream (`@{upstream}` resolves). Never sets one.
+    public func hasUpstream() async throws -> Bool {
+        let up = try await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], allowFailure: true)
+        return up.code == 0 && !up.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: Branches and history

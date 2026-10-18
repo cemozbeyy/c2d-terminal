@@ -61,7 +61,47 @@ import Testing
         #expect(kind(128, "fatal: unable to access 'https://…': Could not resolve host: invalid.invalid") == .networkUnavailable)
         #expect(kind(1, "! [rejected]  main -> main (non-fast-forward)\nUpdates were rejected") == .pushRejected(stderr: "! [rejected]  main -> main (non-fast-forward)\nUpdates were rejected"))
         #expect(kind(128, "fatal: The current branch main has no upstream branch.") == .noUpstreamConfigured)
+        #expect(kind(1, "There is no tracking information for the current branch.\nPlease specify which branch you want to merge with.") == .noUpstreamConfigured)
         #expect(kind(1, "fatal: something else entirely") == .commandFailed(code: 1, stderr: "fatal: something else entirely"))
+    }
+
+    /// Titles the app shows outside the Git panel when a remote operation fails (routing is app-layer;
+    /// the mapping is pure and lives here).
+    @Test func remoteFailureTitlesAreSpecificAndNameTheOperation() {
+        #expect(GitRepository.remoteFailureTitle(.pushRejected(stderr: "x"), operation: "Push") == "Push rejected")
+        #expect(GitRepository.remoteFailureTitle(.authenticationRequired, operation: "Fetch") == "Fetch failed: authentication required")
+        #expect(GitRepository.remoteFailureTitle(.networkUnavailable, operation: "Pull") == "Pull failed: remote unreachable")
+        #expect(GitRepository.remoteFailureTitle(.noUpstreamConfigured, operation: "Pull") == "Pull failed: no upstream configured")
+        #expect(GitRepository.remoteFailureTitle(.operationTimedOut, operation: "Push") == "Push timed out — remote state unknown")
+        #expect(GitRepository.remoteFailureTitle(.dirtyWorkingTree, operation: "Pull") == "Pull refused: uncommitted changes")
+        #expect(GitRepository.remoteFailureTitle(.commandFailed(code: 1, stderr: ""), operation: "Fetch") == "Fetch failed")
+    }
+
+    // MARK: Pull without upstream
+
+    @Test func pullWithoutUpstreamThrowsBeforeTouchingAnything() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-pullnoup-\(UUID().uuidString)")
+        let root = base.appendingPathComponent("solo")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try await run(root, ["init", "-q", "-b", "main"])
+        try await run(root, ["config", "user.name", "S"]); try await run(root, ["config", "user.email", "s@c2d.works"])
+        try write(root.appendingPathComponent("a.txt"), "x\n")
+        try await run(root, ["add", "-A"]); try await run(root, ["commit", "-qm", "c"])
+        // A remote exists but the branch does not track it: the realistic "cloned, then new branch" case.
+        try await run(root, ["remote", "add", "origin", base.appendingPathComponent("nowhere.git").path])
+        let repo = GitRepository(root: root.path, isLinkedWorktree: false, gitPath: GitRepository.locateGit()!)
+        await repo.setExtraEnvironment(Self.masked)
+        #expect(try await repo.hasUpstream() == false)
+        await #expect(throws: GitError.noUpstreamConfigured) { try await repo.pull() }
+        #expect(try await repo.operationInProgress() == nil)
+        #expect(try await repo.status().isClean, "a refused pull changes nothing")
+    }
+
+    @Test func remoteURLIsReadOnlyAndNilWhenMissing() async throws {
+        let r = try await makeRemotePair(); defer { r.cleanup() }
+        #expect(try await r.work.remoteURL() == r.originURL.path)
+        #expect(try await r.work.remoteURL("nope") == nil)
     }
 
     // MARK: Fetch

@@ -39,6 +39,11 @@ final class GitController {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     static let diffLineLimit = 5000
 
+    /// Called once per failed remote operation (fetch/pull/push) with a short title and a redacted
+    /// detail, so the app can show it outside this panel (Bible Part 6 §10: failures must be visible).
+    /// `lastError` is still set for the panel's own banner.
+    @ObservationIgnored var onRemoteFailure: ((String, String) -> Void)?
+
     @ObservationIgnored private let diagnostics: DiagnosticsRecorder?
 
     init(projectPath: String, diagnostics: DiagnosticsRecorder? = nil) {
@@ -190,7 +195,7 @@ final class GitController {
 
     // MARK: Operations (each refreshes afterwards; Git state is re-read, never assumed)
 
-    private func perform(_ what: String, _ body: (GitRepository) async throws -> Void) async {
+    private func perform(_ what: String, remote: Bool = false, _ body: (GitRepository) async throws -> Void) async {
         guard let repo = repository, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -199,7 +204,12 @@ final class GitController {
             try await body(repo)
             lastError = nil
         } catch {
-            lastError = "\(what): \(describe(error))"
+            let detail = describe(error)
+            lastError = "\(what): \(detail)"
+            if remote {
+                let title = (error as? GitError).map { GitRepository.remoteFailureTitle($0, operation: what) } ?? "\(what) failed"
+                onRemoteFailure?(title, detail)
+            }
             let ms = Int(start.duration(to: .now) / .milliseconds(1))
             if let diagnostics { Task { await diagnostics.record(module: "git", operation: what, error: error, durationMS: ms) } }
         }
@@ -225,12 +235,12 @@ final class GitController {
 
     // MARK: Remote sync (Bible Part 6 §10)
 
-    func fetch() async { await perform("Fetch") { try await $0.fetch() } }
+    func fetch() async { await perform("Fetch", remote: true) { try await $0.fetch() } }
     func pull() async {
-        await perform("Pull") { try await $0.pull() }
+        await perform("Pull", remote: true) { try await $0.pull() }
         await loadBranchesAndHistory()
     }
-    func push() async { await perform("Push") { try await $0.push() } }
+    func push() async { await perform("Push", remote: true) { try await $0.push() } }
 
     var aheadCount: Int { status?.ahead ?? 0 }
     var behindCount: Int { status?.behind ?? 0 }
@@ -279,24 +289,27 @@ final class GitController {
         await loadWorktrees()
     }
 
+    /// Human-readable error. Git's stderr is redacted before display: a remote URL can embed a token
+    /// and hooks can print anything (Bible Part 13: never surface credentials or home paths).
     func describe(_ error: Error) -> String {
         switch error as? GitError {
         case .gitUnavailable: "git executable not found"
         case .notARepository: "not a Git repository"
-        case .commandFailed(let code, let stderr): "git exited \(code): \(stderr.isEmpty ? "no details" : stderr)"
+        case .commandFailed(let code, let stderr): "git exited \(code): \(stderr.isEmpty ? "no details" : SecretRedactor.redact(stderr))"
         case .dirtyWorkingTree: "working tree has uncommitted changes; commit, stash or discard them first (nothing was changed)"
         case .nothingToCommit: "nothing is staged"
         case .emptyMessage: "commit message is empty"
         case .identityNotConfigured: "git user.name / user.email are not configured"
         case .invalidPath: "invalid path"
         case .staleDiff: "this diff changed since it was shown; nothing was staged — refresh and retry"
-        case .patchDoesNotApply(let stderr): "the hunk no longer applies to the index (nothing changed): \(stderr.isEmpty ? "refresh and retry" : stderr)"
+        case .patchDoesNotApply(let stderr): "the hunk no longer applies to the index (nothing changed): \(stderr.isEmpty ? "refresh and retry" : SecretRedactor.redact(stderr))"
         case .conflictMarkersRemain(let lines): "conflict markers are still present (lines \(lines.prefix(5).map(String.init).joined(separator: ", "))\(lines.count > 5 ? "…" : "")); remove them before marking resolved"
         case .notConflicted: "this file is no longer in a conflicted state"
         case .authenticationRequired: "authentication failed — set up your Git credentials or SSH key (nothing was changed)"
         case .networkUnavailable: "could not reach the remote — check your network connection (nothing was changed)"
-        case .pushRejected(let stderr): "push rejected: the remote has commits you don't have. Pull first, then push. \(stderr)"
-        case .noUpstreamConfigured: "this branch has no upstream — in the terminal run: git push -u origin \(status?.branch ?? "<branch>")"
+        case .pushRejected(let stderr): "push rejected: the remote has commits you don't have. Pull first, then push. \(SecretRedactor.redact(stderr))"
+        case .noUpstreamConfigured:
+            "this branch has no upstream (nothing was changed). In the terminal: git push -u origin \(status?.branch ?? "<branch>") to publish it, or git branch --set-upstream-to=origin/\(status?.branch ?? "<branch>") to track an existing remote branch"
         case .operationTimedOut: "timed out — the remote state is unknown; fetch or refresh to re-check"
         case .none: "\(error)"
         }

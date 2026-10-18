@@ -37,6 +37,9 @@ final class WorkspaceController {
         self.git = GitController(projectPath: projectPath, diagnostics: app.diagnosticsRecorder)
         self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
         self.optimizer = OptimizerController(projectPath: projectPath, store: app.optimizationStore, app: app)
+        // Remote failures (fetch/pull/push) are started from the top bar, so they must be visible even
+        // when the Git panel is hidden: route them to the window-level message banner as well.
+        git.onRemoteFailure = { [weak app] title, detail in app?.report(title, detail) }
         scheduleSave()   // a freshly created layout must survive a quit before the first edit
         do {
             watcher = try FileWatcher(root: projectPath) { [weak self] paths in
