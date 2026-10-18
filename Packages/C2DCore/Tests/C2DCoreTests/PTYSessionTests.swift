@@ -326,6 +326,56 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
         #expect(openDescriptorCount() == before)
     }
 
+    /// Quit must not leave a dev server behind: descendants of the shell — a cooperative background
+    /// job, the foreground job, and a subshell that ignores SIGHUP together with its own child — all
+    /// end within grace + escalation, with no PTY descriptor leaked.
+    @Test func terminateEndsDescendantsIncludingHUPIgnoringOnes() async throws {
+        let before = openDescriptorCount()
+        // `sleep 300; echo done` keeps sh as the leader (a lone final command would be exec'd).
+        let session = PTYSession(configuration: sh("(trap '' HUP; exec sleep 300) & sleep 300 & echo ready; sleep 300; echo done"))
+        try await session.start()
+        let pid = await session.pid!
+        _ = await OutputCollector(session).contains("ready")
+        var tree: [pid_t] = []
+        for _ in 0..<100 where tree.count < 3 {
+            tree = ProcessProbe.descendants(of: pid)
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        // Never leave `sleep 300` processes on the machine if an expectation below fails.
+        defer { tree.forEach { kill($0, SIGKILL) } }
+        #expect(tree.count >= 3, "expected the HUP-ignoring sleep, the background sleep and the foreground sleep; saw \(tree)")
+
+        let started = ContinuousClock.now
+        let status = try await withTimeout { await session.terminate(gracePeriod: .milliseconds(400)) }
+        #expect(status == .signaled(signal: SIGHUP), "sh itself is cooperative")
+        var alive = tree
+        for _ in 0..<60 where !alive.isEmpty {
+            alive = alive.filter(processExists)
+            if !alive.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(alive.isEmpty, "descendants still running after terminate: \(alive)")
+        #expect(ContinuousClock.now - started < .seconds(5))
+        await session.close()
+        #expect(openDescriptorCount() == before)
+    }
+
+    /// The PID-reuse guard: a snapshot entry whose process is gone is never signalled again, and
+    /// terminate on an already-exited session touches nothing.
+    @Test func trackedProcessIdentityUsesStartTime() async throws {
+        let session = PTYSession(configuration: sh("exit 0"))
+        try await session.start()
+        let pid = await session.pid!
+        let status = try await withTimeout { try await session.waitForExit() }
+        #expect(status == .exited(code: 0))
+        let tracked = PTYSession.TrackedProcess(pid: pid, startSeconds: 1, startMicroseconds: 1)
+        #expect(!tracked.stillExists, "a reaped pid must not match any start time")
+        let me = PTYSession.TrackedProcess(pid: getpid(), startSeconds: ProcessProbe.startTime(of: getpid())!.seconds,
+                                           startMicroseconds: ProcessProbe.startTime(of: getpid())!.microseconds)
+        #expect(me.stillExists)
+        #expect(await session.terminate() == status)
+        await session.close()
+    }
+
     @Test func closeDoesNotStopTheChildButTerminateStillWorks() async throws {
         // close() only releases the master; with no foreground process group set by the child,
         // the kernel does not hang it up. Stopping the child is terminate()'s job, before or after close().

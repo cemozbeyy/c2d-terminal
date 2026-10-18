@@ -35,6 +35,43 @@ enum ProcessProbe {
         return Array(buffer.prefix(Int(n)))
     }
 
+    /// Every descendant of `pid` (children, grandchildren, …), nearest first. Bounded so a fork bomb
+    /// cannot spin this forever.
+    static func descendants(of pid: pid_t, limit: Int = 4096) -> [pid_t] {
+        var out: [pid_t] = []
+        var queue = children(of: pid)
+        var seen: Set<pid_t> = [pid]
+        while let next = queue.first, out.count < limit {
+            queue.removeFirst()
+            guard seen.insert(next).inserted else { continue }
+            out.append(next)
+            queue += children(of: next)
+        }
+        return out
+    }
+
+    /// Processes whose controlling terminal is `device` (`KERN_PROC_TTY`). Only meaningful while the
+    /// session leader is alive: when it exits the kernel revokes the tty for the whole session and
+    /// this list becomes empty even though descendants may still run.
+    static func processes(onTTY device: dev_t) -> [pid_t] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_TTY, Int32(bitPattern: UInt32(truncatingIfNeeded: device))]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        var buffer = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 8)
+        size = buffer.count * MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &buffer, &size, nil, 0) == 0 else { return [] }
+        return buffer.prefix(size / MemoryLayout<kinfo_proc>.stride).map(\.kp_proc.p_pid)
+    }
+
+    /// Kernel-recorded start time of `pid`, or nil when the process no longer exists. Unchanged by
+    /// `exec`, so `(pid, startTime)` identifies one process even if the pid number is later reused.
+    static func startTime(of pid: pid_t) -> (seconds: UInt64, microseconds: UInt64)? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return (info.pbi_start_tvsec, info.pbi_start_tvusec)
+    }
+
     static func name(of pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         let n = proc_name(pid, &buffer, UInt32(buffer.count))

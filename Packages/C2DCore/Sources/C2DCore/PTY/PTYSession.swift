@@ -30,8 +30,11 @@ public enum PTYSessionState: Sendable, Hashable {
 /// - `output` is a pull-based stream: a chunk is read from the kernel only when the
 ///   consumer asks for the next element, so the kernel's PTY buffer provides
 ///   backpressure to the child and nothing accumulates in this process. One consumer only.
-/// - `terminate()` sends SIGHUP to the child, waits `gracePeriod`, then SIGKILL.
-///   Only the direct child pid is ever signalled.
+/// - `terminate()` snapshots the session's processes (everything on this PTY plus the child's
+///   descendant tree) while the child is alive, sends SIGHUP (and SIGCONT) to each, waits
+///   `gracePeriod`, then SIGKILLs whatever is still the same process (pid + kernel start time).
+///   Nothing outside this session is ever signalled: not this process, not pid ≤ 1, not a pid
+///   that was reused by an unrelated process.
 /// - `close()` releases the master descriptor (idempotent). If the child is still
 ///   running, losing its controlling terminal makes the kernel deliver SIGHUP to its
 ///   foreground process group; the exit watcher still observes the exit.
@@ -54,6 +57,20 @@ public actor PTYSession {
     private var exitSource: DispatchSourceProcess?
     private var exitWaiters: [UUID: CheckedContinuation<PTYExitStatus?, Never>] = [:]
     private var reaped = false
+    /// The slave's device number, captured at spawn so the session's processes can be enumerated
+    /// even after `close()` released the master.
+    private var slaveDevice: dev_t?
+
+    /// One process observed in this session, pinned by pid and kernel start time (PID-reuse guard).
+    struct TrackedProcess: Hashable, Sendable {
+        let pid: pid_t
+        let startSeconds: UInt64
+        let startMicroseconds: UInt64
+        var stillExists: Bool {
+            guard let t = ProcessProbe.startTime(of: pid) else { return false }
+            return t.seconds == startSeconds && t.microseconds == startMicroseconds
+        }
+    }
 
     public init(configuration: PTYSessionConfiguration) {
         self.configuration = configuration
@@ -104,6 +121,8 @@ public actor PTYSession {
         guard slaveFD >= 0 else { throw fail(.ptyAllocationFailed(step: "open-slave", errno: errno)) }
         var ws = winsize(ws_row: configuration.initialSize.rows, ws_col: configuration.initialSize.columns, ws_xpixel: 0, ws_ypixel: 0)
         guard ioctl(slaveFD, TIOCSWINSZ, &ws) == 0 else { throw fail(.ptyAllocationFailed(step: "TIOCSWINSZ", errno: errno)) }
+        var slaveStat = stat()
+        if fstat(slaveFD, &slaveStat) == 0 { slaveDevice = slaveStat.st_rdev }
 
         // Child: new session, slave opened by path so it becomes the controlling tty,
         // stdin/stdout/stderr on the slave, cwd set, every other descriptor closed.
@@ -175,20 +194,32 @@ public actor PTYSession {
         guard ioctl(fd, TIOCSWINSZ, &ws) == 0 else { throw PTYError.resizeFailed(errno: errno) }
     }
 
-    /// SIGHUP, then SIGKILL after `gracePeriod` if the child is still alive. Returns once the
-    /// exit has been observed. Safe to call repeatedly or concurrently; later callers just wait.
+    /// SIGHUP to the child and every process in its session, then SIGKILL after `gracePeriod` to
+    /// whatever is still alive. Returns once the child's exit has been observed. Safe to call
+    /// repeatedly or concurrently; later callers just wait. The escalation runs even if the calling
+    /// task is cancelled (cancellation only shortens the waits).
     @discardableResult
     public func terminate(gracePeriod: Duration = .seconds(2)) async -> PTYExitStatus? {
         switch state {
         case .running(let pid):
             transition(to: .terminating(pid: pid))
-            Log.pty.info("terminate pid=\(pid, privacy: .public) SIGHUP")
-            kill(pid, SIGHUP)
-            if let status = await waitForExit(timeout: gracePeriod) { return status }
-            if case .terminating = state {
+            // Snapshot BEFORE signalling: once the leader exits the kernel revokes the tty for the
+            // whole session, so descendants can no longer be found through it.
+            let tracked = sessionProcesses(leader: pid)
+            let descendants = tracked.filter { $0.pid != pid }
+            Log.pty.info("terminate pid=\(pid, privacy: .public) SIGHUP session=\(tracked.count, privacy: .public) process(es)")
+            for p in tracked {
+                kill(p.pid, SIGHUP)
+                kill(p.pid, SIGCONT)   // a stopped job cannot act on SIGHUP otherwise (what the kernel does on hangup)
+            }
+            let deadline = ContinuousClock.now + gracePeriod
+            let status = await waitForExit(timeout: gracePeriod)
+            if status == nil, case .terminating = state {
                 Log.pty.notice("terminate pid=\(pid, privacy: .public) escalating to SIGKILL")
                 kill(pid, SIGKILL)
             }
+            await finishDescendants(descendants, deadline: deadline)
+            if let status { return status }
             return try? await waitForExit()
         case .terminating:
             return try? await waitForExit()
@@ -251,6 +282,35 @@ public actor PTYSession {
     }
 
     // MARK: Internals
+
+    /// The leader plus every process that belongs to this session right now: those whose controlling
+    /// terminal is our slave, united with the leader's descendant tree (covers a process that already
+    /// detached from the tty but is still a descendant). Never includes this process or pid ≤ 1.
+    private func sessionProcesses(leader: pid_t) -> [TrackedProcess] {
+        var pids: [pid_t] = [leader]
+        if let dev = slaveDevice { pids += ProcessProbe.processes(onTTY: dev) }
+        pids += ProcessProbe.descendants(of: leader)
+        let me = getpid()
+        var seen = Set<pid_t>()
+        return pids.compactMap { pid in
+            guard pid > 1, pid != me, seen.insert(pid).inserted, let t = ProcessProbe.startTime(of: pid) else { return nil }
+            return TrackedProcess(pid: pid, startSeconds: t.seconds, startMicroseconds: t.microseconds)
+        }
+    }
+
+    /// Gives the snapshotted descendants until `deadline` to exit on their own, then SIGKILLs the
+    /// ones that are provably still the same process. Bounded; a cancelled task skips the waiting.
+    private func finishDescendants(_ descendants: [TrackedProcess], deadline: ContinuousClock.Instant) async {
+        guard !descendants.isEmpty else { return }
+        var survivors = descendants.filter(\.stillExists)
+        while !survivors.isEmpty, ContinuousClock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(50))
+            survivors = survivors.filter(\.stillExists)
+        }
+        guard !survivors.isEmpty else { return }
+        Log.pty.notice("terminate: SIGKILL \(survivors.count, privacy: .public) surviving descendant(s)")
+        for p in survivors { kill(p.pid, SIGKILL) }
+    }
 
     private func transition(to new: PTYSessionState) {
         state = new
