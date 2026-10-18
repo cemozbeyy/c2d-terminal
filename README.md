@@ -6,8 +6,16 @@ macOS-first, AI-native terminal workspace. Product owner: C2D Works.
 
 ## Status
 
-Foundation only. The app builds, launches a native window, logs a diagnostics line and runs one test target.
-Real terminals (SwiftTerm over the C2D PTY core), project registry, persisted dockable layouts. **No editor, Git, agent or Token Optimizer code yet.**
+Usable for personal development (not publicly distributed). Implemented: real terminals (SwiftTerm over
+the C2D PTY core), projects, persisted dockable layouts, explorer + NSTextView editor, Git panel
+(status/diff/stage/hunk/commit/branches/worktrees/conflicts) with explicit Fetch / Pull / Push,
+managed Claude Code sessions in C2D-owned PTYs, tasks with dependencies, ⌘K palette, diagnostics
+export with redaction, runtime themes, and a measurement-only Token Optimizer (no provider usage
+ingestion, no hand-off to agents yet). Verification layers: `swift test` on the core package
+(154 tests on 2026-10-18, real shells and real git), Debug-only runtime hooks (below), and CI
+(green on `872917f`, the last pushed commit; later local commits are not CI-verified until pushed).
+Not done: signing/notarization/updater/billing (owner-gated), macOS 15 runtime check, VoiceOver
+audit. Full status: `docs/REMAINING_WORK_AUDIT.md`.
 
 ## Requirements
 
@@ -31,7 +39,7 @@ Formatting/linting: none configured yet (swiftformat/swiftlint are not installed
 
 Release build (ad-hoc signed, Gatekeeper will reject until a Developer ID exists): `./Scripts/build-release.sh` → `build/C2DTerminal-<version>-unsigned.zip`.
 
-Launch argument available in every build: `-c2dOpenProject <dir>` (or pass a folder to `open -a`). Debug-only hooks for runtime checks (compiled out of Release): `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`.
+Launch argument available in every build: `-c2dOpenProject <dir>` (or pass a folder to `open -a`). Debug-only hooks for runtime checks (compiled out of Release): `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`, `-c2dScrollbackCheck <n>` (+ `-c2dScrollbackLines <cap>`), `-c2dGitSync YES` / `-c2dGitSyncRejected YES` (both refuse unless `origin` is a local filesystem path). The full list with comments is in `App/Model/AppModel.swift`.
 
 ## Layout
 
