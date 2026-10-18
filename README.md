@@ -12,7 +12,7 @@ the C2D PTY core), projects, persisted dockable layouts, explorer + NSTextView e
 managed Claude Code sessions in C2D-owned PTYs, tasks with dependencies, ⌘K palette, diagnostics
 export with redaction, runtime themes, and a measurement-only Token Optimizer (no provider usage
 ingestion, no hand-off to agents yet). Verification layers: `swift test` on the core package
-(154 tests on 2026-10-18, real shells and real git), Debug-only runtime hooks (below), and CI
+(159 tests on 2026-10-18 after the first post-audit batch; 154 before it; real shells and real git), Debug-only runtime hooks (below), and CI
 (green on `872917f`, the last pushed commit; later local commits are not CI-verified until pushed).
 Not done: signing/notarization/updater/billing (owner-gated), macOS 15 runtime check, VoiceOver
 audit. Full status: `docs/REMAINING_WORK_AUDIT.md`.
