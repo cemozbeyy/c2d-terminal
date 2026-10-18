@@ -7,8 +7,24 @@ import SwiftUI
 struct TerminalSurfaceView: NSViewRepresentable {
     let controller: TerminalPanelController
 
+    /// Scrollback lines kept per terminal. SwiftTerm's default is 500, which loses a build log; 10 000
+    /// is the bound (Bible Part 4 §5.4). Memory stays bounded by this cap — see `docs/PERFORMANCE.md`.
+    static let scrollbackLines = 10_000
+
+    /// Debug builds may override the cap (`-c2dScrollbackLines <n>`) so the runtime check can prove the
+    /// probe fails at SwiftTerm's default and passes at ours. Release always uses `scrollbackLines`.
+    static var effectiveScrollbackLines: Int {
+        #if DEBUG
+        let override = UserDefaults.standard.integer(forKey: "c2dScrollbackLines")
+        if override > 0 { return override }
+        #endif
+        return scrollbackLines
+    }
+
     func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        // `cols`/`rows` in the options are recomputed from the frame; only `scrollback` matters here.
+        let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 10, height: 10), font: nil,
+                                options: TerminalOptions(scrollback: Self.effectiveScrollbackLines))
         view.terminalDelegate = controller
         view.nativeBackgroundColor = NSColor(hex: 0x0B0E16)
         view.nativeForegroundColor = NSColor(hex: 0xE8EAF1)

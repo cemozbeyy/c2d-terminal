@@ -292,9 +292,20 @@ final class TerminalPanelController: NSObject {
 
     // MARK: Buffer access for tests/diagnostics
 
+    /// Whole active buffer (scrollback + screen), one line per row.
     func screenText() -> String {
         guard let surface else { return "" }
         return String(decoding: surface.getBufferAsData(), as: UTF8.self)
+    }
+
+    /// Scrollback evidence for runtime checks: buffer line count, whether a line equal to `marker`
+    /// is still retained, and the scroll position after jumping to the top (0 = oldest line shown).
+    func scrollbackProbe(marker: String) -> (lines: Int, retainsMarker: Bool, topPositionAfterScroll: Double)? {
+        guard let surface else { return nil }
+        let rows = screenText().split(separator: "\n", omittingEmptySubsequences: false)
+        let retains = rows.contains { $0.trimmingCharacters(in: .whitespaces) == marker }
+        surface.scrollTo(row: 0)
+        return (rows.count, retains, surface.scrollPosition)
     }
 }
 
