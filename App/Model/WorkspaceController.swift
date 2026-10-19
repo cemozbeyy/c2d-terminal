@@ -245,7 +245,19 @@ final class WorkspaceController {
         let controller = TerminalPanelController(panelID: panel, projectPath: projectPath, app: app, previousRecord: previous,
                                                  agentPlan: plan ?? previousAgent.flatMap { restoredPlan(from: $0) }, previousAgentRecord: previousAgent)
         terminals[panel] = controller
-        if plan != nil { controller.startNewSession() }
+        if plan != nil {
+            controller.startNewSession()
+        } else if controller.agentPlan == nil, let previousAgent, app.providersRefreshedAt == nil {
+            // Provider discovery runs the login shell. This method is called from view bodies, so the
+            // discovery must never happen inline: a synchronous child-process wait re-entered SwiftUI's
+            // update from the run loop and recursed until launch hung (P0, 2026-10-19). Resolve it later.
+            Task { [weak self, weak controller] in
+                await self?.app.refreshProviders()
+                guard let self, let controller else { return }
+                if let plan = self.restoredPlan(from: previousAgent) { controller.adoptRestoredPlan(plan) }
+                debugTrace("agent panel \(panel.rawValue.prefix(8)) restored plan resolved: \(controller.agentPlan != nil)")
+            }
+        }
         return controller
     }
 
@@ -284,9 +296,10 @@ final class WorkspaceController {
     }
 
     /// Rebuilds a plan for "New Session" on a restored agent panel; validation happens again at launch.
+    /// Uses only already-discovered provider paths; never runs discovery itself (see `agent(for:)`).
     private func restoredPlan(from record: AgentSessionRecord) -> AgentLaunchPlan? {
         guard let provider = AgentProvider.builtIn.first(where: { $0.id == record.providerID }),
-              let path = app.providerPaths[provider.id] ?? AgentDiscovery.locate(provider) else { return nil }
+              let path = app.providerPaths[provider.id] else { return nil }
         return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: projectPath, workingDirectory: record.workingDirectory, task: nil)
     }
 

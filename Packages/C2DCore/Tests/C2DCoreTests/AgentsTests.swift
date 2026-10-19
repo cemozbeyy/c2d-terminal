@@ -79,6 +79,21 @@ import Testing
         #expect(path.hasSuffix("/claude") && access(path, X_OK) == 0)
     }
 
+    /// `runSync` must wait without spinning the caller's run loop. SwiftUI re-enters its view update from
+    /// run-loop observers, and a view body that reached `waitUntilExit` recursed until the launch hung
+    /// (P0, 2026-10-19). A block queued on the main run loop must still be pending afterwards.
+    @Test @MainActor func runSyncDoesNotSpinTheCallersRunLoop() {
+        final class Flag: @unchecked Sendable { var fired = false }
+        let flag = Flag()
+        RunLoop.main.perform { flag.fired = true }
+        let result = AgentDiscovery.runSync("/bin/sh", ["-c", "exit 0"], timeout: 5)
+        guard case .success = result else { Issue.record("expected success, got \(result)"); return }
+        #expect(!flag.fired, "a run-loop block ran inside runSync")
+        let timedOut = AgentDiscovery.runSync("/bin/sleep", ["30"], timeout: 0.3)
+        guard case .failure(let reason) = timedOut, reason.hasPrefix("timed out") else { Issue.record("expected timeout, got \(timedOut)"); return }
+        #expect(!flag.fired, "a run-loop block ran inside the timeout path")
+    }
+
     @Test func statusReportsVersionAndAbsence() async {
         if case .unavailable = await AgentDiscovery.status(of: .codex) {} else {
             // Codex is not installed on the dev machine; if it ever is, this just stops being an absence check.

@@ -13,7 +13,7 @@ final class TerminalPanelController: NSObject {
     let panelID: PanelID
     let projectPath: String
     /// When set, the panel hosts an agent CLI instead of the login shell (Bible Part 7 "managed mode").
-    let agentPlan: AgentLaunchPlan?
+    private(set) var agentPlan: AgentLaunchPlan?
     private(set) var agentRecord: AgentSessionRecord?
     private(set) var record: TerminalSessionRecord?
     private(set) var state: PTYSessionState?
@@ -41,6 +41,12 @@ final class TerminalPanelController: NSObject {
         self.agentPlan = agentPlan
         self.agentRecord = previousAgentRecord
         super.init()
+    }
+
+    /// A restored agent panel learns its relaunch plan once provider discovery has finished.
+    func adoptRestoredPlan(_ plan: AgentLaunchPlan) {
+        guard agentPlan == nil, !isRunning else { return }
+        agentPlan = plan
     }
 
     var isRunning: Bool {
@@ -253,6 +259,36 @@ final class TerminalPanelController: NSObject {
             do { try await session.write(data) } catch { Log.pty.error("write failed: \(String(describing: error), privacy: .public)") }
         }
     }
+
+    /// Set while a second Ctrl-C would end the shell; the panel header shows a hint meanwhile.
+    private(set) var interruptArmedUntil: Date?
+
+    /// Ctrl-C in a shell panel. The ^C byte is always sent at once: zsh's line editor aborts the current
+    /// input line (so a half-typed command is cleared). When the prompt is idle, the first press also
+    /// arms for 2 s and shows a hint; a second press within that window ends the shell with `exit`, the
+    /// way Claude Code quits on a double Ctrl-C. Busy/idle comes from the cached process context, so a
+    /// running command is never mistaken for an idle prompt and double-^C cannot close the shell while a
+    /// command is running. (Interrupting a *running* command needs the shell to own a controlling tty,
+    /// which the PTY core does not set up yet; that is a separate, tracked limitation.)
+    /// Returns false for agent panels and panels without a session, which keep SwiftTerm's behaviour.
+    func interrupt() -> Bool {
+        guard agentPlan == nil, session != nil else { return false }
+        let busy = context?.foregroundCommand != nil
+        let wasArmed = interruptArmedUntil.map { Date() < $0 } ?? false
+        interruptArmedUntil = nil
+        write(Data([0x03]))
+        guard !busy else { return true }   // a command is running: pass ^C through, never arm-to-close
+        if wasArmed { write(Data("exit\n".utf8)); return true }   // second ^C at an idle prompt → close
+        let until = Date().addingTimeInterval(2)
+        interruptArmedUntil = until
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if self?.interruptArmedUntil == until { self?.interruptArmedUntil = nil }
+        }
+        return true
+    }
+
+    func disarmInterrupt() { interruptArmedUntil = nil }
 
     func gridChanged(cols: Int, rows: Int) {
         guard cols > 0, rows > 0 else { return }

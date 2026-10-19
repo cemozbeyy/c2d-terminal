@@ -78,6 +78,12 @@ enum Theme {
 extension View {
     /// Pointing-hand cursor on hover, to mark a control as clickable.
     func clickCursor() -> some View { pointerStyle(.link) }
+    /// Enlarges a small icon control's clickable area to a comfortable square and makes the whole
+    /// square hit-test (not just the glyph). Icon buttons otherwise only respond on the few points the
+    /// symbol covers, which is hard to hit. Apply after `.buttonStyle(.plain)`.
+    func tapTarget(_ size: CGFloat = 28) -> some View {
+        frame(minWidth: size, minHeight: size).contentShape(Rectangle())
+    }
     /// A fast, readable hover tooltip (keeps `.help` for VoiceOver). Use for icon-only controls so it's
     /// clear what they do. The bubble is rendered at the window root (see `.tooltipLayer()`), so it is
     /// never clipped by a panel or hidden behind sibling content.

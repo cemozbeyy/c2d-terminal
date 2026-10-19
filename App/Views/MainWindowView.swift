@@ -14,7 +14,7 @@ struct MainWindowView: View {
             }
         }
         .tooltipLayer()                // hover tooltips render here, above everything, never clipped
-        .preferredColorScheme(.dark)   // dark-first product (Bible §5.1); light tokens exist but are unverified
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)   // follows the selected theme (sun/moon toggle in the top bar)
         .sheet(isPresented: Binding(get: { model.diagnosticsPreview != nil }, set: { if !$0 { model.diagnosticsPreview = nil } })) {
             DiagnosticsExportSheet(text: model.diagnosticsPreview ?? "").environment(model)
         }
@@ -187,6 +187,16 @@ struct TopBar: View {
             }
             .buttonStyle(.plain).clickCursor().keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
 
+            Button { ThemeManager.shared.toggleLightDark() } label: {
+                Image(systemName: ThemeManager.shared.isDark ? "sun.max" : "moon")
+                    .font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
+                    .frame(width: 34, height: 30)
+                    .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).clickCursor()
+            .help(ThemeManager.shared.isDark ? "Switch to light mode" : "Switch to dark mode")
+
             Toggle(isOn: $model.developerMode) {
                 Label("Dev Mode", systemImage: "wrench.and.screwdriver").font(Theme.Typography.detail).fontWeight(.semibold)
             }
@@ -210,8 +220,9 @@ struct TopBar: View {
     private func barButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
-                .frame(width: 30, height: 28)
+                .frame(width: 34, height: 30)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain).clickCursor().tooltip(help).accessibilityLabel(help)
     }

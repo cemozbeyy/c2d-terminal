@@ -161,13 +161,13 @@ struct PanelGroupView: View {
             }
             Spacer(minLength: 0)
             Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold) }
-                .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("New terminal in this group")
+                .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("New terminal in this group")
             if workspace.layout.maximizedGroup == groupID {
                 Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
+                    .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
             } else {
                 Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
+                    .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
             }
         }
         .padding(.horizontal, 8)
@@ -247,8 +247,8 @@ struct PanelTab: View {
         HStack(spacing: 5) {
             Image(systemName: style.symbol).font(Theme.Typography.metadata).fontWeight(.semibold).foregroundStyle(isActive ? style.tint : Theme.textMuted)
             Text(title).lineLimit(1).font(.system(size: 11.5, weight: isActive ? .semibold : .regular))
-            Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
-                .buttonStyle(.plain).clickCursor().foregroundStyle(Theme.textMuted).help("Close panel")
+            Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                .buttonStyle(.plain).tapTarget(22).clickCursor().foregroundStyle(Theme.textMuted).help("Close panel")
         }
         .foregroundStyle(isActive ? Theme.textPrimary : Theme.textSecondary)
         .padding(.horizontal, 9).padding(.vertical, 5)
@@ -332,6 +332,9 @@ struct TerminalPanelView: View {
                 Image(systemName: "terminal").font(Theme.Typography.detail).fontWeight(.semibold).foregroundStyle(Theme.success)
                 Text(controller.title).font(Theme.Typography.body).fontWeight(.semibold)
                 StatusChip(text: chipText, color: chipColor, symbol: controller.isRunning ? "circle.fill" : "stop.fill").layoutPriority(1)
+                if controller.interruptArmedUntil != nil {
+                    Text("Ctrl-C again to end the shell").font(Theme.Typography.monoMetadata).foregroundStyle(Theme.warning).lineLimit(1)
+                }
                 if let dir = controller.displayDirectory {
                     Text(dir).font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
                         .help("Current directory (from the kernel): \(controller.context?.currentDirectory ?? "")")
@@ -341,7 +344,7 @@ struct TerminalPanelView: View {
                 }
                 Spacer()
                 if controller.isRunning {
-                    Button("Stop") { Task { await controller.terminate() } }.controlSize(.small).help("SIGHUP, then SIGKILL after 2 s")
+                    Button("Stop") { Task { await controller.terminate() } }.help("SIGHUP, then SIGKILL after 2 s")
                 }
             }
             .padding(.horizontal, Theme.space2).frame(height: 28)

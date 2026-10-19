@@ -281,6 +281,50 @@ final class AppModel {
                 }
             }
         }
+        // `-c2dFocusCheck YES`: a freshly shown terminal must take keyboard focus (its view becomes the
+        // window's first responder) so the user can type without clicking first.
+        if UserDefaults.standard.bool(forKey: "c2dFocusCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                ws.newTerminal()
+                for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(200)); if ws.terminals.values.contains(where: { $0.isRunning }) { break } }
+                try? await Task.sleep(for: .milliseconds(600))
+                let fr = NSApp.keyWindow?.firstResponder
+                let cls = fr.map { String(describing: type(of: $0)) } ?? "nil"
+                debugTrace("focusCheck: firstResponder=\(cls) isTerminalView=\(cls.contains("TerminalView"))")
+            }
+        }
+        // `-c2dCtrlCCheck YES`: double Ctrl-C ends an idle shell but never one with a foreground command.
+        if UserDefaults.standard.bool(forKey: "c2dCtrlCCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                ws.newTerminal(); ws.newTerminal()
+                for _ in 0..<50 { try? await Task.sleep(for: .milliseconds(200)); if ws.terminals.values.filter({ $0.isRunning }).count >= 2 { break } }
+                let live = ws.terminals.values.filter { $0.isRunning && $0.agentPlan == nil }
+                guard live.count >= 2 else { debugTrace("ctrlCCheck: shells never ran (\(live.count))"); return }
+                let idle = live[0], busy = live[1]
+                // A login shell spends its first seconds in dotfiles (child processes = "busy"); wait for the prompt.
+                for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(250)); if live.allSatisfy({ $0.context != nil && $0.context?.foregroundCommand == nil }) { break } }
+                try? await Task.sleep(for: .seconds(1))
+                busy.write(Data("sleep 30\n".utf8))
+                for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(250)); if busy.context?.foregroundCommand == "sleep" { break } }
+                debugTrace("ctrlCCheck busy fg=\(busy.context?.foregroundCommand ?? "nil") idle fg=\(idle.context?.foregroundCommand ?? "nil")")
+                // While a command runs, two ^C must NOT close the shell (the exit arming is busy-gated).
+                _ = busy.interrupt(); try? await Task.sleep(for: .milliseconds(300)); _ = busy.interrupt()
+                try? await Task.sleep(for: .seconds(1))
+                let busyShellStillRunning = busy.isRunning
+                let busyArmed = busy.interruptArmedUntil != nil
+                // At an idle prompt the first ^C clears the line and arms; a second within the window closes.
+                _ = idle.interrupt(); try? await Task.sleep(for: .milliseconds(300))
+                let hintShown = idle.interruptArmedUntil != nil
+                _ = idle.interrupt()
+                for _ in 0..<20 { try? await Task.sleep(for: .milliseconds(200)); if !idle.isRunning { break } }
+                try? await Task.sleep(for: .seconds(1))
+                debugTrace("ctrlCCheck verdict: busyShellStillRunning=\(busyShellStillRunning) busyArmed=\(busyArmed) idleEnded=\(idle.state.map { "\($0)" } ?? "nil") hintShown=\(hintShown)")
+            }
+        }
         // `-c2dTaskDepCheck YES` exercises the task dependency gate end to end through the controller:
         // B depends on A, B can't start while A is open, starts once A completes, and A can't be deleted
         // while B depends on it. Creates and then deletes its own probe tasks.

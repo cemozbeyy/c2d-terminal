@@ -17,6 +17,8 @@ struct ThemeDescriptor: Identifiable, Sendable {
     let tagline: String
     let author: String
     let palette: ThemePalette
+    /// Drives the window's `colorScheme` so AppKit controls (scrollbars, menus) match. Dark by default.
+    var isDark: Bool = true
 }
 
 private func c(_ hex: UInt32) -> Color { Color(nsColor: NSColor(hex: hex)) }
@@ -51,6 +53,18 @@ extension ThemeDescriptor {
             borderSubtle: c(0x382E24), borderStrong: c(0x4D3F30),
             textPrimary: c(0xF2ECE4), textSecondary: c(0xBEB2A1), textMuted: c(0x8A7E6C),
             accent: c(0xEB9A3E), accentSoft: c(0x3A2817), success: c(0x8AC24A), warning: c(0xF0B44A), error: c(0xF0685B), info: c(0xCE954F)))
+
+    /// Light mode: white surfaces, dark text, the brand violet. The terminal surface stays dark
+    /// (SwiftTerm colors are set in `TerminalSurfaceView`; theming it is tracked separately).
+    static let daylight = ThemeDescriptor(
+        id: "daylight", name: "Daylight", tagline: "White surfaces, violet accent", author: "C2D",
+        palette: ThemePalette(
+            window: c(0xF3F4F7), rail: c(0xE9EBF0), panel: c(0xFFFFFF), panelHeader: c(0xEEF0F4),
+            elevated: c(0xF7F8FA), terminalBackground: c(0x0B0E16), field: c(0xFFFFFF),
+            borderSubtle: c(0xDDE0E7), borderStrong: c(0xC4C9D4),
+            textPrimary: c(0x1A1D26), textSecondary: c(0x4A4F5E), textMuted: c(0x858B9A),
+            accent: c(0x6C5CE0), accentSoft: c(0xE6E3FA), success: c(0x1F9D63), warning: c(0xB7791F), error: c(0xD64545), info: c(0x2B7DD6)),
+        isDark: false)
 }
 
 /// Holds the active theme and applies a new one at runtime. `Theme`'s color tokens read
@@ -59,21 +73,35 @@ extension ThemeDescriptor {
 @Observable
 final class ThemeManager {
     nonisolated(unsafe) static let shared = ThemeManager()
-    let themes: [ThemeDescriptor] = [.midnight, .ocean, .ember]
+    let themes: [ThemeDescriptor] = [.midnight, .ocean, .ember, .daylight]
     private(set) var selectedID: String
     private static let key = "c2dThemeID"
+    private static let lastDarkKey = "c2dLastDarkThemeID"
 
     var current: ThemePalette { themes.first { $0.id == selectedID }?.palette ?? themes[0].palette }
     var selected: ThemeDescriptor { themes.first { $0.id == selectedID } ?? themes[0] }
 
     init() {
         let saved = UserDefaults.standard.string(forKey: Self.key)
-        selectedID = (saved.flatMap { id in [ThemeDescriptor.midnight, .ocean, .ember].first { $0.id == id } }?.id) ?? "midnight"
+        selectedID = (saved.flatMap { id in [ThemeDescriptor.midnight, .ocean, .ember, .daylight].first { $0.id == id } }?.id) ?? "midnight"
     }
 
+    var isDark: Bool { selected.isDark }
+
     func apply(_ id: String) {
-        guard themes.contains(where: { $0.id == id }) else { return }
+        guard let theme = themes.first(where: { $0.id == id }) else { return }
         selectedID = id
         UserDefaults.standard.set(id, forKey: Self.key)
+        if theme.isDark { UserDefaults.standard.set(id, forKey: Self.lastDarkKey) }
+    }
+
+    /// Top-bar sun/moon toggle: switch to Daylight, or back to the last dark theme chosen.
+    func toggleLightDark() {
+        if isDark {
+            apply(ThemeDescriptor.daylight.id)
+        } else {
+            let lastDark = UserDefaults.standard.string(forKey: Self.lastDarkKey)
+            apply(lastDark.flatMap { id in themes.first { $0.id == id && $0.isDark }?.id } ?? ThemeDescriptor.midnight.id)
+        }
     }
 }

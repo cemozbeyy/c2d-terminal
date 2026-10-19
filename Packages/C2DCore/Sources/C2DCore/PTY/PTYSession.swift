@@ -208,7 +208,7 @@ public actor PTYSession {
             let tracked = sessionProcesses(leader: pid)
             let descendants = tracked.filter { $0.pid != pid }
             Log.pty.info("terminate pid=\(pid, privacy: .public) SIGHUP session=\(tracked.count, privacy: .public) process(es)")
-            for p in tracked {
+            for p in tracked where p.stillExists {   // re-checked right before signalling (pid reuse)
                 kill(p.pid, SIGHUP)
                 kill(p.pid, SIGCONT)   // a stopped job cannot act on SIGHUP otherwise (what the kernel does on hangup)
             }

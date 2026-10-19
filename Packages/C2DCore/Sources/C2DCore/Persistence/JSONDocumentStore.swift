@@ -11,6 +11,12 @@ public struct JSONDocumentStore: Sendable {
 
     /// `~/Library/Application Support/C2D Terminal/<subdirectory>`
     public static func applicationSupport(subdirectory: String = "") throws -> JSONDocumentStore {
+        #if DEBUG
+        // Runtime checks point every store at a throwaway root so they never touch the user's data.
+        if let override = ProcessInfo.processInfo.environment["C2D_SUPPORT_DIR"], !override.isEmpty {
+            return JSONDocumentStore(directory: URL(fileURLWithPath: override).appendingPathComponent(subdirectory))
+        }
+        #endif
         let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         return JSONDocumentStore(directory: base.appendingPathComponent("C2D Terminal").appendingPathComponent(subdirectory))
     }

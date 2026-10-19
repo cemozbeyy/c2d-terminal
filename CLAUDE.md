@@ -5,5 +5,5 @@
 - Never present a text view as a terminal. Real PTY or nothing (Bible Part 4). Engine (SwiftTerm) lives in the UI layer only; `Packages/C2DCore` stays engine-free and on swift-tools 6.0.
 - Decisions go in `docs/DECISIONS.md` with status CONFIRMED / PROPOSED / UNRESOLVED / DEFERRED.
 - Project file is generated: edit `project.yml`, run `xcodegen generate`.
-- Git: owner mandate of 2026-10-16 allows local commits without asking. Never `git push`, publish, deploy, or spend money without explicit permission.
+- Git: never commit unless the owner asks for it in the current message (the 2026-10-16 "commit without asking" mandate was revoked on 2026-10-18). Never `git push`, publish, deploy, or spend money without explicit permission.
 - Tests: `swift test --package-path Packages/C2DCore` (real shells, serialized). Always run with a watchdog; a hung test means a cancellation bug, not a slow machine.

@@ -30,7 +30,11 @@ public enum AgentDiscovery {
     /// Runs `<exe> --version` (10 s timeout). Exit 0 → available; nonzero → setup required;
     /// missing executable → unavailable.
     public static func status(of provider: AgentProvider, extraSearchPaths: [String] = defaultExtraSearchPaths) async -> AgentProviderStatus {
-        guard let path = locate(provider, extraSearchPaths: extraSearchPaths) else { return .unavailable }
+        // `locate` may run the login shell once; keep that off the caller's (main) thread.
+        let located = await withCheckedContinuation { c in
+            DispatchQueue.global(qos: .utility).async { c.resume(returning: locate(provider, extraSearchPaths: extraSearchPaths)) }
+        }
+        guard let path = located else { return .unavailable }
         let result = await run(path, provider.versionArguments, timeout: 10)
         switch result {
         case .success(let output):
@@ -64,6 +68,8 @@ public enum AgentDiscovery {
     }
 
     /// Argument arrays only, PATH/HOME environment, stdin from /dev/null, hard kill on timeout.
+    /// Waits by polling, never via `waitUntilExit`: that spins the caller's run loop, and on the main
+    /// thread a spun run loop re-enters SwiftUI mid-update (the 2026-10-19 launch hang).
     static func runSync(_ executable: String, _ arguments: [String], timeout: TimeInterval) -> RunResult {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
@@ -81,8 +87,12 @@ public enum AgentDiscovery {
         let errData = err.fileHandleForReading.readToEndInBackground()
         let deadline = Date().addingTimeInterval(timeout)
         while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-        if p.isRunning { p.terminate(); p.waitUntilExit(); return .failure("timed out after \(Int(timeout)) s") }
-        p.waitUntilExit()
+        if p.isRunning {
+            p.terminate()
+            let killAt = Date().addingTimeInterval(1)
+            while p.isRunning { if Date() > killAt { kill(p.processIdentifier, SIGKILL) }; Thread.sleep(forTimeInterval: 0.02) }
+            return .failure("timed out after \(Int(timeout)) s")
+        }
         let stdout = String(decoding: outData.wait(), as: UTF8.self)
         let stderr = String(decoding: errData.wait(), as: UTF8.self)
         if p.terminationStatus == 0 { return .success(stdout.isEmpty ? stderr : stdout) }

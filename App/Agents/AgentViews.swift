@@ -29,7 +29,7 @@ struct AgentPanelView: View {
                 }
                 Spacer()
                 if controller.isRunning {
-                    Button("Stop") { Task { await controller.terminate() } }.controlSize(.small).help("SIGHUP, then SIGKILL after 2 s. Files already changed stay changed.")
+                    Button("Stop") { Task { await controller.terminate() } }.help("SIGHUP, then SIGKILL after 2 s. Files already changed stay changed.")
                 }
             }
             .padding(.horizontal, Theme.space2).padding(.vertical, 6)
@@ -44,7 +44,11 @@ struct AgentPanelView: View {
                         Button("New Session") { controller.startNewSession() }
                             .help("Starts the provider again in the same directory. Previous work on disk is untouched.")
                     } else if controller.agentRecord != nil {
-                        Text("Provider not available on this machine; the previous session cannot be restarted here.").font(.caption).foregroundStyle(Theme.warning)
+                        if model.providersRefreshedAt == nil {
+                            Text("Checking whether the provider is installed…").font(.caption).foregroundStyle(Theme.textMuted)
+                        } else {
+                            Text("Provider not available on this machine; the previous session cannot be restarted here.").font(.caption).foregroundStyle(Theme.warning)
+                        }
                     }
                     Button("Start Agent…") { showLaunch = true }.tint(Theme.accent).buttonStyle(.borderedProminent)
                 }
