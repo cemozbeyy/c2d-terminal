@@ -354,7 +354,7 @@ final class AppModel {
                 self.cyclePage(by: 1)
                 let backToFirst = self.workspace === first
                 let stillRunning = first.terminals.values.filter(\.isRunning).count
-                if let second { self.closePage(second) }
+                if let second, !UserDefaults.standard.bool(forKey: "c2dPagesKeep") { self.closePage(second) }   // keep both → quit path must cover the hidden page
                 debugTrace("pagesCheck: pagesAfterOpen=\(pagesAfterOpen) secondIsNew=\(second !== first) backToFirst=\(backToFirst) terminalsBefore=\(firstTerminals) terminalsAfter=\(stillRunning) pagesAfterClose=\(self.openWorkspaces.count) current=\(self.workspace?.projectName ?? "nil")")
             }
         }
@@ -849,6 +849,7 @@ final class AppModel {
     func relocateProject(_ project: Project, to url: URL) {
         do {
             let moved = try registry.relocate(project, to: url.path)
+            if let stale = openWorkspaces.first(where: { $0.projectPath == project.path }) { closePage(stale) }
             openWorkspace(for: moved)
         } catch {
             report("Could not relocate project", "\(error)")
@@ -858,7 +859,7 @@ final class AppModel {
     func removeProject(_ project: Project) {
         do {
             try registry.remove(project)
-            if workspace?.projectPath == project.path { closeWorkspace() }
+            if let page = openWorkspaces.first(where: { $0.projectPath == project.path }) { closePage(page) }
         } catch {
             report("Could not update recent projects", "\(error)")
         }
@@ -958,9 +959,13 @@ final class AppModel {
     }
 
     /// Terminates every live session; called on quit. Returns once all exits were observed or the timeout passed.
+    /// Across every open page, not just the visible one — hidden pages keep live shells too.
+    var hasUnsavedEditors: Bool { openWorkspaces.contains(where: \.hasUnsavedEditors) }
+    var hasRunningSessions: Bool { openWorkspaces.contains(where: \.hasRunningSessions) }
+
     func shutdown() async {
-        debugTrace("shutdown: terminating \(workspace?.terminals.count ?? 0) terminal(s)")
-        await workspace?.terminateAllSessions()
+        debugTrace("shutdown: terminating \(openWorkspaces.map { $0.terminals.count }.reduce(0, +)) terminal(s) across \(openWorkspaces.count) page(s)")
+        for page in openWorkspaces { await page.terminateAllSessions() }
         debugTrace("shutdown: all sessions ended")
     }
 }

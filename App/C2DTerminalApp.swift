@@ -134,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         let autoConfirm = false
         #endif
-        if model.workspace?.hasUnsavedEditors == true && !autoConfirm {
+        if model.hasUnsavedEditors && !autoConfirm {
             let alert = NSAlert()
             alert.messageText = "You have unsaved files."
             alert.informativeText = "Quitting now discards unsaved edits. Save them first (⌘S) or discard."
@@ -142,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Cancel")
             if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
-        if model.workspace?.hasRunningSessions == true && !autoConfirm {
+        if model.hasRunningSessions && !autoConfirm {
             let alert = NSAlert()
             alert.messageText = "Quit C2D Terminal?"
             alert.informativeText = "Running terminal sessions will be stopped (SIGHUP, then SIGKILL after 2 s)."
