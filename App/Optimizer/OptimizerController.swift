@@ -26,6 +26,11 @@ final class OptimizerController {
     var budgetTokens = 8000
     var lastError: String?
 
+    // Token Saver TS-1: provider-reported usage read from Claude Code's local transcripts (read-only, on demand, nothing stored).
+    private(set) var ledger: TranscriptLedgerResult?
+    private(set) var ledgerLoading = false
+    private(set) var ledgerScannedAt: Date?
+
     @ObservationIgnored private let store: OptimizationStore?
     @ObservationIgnored private unowned let app: AppModel
 
@@ -37,6 +42,19 @@ final class OptimizerController {
     }
 
     var isStoreAvailable: Bool { store != nil }
+    var entitlementNoteForLedger: String { app.optimizerEnabled ? "Not scanned yet." : "Token Optimizer is off — turn it on from the top-bar switch to read usage." }
+
+    /// Scans this project's transcript folder off the main actor (ADR-022). A no-op while the Token
+    /// Optimizer switch is off (Addendum A.6.7: the whole surface can be switched off).
+    func loadLedger() async {
+        guard app.optimizerEnabled else { ledger = nil; return }
+        guard !ledgerLoading else { return }
+        ledgerLoading = true
+        defer { ledgerLoading = false }
+        let path = projectPath
+        ledger = await Task.detached(priority: .userInitiated) { ClaudeTranscriptReader.read(projectPath: path) }.value
+        ledgerScannedAt = Date()
+    }
     var entitlement: Entitlement { app.entitlement }
 
     /// What the free tier always gets: a labeled estimate of the prepared context (Part 10 §21).

@@ -259,6 +259,9 @@ struct TopBar: View {
                 .popover(isPresented: $showOptimizerPopover, arrowEdge: .bottom) {
                     OptimizerPopover(workspace: ws)
                 }
+                #if DEBUG
+                .onAppear { if UserDefaults.standard.bool(forKey: "c2dOptimizerPopoverCheck") { NSApp.activate(ignoringOtherApps: true) } }   // direct launches (env inherited) start behind other windows
+                #endif
                 Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
             }
         }
@@ -368,6 +371,8 @@ struct OptimizerPopover: View {
                 Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
             }
             Divider()
+            ledgerLine
+            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 row("chart.bar.doc.horizontal", "Measures the context you hand to an agent and flags what is oversized.")
                 row("lock.shield", "Estimates only — nothing is billed or sent anywhere.")
@@ -387,6 +392,31 @@ struct OptimizerPopover: View {
         .padding(Theme.space4)
         .frame(width: 300)
         .background(Theme.panel)
+        .task(id: model.optimizerEnabled) { await workspace.optimizer.loadLedger() }
+    }
+
+    /// TS-1: this project's provider-reported usage, read from Claude Code's local transcripts.
+    @ViewBuilder private var ledgerLine: some View {
+        let o = workspace.optimizer
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "doc.text.magnifyingglass").font(Theme.Typography.detail).foregroundStyle(model.optimizerEnabled ? Theme.accent : Theme.textMuted).frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                switch o.ledger {
+                case .available(let l):
+                    Text("\(l.total.total.formatted()) tokens in \(l.sessions.count) Claude Code session(s) for this project")
+                        .font(Theme.Typography.detail).foregroundStyle(Theme.textPrimary)
+                    Text("provider-reported · \(l.formatLabel)\(l.unavailable.isEmpty ? "" : " · \(l.unavailable.count) session(s) unavailable")")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+                case .unavailable(let reason):
+                    Text("Usage unavailable").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                    Text(reason).font(Theme.Typography.micro).foregroundStyle(Theme.textMuted).lineLimit(2)
+                case .none:
+                    Text(o.ledgerLoading ? "Reading Claude Code transcripts…" : (model.optimizerEnabled ? "Usage not read yet" : "Off — usage is not read"))
+                        .font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func row(_ symbol: String, _ text: String, muted: Bool = false) -> some View {

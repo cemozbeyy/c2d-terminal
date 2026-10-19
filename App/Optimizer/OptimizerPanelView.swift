@@ -10,6 +10,7 @@ struct OptimizerPanelView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 header
+                usageLedger
                 sources
                 if let est = optimizer.payloadEstimate {
                     GroupBox("Prepared context") {
@@ -35,6 +36,52 @@ struct OptimizerPanelView: View {
             }
             .padding(10)
         }
+        .task { await optimizer.loadLedger() }   // scan on panel open (OPEN_DECISIONS §4.4 proposal) and on "Rescan"
+    }
+
+    // MARK: Token Saver TS-1 — provider-reported usage
+
+    private var usageLedger: some View {
+        GroupBox("Provider-reported usage · Claude Code") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Read from Claude Code's local transcripts on this Mac. Only usage and metadata fields are read; nothing is stored, copied or uploaded.")
+                        .font(.caption).foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    if optimizer.ledgerLoading { ProgressView().controlSize(.small) }
+                    Button("Rescan") { Task { await optimizer.loadLedger() } }.font(.caption).disabled(optimizer.ledgerLoading)
+                }
+                switch optimizer.ledger {
+                case .none:
+                    Text(optimizer.entitlementNoteForLedger).font(.caption).foregroundStyle(Theme.textSecondary)
+                case .unavailable(let reason):
+                    Label(reason, systemImage: "questionmark.circle").font(.caption).foregroundStyle(Theme.textSecondary)
+                case .available(let l):
+                    let t = l.total
+                    Text("\(l.sessions.count) session(s) · \(t.total.formatted()) tokens — input \(t.inputTokens.formatted()) · output \(t.outputTokens.formatted()) · cache read \(t.cacheReadInputTokens.formatted()) · cache write \(t.cacheCreationInputTokens.formatted())")
+                        .font(.caption).bold()
+                    Text("\(l.source.label) · \(l.formatLabel)").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
+                    ForEach(l.sessions) { s in
+                        HStack(spacing: 8) {
+                            Text(s.lastTimestamp.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—").frame(width: 120, alignment: .leading)
+                            Text(s.models.joined(separator: ", ")).lineLimit(1).frame(width: 130, alignment: .leading).foregroundStyle(Theme.textSecondary)
+                            Text("in \(s.usage.inputTokens.formatted()) · out \(s.usage.outputTokens.formatted()) · cache r \(s.usage.cacheReadInputTokens.formatted()) · w \(s.usage.cacheCreationInputTokens.formatted())").lineLimit(1)
+                            Spacer()
+                            Text(s.usage.total.formatted()).bold()
+                            Text("\(s.messageCount) msg").foregroundStyle(Theme.textMuted)
+                        }
+                        .font(Theme.Typography.monoMicro)
+                        .help("session \(s.id) · \(s.fileURL.lastPathComponent)\(s.gitBranch.map { " · branch \($0)" } ?? "")")
+                    }
+                    ForEach(l.unavailable, id: \.self) { u in
+                        Label("\(u.id.prefix(8))… unavailable: \(u.reason)", systemImage: "exclamationmark.triangle").font(Theme.Typography.micro).foregroundStyle(Theme.warning)
+                    }
+                    Text("Top-level session files only; sub-agent transcripts in subfolders are not counted yet. \(l.skippedRecords) non-assistant record(s) skipped unread\(l.inProgressLines > 0 ? ", \(l.inProgressLines) line(s) still being written" : "").")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var header: some View {
@@ -46,7 +93,7 @@ struct OptimizerPanelView: View {
                 Text(entitlementLabel).font(.caption).padding(.horizontal, 6).padding(.vertical, 2)
                     .background((optimizer.entitlement.isPremium ? Theme.accent : Theme.textMuted).opacity(0.2), in: Capsule())
             }
-            Text("All numbers here are heuristic estimates of prepared context. No provider reports usage to C2D yet, so nothing is shown as confirmed or saved.")
+            Text("Prepared-context numbers are heuristic estimates. Usage figures below marked provider-reported are read from Claude Code's own local transcripts; the two are never added together and nothing is shown as saved.")
                 .font(.caption).foregroundStyle(Theme.textSecondary)
         }
     }

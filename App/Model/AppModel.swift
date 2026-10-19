@@ -363,6 +363,26 @@ final class AppModel {
                 debugTrace("pagesCheck: pagesAfterOpen=\(pagesAfterOpen) secondIsNew=\(second !== first) backToFirst=\(backToFirst) terminalsBefore=\(firstTerminals) terminalsAfter=\(stillRunning) pagesAfterClose=\(self.openWorkspaces.count) current=\(self.workspace?.projectName ?? "nil")")
             }
         }
+        // `-c2dLedgerCheck YES`: TS-1 usage ledger for the open project — per-session provider-reported
+        // totals (deduplicated by message id), format status, unavailable files, elapsed time.
+        if UserDefaults.standard.bool(forKey: "c2dLedgerCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                let t0 = ContinuousClock.now
+                await ws.optimizer.loadLedger()
+                let ms = (ContinuousClock.now - t0).components.attoseconds / 1_000_000_000_000_000 + (ContinuousClock.now - t0).components.seconds * 1000
+                switch ws.optimizer.ledger {
+                case .available(let l):
+                    let t = l.total
+                    debugTrace("ledgerCheck: sessions=\(l.sessions.count) unavailable=\(l.unavailable.count) in=\(t.inputTokens) out=\(t.outputTokens) cacheRead=\(t.cacheReadInputTokens) cacheCreate=\(t.cacheCreationInputTokens) total=\(t.total) format='\(l.formatLabel)' skipped=\(l.skippedRecords) inProgress=\(l.inProgressLines) elapsedMs=\(ms)")
+                    for s in l.sessions { debugTrace("ledgerCheck: session \(s.id) msgs=\(s.messageCount) in=\(s.usage.inputTokens) out=\(s.usage.outputTokens) cacheRead=\(s.usage.cacheReadInputTokens) cacheCreate=\(s.usage.cacheCreationInputTokens) model=\(s.models.joined(separator: "|"))") }
+                    for u in l.unavailable { debugTrace("ledgerCheck: unavailable \(u.id): \(u.reason)") }
+                case .unavailable(let reason): debugTrace("ledgerCheck: unavailable: \(reason) elapsedMs=\(ms)")
+                case .none: debugTrace("ledgerCheck: no result (optimizer off?) elapsedMs=\(ms)")
+                }
+            }
+        }
         // `-c2dTabReuseCheck YES`: two terminal tabs in one group keep their own surface across tab
         // switches (so a terminal is never blanked when you switch to it or close its sibling).
         if UserDefaults.standard.bool(forKey: "c2dTabReuseCheck") {

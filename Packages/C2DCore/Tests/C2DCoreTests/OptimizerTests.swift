@@ -123,3 +123,98 @@ import Testing
         #expect(try await second.records(projectPath: "/p").count == 1)
     }
 }
+
+// MARK: - Token Saver TS-1: Claude transcript ledger
+
+@Suite struct ClaudeTranscriptReaderTests {
+    private let project = "/Users/someone/dev/My Project_1.2"
+
+    /// A temp `claudeHome` with the project folder named the way Claude Code names it.
+    private func makeHome() throws -> (home: URL, folder: URL) {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("ledger-\(UUID().uuidString)")
+        let folder = ClaudeTranscriptReader.projectFolder(for: project, claudeHome: home)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return (home, folder)
+    }
+
+    private func assistant(id: String, input: Int, output: Int, cacheRead: Int = 0, cacheCreate: Int = 0,
+                           version: String = "2.1.303", cwd: String? = nil, ts: String = "2026-10-19T10:00:00.000Z", model: String = "claude-fable-5-1") -> String {
+        let c = cwd ?? project
+        return #"{"type":"assistant","cwd":"\#(c)","sessionId":"S1","version":"\#(version)","gitBranch":"main","timestamp":"\#(ts)","message":{"id":"\#(id)","model":"\#(model)","usage":{"input_tokens":\#(input),"output_tokens":\#(output),"cache_read_input_tokens":\#(cacheRead),"cache_creation_input_tokens":\#(cacheCreate),"service_tier":"standard"}}}"#
+    }
+
+    private func write(_ lines: [String], to folder: URL, name: String = "S1.jsonl", trailingNewline: Bool = true) throws {
+        let text = lines.joined(separator: "\n") + (trailingNewline ? "\n" : "")
+        try text.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+
+    private func ledger(_ r: TranscriptLedgerResult) -> TranscriptLedger? { if case .available(let l) = r { return l }; return nil }
+
+    @Test func folderNameReplacesEveryNonAlphanumericCharacter() {
+        #expect(ClaudeTranscriptReader.projectFolderName(for: "/Users/someone/Desktop/myprojects/myapp_0532") == "-Users-someone-Desktop-myprojects-myapp-0532")
+        #expect(ClaudeTranscriptReader.projectFolderName(for: "/a/b c.d") == "-a-b-c-d")
+    }
+
+    @Test func missingFolderIsUnavailableWithReason() {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("nope-\(UUID().uuidString)")
+        guard case .unavailable(let reason) = ClaudeTranscriptReader.read(projectPath: project, claudeHome: home) else { Issue.record("expected unavailable"); return }
+        #expect(reason.contains("No Claude Code transcripts"))
+    }
+
+    @Test func validSessionSumsUsageAndCountsDuplicateMessageRecordsOnce() throws {
+        let (home, folder) = try makeHome()
+        try write([
+            #"{"type":"user","cwd":"\#(project)","message":{"role":"user","content":"hi"}}"#,
+            assistant(id: "m1", input: 10, output: 100, cacheRead: 1000, cacheCreate: 50, ts: "2026-10-19T10:00:00.000Z"),
+            assistant(id: "m1", input: 10, output: 100, cacheRead: 1000, cacheCreate: 50, ts: "2026-10-19T10:00:01.000Z"),   // second content block, same message
+            #"{"type":"attachment","attachment":{"type":"x"}}"#,
+            #"{"type":"api-request-blob","blob":"assistant something that mentions assistant in content"}"#,
+            assistant(id: "m2", input: 5, output: 7, ts: "2026-10-19T10:05:00.000Z"),
+        ], to: folder)
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.count == 1 && l.unavailable.isEmpty)
+        let s = try #require(l.sessions.first)
+        #expect(s.messageCount == 2)
+        #expect(s.usage == ProviderUsage(inputTokens: 15, outputTokens: 107, cacheReadInputTokens: 1000, cacheCreationInputTokens: 50))
+        #expect(s.usage.total == 1172)
+        #expect(s.cliVersion == "2.1.303" && s.models == ["claude-fable-5-1"] && s.gitBranch == "main" && s.id == "S1")
+        #expect(l.skippedRecords == 3)   // user + attachment skipped without decoding; the blob line was decoded (mentions "assistant") and skipped as non-assistant
+        #expect(l.source == .providerConfirmed && l.formatLabel == "CLI v2.1.303 format (verified)")
+    }
+
+    @Test func trailingPartialLineIsInProgressNotMalformed() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2), #"{"type":"assistant","cwd":"x","message":{"id":"m2","usage":{"input_tokens":1"#], to: folder, trailingNewline: false)
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.first?.usage.outputTokens == 2)
+        #expect(l.inProgressLines == 1)
+    }
+
+    @Test func malformedAssistantLineMakesThatSessionUnavailableOnly() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2), #"{"type":"assistant","message":{"id":"m2" BROKEN"#, assistant(id: "m3", input: 1, output: 2)], to: folder, name: "bad.jsonl")
+        try write([assistant(id: "m1", input: 3, output: 4)], to: folder, name: "good.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.count == 1 && l.sessions.first?.usage.outputTokens == 4)
+        #expect(l.unavailable.count == 1 && l.unavailable.first?.reason.contains("malformed JSON on line 2") == true)
+        #expect(l.total.outputTokens == 4)   // unavailable sessions never leak into totals
+    }
+
+    @Test func unknownCLIVersionWithholdsNumbers() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2, version: "9.9.9")], to: folder)
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.isEmpty)
+        #expect(l.unavailable.first?.reason.contains("CLI version 9.9.9 not yet verified") == true)
+    }
+
+    @Test func unrecognisedUsageShapeAndForeignCwdAreUnavailable() throws {
+        let (home, folder) = try makeHome()
+        try write([#"{"type":"assistant","cwd":"\#(project)","version":"2.1.303","message":{"id":"m1","usage":{"input_tokens":"ten","output_tokens":1}}}"#], to: folder, name: "shape.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 2, cwd: "/somewhere/else")], to: folder, name: "foreign.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.isEmpty && l.unavailable.count == 2)
+        #expect(l.unavailable.contains { $0.reason.contains("unrecognised usage shape") })
+        #expect(l.unavailable.contains { $0.reason.contains("another directory") })
+    }
+}

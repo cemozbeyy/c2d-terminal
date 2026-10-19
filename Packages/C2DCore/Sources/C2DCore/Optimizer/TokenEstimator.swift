@@ -2,8 +2,8 @@ import Foundation
 
 /// Where a token number came from. Totals never mix sources silently (Bible Part 10 §13).
 public enum MeasurementSource: String, Codable, Hashable, Sendable, CaseIterable {
-    /// Reported by the provider. No adapter produces this today; the case exists so the UI
-    /// can label it honestly when one does.
+    /// Read from the provider's own local records (Claude Code transcripts via `ClaudeTranscriptReader`).
+    /// Labelled "provider-reported": C2D read it, the provider did not send it (ADR-023).
     case providerConfirmed
     case locallyTokenized
     case heuristicEstimate
@@ -11,7 +11,7 @@ public enum MeasurementSource: String, Codable, Hashable, Sendable, CaseIterable
 
     public var label: String {
         switch self {
-        case .providerConfirmed: "provider-confirmed"
+        case .providerConfirmed: "provider-reported"
         case .locallyTokenized: "locally tokenized"
         case .heuristicEstimate: "heuristic estimate"
         case .unavailable: "unavailable"
