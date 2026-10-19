@@ -57,6 +57,9 @@ final class AppModel {
     private(set) var providerPaths: [String: String] = [:]
     private(set) var providersRefreshedAt: Date?
     private(set) var workspace: WorkspaceController?
+    /// Open "pages": one workspace per project, kept alive (sessions keep running) while another page
+    /// is shown, so switching projects is a tab click — not a close/reopen through the Projects list.
+    private(set) var openWorkspaces: [WorkspaceController] = []
     var destination: Destination = .projects
     var paletteVisible = false
     /// Pre-filled palette text for ⌘L (":") and ⇧⌘F ("/"); consumed when the palette appears.
@@ -333,6 +336,26 @@ final class AppModel {
                 guard let self, let ws = self.workspace else { return }
                 await ws.git.generateCommitMessage(claudePath: stub)
                 debugTrace("genCommitCheck: message=\(ws.git.commitMessage.debugDescription) error=\(ws.git.lastError ?? "nil") generating=\(ws.git.generatingMessage)")
+            }
+        }
+        // `-c2dPagesCheck <dir>`: opening a second project adds a page instead of replacing the first;
+        // switching back shows the *same* workspace object (its sessions were never torn down).
+        if let other = UserDefaults.standard.string(forKey: "c2dPagesCheck"), !other.isEmpty {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, let first = self.workspace else { return }
+                first.newTerminal()   // a live shell that must survive the page switch
+                try? await Task.sleep(for: .milliseconds(1500))
+                let firstTerminals = first.terminals.values.filter(\.isRunning).count
+                self.openProject(at: URL(fileURLWithPath: other))
+                try? await Task.sleep(for: .seconds(3))   // long enough for -c2dSnapshot to show both chips
+                let second = self.workspace
+                let pagesAfterOpen = self.openWorkspaces.count
+                self.cyclePage(by: 1)
+                let backToFirst = self.workspace === first
+                let stillRunning = first.terminals.values.filter(\.isRunning).count
+                if let second { self.closePage(second) }
+                debugTrace("pagesCheck: pagesAfterOpen=\(pagesAfterOpen) secondIsNew=\(second !== first) backToFirst=\(backToFirst) terminalsBefore=\(firstTerminals) terminalsAfter=\(stillRunning) pagesAfterClose=\(self.openWorkspaces.count) current=\(self.workspace?.projectName ?? "nil")")
             }
         }
         // `-c2dTabReuseCheck YES`: two terminal tabs in one group keep their own surface across tab
@@ -848,13 +871,13 @@ final class AppModel {
     // MARK: Workspace
 
     private func openWorkspace(for project: Project) {
-        if let current = workspace, current.projectPath == project.path {
-            destination = .workspace
+        if let page = openWorkspaces.first(where: { $0.projectPath == project.path }) {
+            showPage(page)
             return
         }
-        // Switching projects must not kill sessions of the previous workspace silently (Bible §2.3).
-        // Interim policy: previous workspace is detached and its sessions keep running until the
-        // panel is closed or the app quits; its panels are no longer visible. Recorded in PROGRESS.md.
+        // Switching projects must not kill sessions of the previous workspace silently (Bible §2.3):
+        // the previous workspace stays open as a page; its sessions keep running and its terminal
+        // surfaces are re-parented when the page is shown again.
         workspace?.flushSave()
         var layout: WorkspaceLayout
         var restored = false
@@ -874,15 +897,35 @@ final class AppModel {
         if !affected.isEmpty {
             report("Layout contained unavailable panels", "\(affected.count) panel(s) kept as placeholders; remove or replace them.")
         }
-        workspace = WorkspaceController(layout: layout, projectPath: project.path, app: self, restoredFromDisk: restored)
+        let page = WorkspaceController(layout: layout, projectPath: project.path, app: self, restoredFromDisk: restored)
+        openWorkspaces.append(page)
+        showPage(page)
+    }
+
+    /// Brings an already-open page to the front.
+    func showPage(_ page: WorkspaceController) {
+        if workspace !== page { workspace?.flushSave(); workspace = page }
         destination = .workspace
     }
 
-    func closeWorkspace() {
-        workspace?.flushSave()
-        workspace = nil
-        destination = .projects
+    /// Shows the page after/before the current one (wraps around).
+    func cyclePage(by step: Int) {
+        guard openWorkspaces.count > 1, let ws = workspace, let i = openWorkspaces.firstIndex(where: { $0 === ws }) else { return }
+        showPage(openWorkspaces[(i + step + openWorkspaces.count) % openWorkspaces.count])
     }
+
+    /// Closes one page; the neighbouring page (or the Projects list when none is left) takes its place.
+    func closePage(_ page: WorkspaceController) {
+        page.flushSave()
+        let idx = openWorkspaces.firstIndex(where: { $0 === page })
+        openWorkspaces.removeAll { $0 === page }
+        if workspace === page {
+            if let i = idx, !openWorkspaces.isEmpty { showPage(openWorkspaces[min(i, openWorkspaces.count - 1)]) }
+            else { workspace = nil; destination = .projects }
+        }
+    }
+
+    func closeWorkspace() { if let ws = workspace { closePage(ws) } }
 
     // MARK: Sessions registry (called by terminal controllers)
 

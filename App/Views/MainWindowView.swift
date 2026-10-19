@@ -103,6 +103,27 @@ struct TopBar: View {
         @Bindable var model = model
         HStack(spacing: Theme.space2) {
             if let ws = model.workspace {
+                // Pages: one chip per open project; click switches, × closes (sessions of other pages keep running).
+                ForEach(model.openWorkspaces, id: \.projectPath) { page in
+                    let active = page === ws
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.fill").foregroundStyle(active ? Theme.warning : Theme.textMuted)
+                        Text(page.projectName).font(Theme.Typography.title2).fontWeight(active ? .semibold : .medium).lineLimit(1)
+                            .foregroundStyle(active ? Theme.textPrimary : Theme.textSecondary)
+                        if model.openWorkspaces.count > 1 {
+                            Button { model.closePage(page) } label: {
+                                Image(systemName: "xmark").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
+                            }
+                            .buttonStyle(.plain).help("Close this page (its terminals end only when their panels are closed)")
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(active ? Theme.elevated : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(active ? Theme.borderStrong : .clear))
+                    .contentShape(Rectangle()).clickCursor()
+                    .onTapGesture { model.showPage(page) }
+                    .help(page.projectPath)
+                }
                 Menu {
                     ForEach(model.registry.projects.filter(\.isAvailable)) { p in
                         Button(p.name) { model.openProject(p) }
@@ -110,16 +131,11 @@ struct TopBar: View {
                     Divider()
                     Button("Open Folder…") { model.promptOpenProject() }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder.fill").foregroundStyle(Theme.warning)
-                        Text(ws.projectName).font(Theme.Typography.title2).fontWeight(.semibold).lineLimit(1).foregroundStyle(Theme.textPrimary)
-                        Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
-                    }
+                    Image(systemName: "plus").font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-                .help(ws.projectPath)
+                .help("New page — open another project side by side (⌘⇧N); switch with ⌘⌥→ / ⌘⌥←")
 
                 if ws.git.isAvailable {
                     Menu {

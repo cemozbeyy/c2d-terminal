@@ -52,6 +52,14 @@ struct C2DTerminalApp: App {
                 Button("New Terminal") { model.workspace?.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(model.workspace == nil)
+                Button("New Page…") { model.promptOpenProject() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Next Page") { model.cyclePage(by: 1) }
+                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                    .disabled(model.openWorkspaces.count < 2)
+                Button("Previous Page") { model.cyclePage(by: -1) }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                    .disabled(model.openWorkspaces.count < 2)
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Save") { model.workspace?.saveActiveEditor() }
