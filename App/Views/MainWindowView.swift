@@ -42,6 +42,15 @@ struct MainWindowView: View {
         case .projects: ProjectsView()
         case .workspace:
             if let ws = model.workspace { WorkspaceCanvas(workspace: ws) } else { ProjectsView() }
+        case .sourceControl:
+            if let ws = model.workspace {
+                GitPanelView(git: ws.git, workspace: ws)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(Theme.panel)
+                    .task(id: model.destination) { await ws.git.refresh() }
+            } else {
+                Text("Open a project to see its source control.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         case .agents: AgentsDestinationView()
         case .tasks:
             if let ws = model.workspace { TasksPanelView(tasks: ws.tasks, workspace: ws).padding(Theme.space3) } else { Text("Open a project to see its tasks.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -114,6 +123,8 @@ struct TopBar: View {
 
                 if ws.git.isAvailable {
                     Menu {
+                        Button { model.destination = .sourceControl } label: { Label("Show Changes", systemImage: "arrow.triangle.branch") }
+                        Divider()
                         Button("Fetch") { Task { await ws.git.fetch() } }
                         Button(ws.git.behindCount > 0 ? "Pull (↓\(ws.git.behindCount))" : "Pull") { Task { await ws.git.pull() } }
                         Button(ws.git.aheadCount > 0 ? "Push (↑\(ws.git.aheadCount))" : "Push") { Task { await ws.git.push() } }

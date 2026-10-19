@@ -160,8 +160,20 @@ struct PanelGroupView: View {
                 }
             }
             Spacer(minLength: 0)
-            Button { workspace.newTerminal(in: groupID) } label: { Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold) }
-                .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("New terminal in this group")
+            Menu {
+                Button { workspace.newPanel(.terminal, in: groupID) } label: { Label("Terminal", systemImage: "terminal") }
+                Button { workspace.newPanel(.agentSession, in: groupID) } label: { Label("Agent (Claude Code)", systemImage: "cpu") }
+                Button { workspace.newPanel(.editor, in: groupID) } label: { Label("Code Editor", systemImage: "chevron.left.forwardslash.chevron.right") }
+                Divider()
+                Button { workspace.newPanel(.projectExplorer, in: groupID) } label: { Label("Explorer", systemImage: "folder") }
+                Button { workspace.newPanel(.gitChanges, in: groupID) } label: { Label("Git Changes", systemImage: "arrow.triangle.branch") }
+                Button { workspace.newPanel(.tasks, in: groupID) } label: { Label("Tasks", systemImage: "checklist") }
+                Button { workspace.newPanel(.tokenOptimizer, in: groupID) } label: { Label("Token Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
+            } label: {
+                Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Add a panel to this group")
             if workspace.layout.maximizedGroup == groupID {
                 Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(Theme.Typography.detail).fontWeight(.semibold) }
                     .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")

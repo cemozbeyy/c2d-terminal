@@ -11,12 +11,13 @@ struct UserMessage: Identifiable, Equatable {
 }
 
 enum Destination: String, CaseIterable, Identifiable {
-    case projects, workspace, agents, tasks, marketplace, settings
+    case projects, workspace, sourceControl, agents, tasks, marketplace, settings
     var id: String { rawValue }
     var label: String {
         switch self {
         case .projects: "Projects"
         case .workspace: "Workspace"
+        case .sourceControl: "Git"
         case .agents: "Agents"
         case .tasks: "Tasks"
         case .marketplace: "Market"
@@ -27,6 +28,7 @@ enum Destination: String, CaseIterable, Identifiable {
         switch self {
         case .projects: "folder"
         case .workspace: "rectangle.3.group"
+        case .sourceControl: "arrow.triangle.branch"
         case .agents: "cpu"
         case .tasks: "checklist"
         case .marketplace: "paintpalette"
@@ -293,6 +295,33 @@ final class AppModel {
                 let fr = NSApp.keyWindow?.firstResponder
                 let cls = fr.map { String(describing: type(of: $0)) } ?? "nil"
                 debugTrace("focusCheck: firstResponder=\(cls) isTerminalView=\(cls.contains("TerminalView"))")
+            }
+        }
+        // `-c2dAddPanelCheck YES`: the group "+" menu adds a panel of any kind into the group as a tab.
+        if UserDefaults.standard.bool(forKey: "c2dAddPanelCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace, let g = ws.layout.groupIDs.first else { debugTrace("addPanelCheck: no group"); return }
+                let before = ws.layout.activePanel(in: g).flatMap { _ in ws.layout.panels.count } ?? ws.layout.panels.count
+                ws.newPanel(.editor, in: g)
+                ws.newPanel(.agentSession, in: g)
+                ws.newPanel(.tasks, in: g)
+                try? await Task.sleep(for: .milliseconds(400))
+                let kinds = ws.layout.panels.values.map { $0.kind.rawValue }.sorted()
+                debugTrace("addPanelCheck: panelsBefore=\(before) panelsAfter=\(ws.layout.panels.count) kinds=\(kinds)")
+            }
+        }
+        // `-c2dGitPanelCheck YES`: the Source-Control entry opens a VS-Code-style changes panel that
+        // lists the working-tree changes (file groups + per-file diff).
+        if UserDefaults.standard.bool(forKey: "c2dGitPanelCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                self.destination = .sourceControl   // the left-rail Source Control tab
+                for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(250)); if ws.git.status != nil { break } }
+                let onTab = self.destination == .sourceControl
+                let s = ws.git.status
+                debugTrace("gitPanelCheck: onSourceControlTab=\(onTab) available=\(ws.git.isAvailable) branch=\(s?.branch ?? "?") changed=\(s?.entries.count ?? -1) clean=\(s?.isClean ?? true)")
             }
         }
         // `-c2dCtrlCCheck YES`: double Ctrl-C ends an idle shell but never one with a foreground command.

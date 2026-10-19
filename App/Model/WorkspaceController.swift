@@ -88,6 +88,7 @@ final class WorkspaceController {
         addPanel(.tokenOptimizer, title: "Token Optimizer", besideGroup: layout.groupIDs.last)
     }
 
+
     /// Adds a panel of any kind to the right of `besideGroup` (or as the only panel of an empty layout).
     @discardableResult
     func addPanel(_ kind: PanelKind, title: String, besideGroup: NodeID? = nil) -> PanelID {
@@ -138,6 +139,28 @@ final class WorkspaceController {
             }
         }
         _ = terminal(for: panel.id, autoStart: true)
+    }
+
+    /// Adds a new panel of `kind` into `group` as a tab (what the group's "+" menu offers). A terminal
+    /// starts a shell at once; an agent panel opens empty and its "Start Agent…" button launches the
+    /// session; every other kind opens empty and builds its content on first appearance.
+    func newPanel(_ kind: PanelKind, in group: NodeID) {
+        if kind == .terminal { newTerminal(in: group); return }
+        let panel = Panel(kind: kind, title: Self.defaultTitle(for: kind))
+        mutate("new \(kind.rawValue)") { layout in try layout.add(panel, to: group) }
+    }
+
+    static func defaultTitle(for kind: PanelKind) -> String {
+        switch kind {
+        case .agentSession: "Agent"
+        case .editor: "Editor"
+        case .projectExplorer: "Explorer"
+        case .gitChanges: "Changes"
+        case .tasks: "Tasks"
+        case .tokenOptimizer: "Optimizer"
+        case .terminal: "Terminal"
+        default: "Panel"
+        }
     }
 
     func activate(_ panel: PanelID) { mutate("activate") { try $0.activate(panel) } }
