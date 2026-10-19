@@ -98,44 +98,55 @@ struct NavigationRail: View {
 struct TopBar: View {
     @Environment(AppModel.self) private var model
     @State private var showAgentLaunch = false
+    #if DEBUG
+    @State private var showOptimizerPopover = UserDefaults.standard.bool(forKey: "c2dOptimizerPopoverCheck")   // `-c2dOptimizerPopoverCheck YES`: start with the card open (screenshot checks)
+    #else
+    @State private var showOptimizerPopover = false
+    #endif
 
     var body: some View {
         @Bindable var model = model
         HStack(spacing: Theme.space2) {
             if let ws = model.workspace {
-                // Pages: one chip per open project; click switches, × closes (sessions of other pages keep running).
-                ForEach(model.openWorkspaces, id: \.projectPath) { page in
-                    let active = page === ws
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder.fill").foregroundStyle(active ? Theme.warning : Theme.textMuted)
-                        Text(page.projectName).font(Theme.Typography.title2).fontWeight(active ? .semibold : .medium).lineLimit(1)
-                            .foregroundStyle(active ? Theme.textPrimary : Theme.textSecondary)
-                        if model.openWorkspaces.count > 1 {
-                            Button { model.closePage(page) } label: {
-                                Image(systemName: "xmark").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
+                // Pages: a single segmented strip — one quiet segment per open project, the active one lifted.
+                HStack(spacing: 2) {
+                    ForEach(model.openWorkspaces, id: \.projectPath) { page in
+                        let active = page === ws
+                        HStack(spacing: 5) {
+                            Text(page.projectName).font(Theme.Typography.body).fontWeight(active ? .semibold : .regular).lineLimit(1)
+                                .foregroundStyle(active ? Theme.textPrimary : Theme.textSecondary)
+                            if active && model.openWorkspaces.count > 1 {
+                                Button { model.closePage(page) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.textMuted)
+                                        .frame(width: 14, height: 14).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain).help("Close this page")
                             }
-                            .buttonStyle(.plain).help("Close this page (its terminals end only when their panels are closed)")
                         }
+                        .padding(.leading, 9).padding(.trailing, active && model.openWorkspaces.count > 1 ? 4 : 9).frame(height: 24)
+                        .background(active ? Theme.panel : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius - 2))
+                        .shadow(color: active ? .black.opacity(0.12) : .clear, radius: 1, y: 0.5)
+                        .contentShape(Rectangle()).clickCursor()
+                        .onTapGesture { model.showPage(page) }
+                        .help(page.projectPath)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(active ? Theme.elevated : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(active ? Theme.borderStrong : .clear))
-                    .contentShape(Rectangle()).clickCursor()
-                    .onTapGesture { model.showPage(page) }
-                    .help(page.projectPath)
-                }
                 Menu {
                     ForEach(model.registry.projects.filter(\.isAvailable)) { p in
                         Button(p.name) { model.openProject(p) }
                     }
                     Divider()
                     Button("Open Folder…") { model.promptOpenProject() }
-                } label: {
-                    Image(systemName: "plus").font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                    Divider()
+                    Button("New Terminal Window") { (NSApp.delegate as? AppDelegate)?.newWindowForTab(nil) }.keyboardShortcut("n", modifiers: .command)
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                            .frame(width: 24, height: 24).contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
+                    .help("New page (another project, ⌘⇧N) or a new terminal window (⌘N)")
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
-                .help("New page — open another project side by side (⌘⇧N); switch with ⌘⌥→ / ⌘⌥←")
+                .padding(3)
+                .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
 
                 if ws.git.isAvailable {
                     Menu {
@@ -235,7 +246,19 @@ struct TopBar: View {
                 barButton("sidebar.left", "Toggle the file explorer sidebar (⌘B)") { ws.toggleExplorer() }
                 barButton("plus.rectangle", "New terminal — opens a shell in this project (⌘T)") { ws.newTerminal() }
                 barButton("cpu", "New agent — launch a Claude Code session for this project") { showAgentLaunch = true }
-                barButton("gauge.with.dots.needle.33percent", "Token Optimizer — estimate & trim context (estimates only, not billed)") { ws.showOptimizerPanel() }
+                Button { showOptimizerPopover.toggle() } label: {
+                    Image(systemName: "gauge.with.dots.needle.33percent").font(Theme.Typography.title2).fontWeight(.medium)
+                        .foregroundStyle(model.optimizerEnabled ? Theme.accent : Theme.textSecondary)
+                        .frame(width: 34, height: 30)
+                        .background(model.optimizerEnabled ? Theme.accent.opacity(0.18) : Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(model.optimizerEnabled ? Theme.accent.opacity(0.6) : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).clickCursor()
+                .help(model.optimizerEnabled ? "Token Optimizer: on" : "Token Optimizer: off")
+                .popover(isPresented: $showOptimizerPopover, arrowEdge: .bottom) {
+                    OptimizerPopover(workspace: ws)
+                }
                 Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
             }
         }
@@ -246,11 +269,11 @@ struct TopBar: View {
         .sheet(isPresented: $showAgentLaunch) { if let ws = model.workspace { AgentLaunchSheet(workspace: ws).environment(model) } }
     }
 
-    private func barButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
+    private func barButton(_ symbol: String, _ help: String, active: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
+            Image(systemName: symbol).font(Theme.Typography.title2).fontWeight(.medium).foregroundStyle(active ? Theme.accent : Theme.textSecondary)
                 .frame(width: 34, height: 30)
-                .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                .background(active ? Theme.accent.opacity(0.15) : Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).clickCursor().tooltip(help).accessibilityLabel(help)
@@ -323,5 +346,53 @@ struct SettingsPlaceholderView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Token Optimizer switch as a small card (top-bar gauge button), not a bare system menu.
+struct OptimizerPopover: View {
+    @Environment(AppModel.self) private var model
+    let workspace: WorkspaceController
+
+    var body: some View {
+        @Bindable var model = model
+        VStack(alignment: .leading, spacing: Theme.space3) {
+            HStack(spacing: 10) {
+                IconTile(symbol: "gauge.with.dots.needle.33percent", tint: model.optimizerEnabled ? Theme.accent : Theme.textMuted, size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Token Optimizer").font(Theme.Typography.title2).fontWeight(.semibold).foregroundStyle(Theme.textPrimary)
+                    Text(model.optimizerEnabled ? "On" : "Off").font(Theme.Typography.detail)
+                        .foregroundStyle(model.optimizerEnabled ? Theme.success : Theme.textMuted)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                row("chart.bar.doc.horizontal", "Measures the context you hand to an agent and flags what is oversized.")
+                row("lock.shield", "Estimates only — nothing is billed or sent anywhere.")
+                row("sparkles", "Premium trimming comes later; the switch is ready for it.", muted: true)
+            }
+            if model.developerMode {
+                Divider()
+                Button {
+                    workspace.toggleOptimizerPanel()
+                } label: {
+                    Label(workspace.isOptimizerVisible ? "Hide optimizer panel" : "Show optimizer panel", systemImage: "rectangle.bottomhalf.inset.filled")
+                        .font(Theme.Typography.detail)
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.textSecondary).clickCursor()
+            }
+        }
+        .padding(Theme.space4)
+        .frame(width: 300)
+        .background(Theme.panel)
+    }
+
+    private func row(_ symbol: String, _ text: String, muted: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol).font(Theme.Typography.detail).foregroundStyle(muted ? Theme.textMuted : Theme.accent).frame(width: 14)
+            Text(text).font(Theme.Typography.detail).foregroundStyle(muted ? Theme.textMuted : Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

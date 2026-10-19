@@ -6,6 +6,7 @@ import SwiftUI
 struct C2DTerminalApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         Log.app.info("launch: \(DiagnosticsReport.current().summary, privacy: .public)")
@@ -17,9 +18,32 @@ struct C2DTerminalApp: App {
                 .environment(model)
                 .onAppear {
                     delegate.model = model
+                    delegate.openTerminalWindow = { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
                     // C2D restores its own workspace; AppKit window restoration would resurrect stale
                     // windows from earlier launches (seen as blank 500×500 windows).
-                    NSApp.windows.forEach { $0.isRestorable = false }
+                    NSApp.windows.forEach { $0.isRestorable = false; $0.tabbingMode = .disallowed }   // terminal tabs never merge into the main window
+                    #if DEBUG
+                    // `-c2dTerminalWindowCheck YES`: two terminal windows become native tabs of one window,
+                    // each with its own live shell; closing one ends its shell; quit ends the rest.
+                    if UserDefaults.standard.bool(forKey: "c2dTerminalWindowCheck") {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory))
+                            try? await Task.sleep(for: .seconds(1))
+                            delegate.newWindowForTab(nil)   // what the native "+" in the tab bar sends
+                            try? await Task.sleep(for: .milliseconds(2500))
+                            let wins = NSApp.windows.filter { $0.tabbingIdentifier == "c2d.terminal" && $0.isVisible }
+                            let tabs = wins.first?.tabbedWindows?.count ?? -1
+                            let running = model.standaloneTerminals.values.filter(\.isRunning).count
+                            NSApp.activate(ignoringOtherApps: true); wins.first?.tabGroup?.selectedWindow?.makeKeyAndOrderFront(nil)
+                            debugTrace("terminalWindowCheck: windowNumber=\(wins.first?.tabGroup?.selectedWindow?.windowNumber ?? -1) tabBarVisible=\(wins.first?.tabGroup?.isTabBarVisible ?? false) windows=\(wins.count) tabsInFirst=\(tabs) running=\(running) mainHasTabs=\(NSApp.windows.first { $0.tabbingIdentifier != "c2d.terminal" && $0.isVisible }?.tabbedWindows?.count ?? 0)")
+                            try? await Task.sleep(for: .seconds(3))   // leaves time for a window-ID screencapture of the tab bar
+                            wins.last?.close()
+                            try? await Task.sleep(for: .seconds(1))
+                            debugTrace("terminalWindowCheck: afterClose running=\(model.standaloneTerminals.values.filter(\.isRunning).count) tracked=\(model.standaloneTerminals.count)")
+                        }
+                    }
+                    #endif
                     #if DEBUG
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(2))
@@ -47,6 +71,8 @@ struct C2DTerminalApp: App {
         .defaultSize(width: 1240, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("New Terminal Window") { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
+                    .keyboardShortcut("n", modifiers: .command)
                 Button("Open Project…") { model.promptOpenProject() }
                     .keyboardShortcut("o", modifiers: .command)
                 Button("New Terminal") { model.workspace?.newTerminal() }
@@ -95,7 +121,69 @@ struct C2DTerminalApp: App {
             CommandGroup(after: .help) {
                 Button("Export Diagnostics…") { model.prepareDiagnosticsExport() }
             }
+            CommandGroup(after: .windowArrangement) {
+                // ⌘1…⌘9 pick a tab of the key window's native tab group (terminal windows), like other terminals.
+                ForEach(1...9, id: \.self) { n in
+                    Button("Tab \(n)") {
+                        if let tabs = NSApp.keyWindow?.tabbedWindows, tabs.indices.contains(n - 1) { tabs[n - 1].makeKeyAndOrderFront(nil) }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                }
+            }
         }
+
+        // Plain terminals in their own windows; macOS groups them as native tabs (the "+" in the tab
+        // bar and ⌘N open another). They belong to no page and end when their window closes.
+        WindowGroup("Terminal", id: "terminal", for: TerminalWindowRequest.self) { $request in
+            TerminalWindowView(directory: request?.directory ?? NSHomeDirectory())
+                .environment(model)
+                .frame(minWidth: 520, minHeight: 320)
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 980, height: 620)
+    }
+}
+
+/// A value-keyed `WindowGroup` reuses the window for an equal value, so every request carries a fresh id.
+struct TerminalWindowRequest: Hashable, Codable {
+    var id = UUID()
+    var directory: String
+}
+
+/// One standalone shell for the terminal `WindowGroup`.
+private struct TerminalWindowView: View {
+    @Environment(AppModel.self) private var model
+    let directory: String
+    @State private var controller: TerminalPanelController?
+
+    var body: some View {
+        Group {
+            if let controller { TerminalPanelView(controller: controller) } else { Color.clear }
+        }
+        .background(Theme.window)
+        .background(TerminalWindowConfigurator())
+        .onAppear { if controller == nil { controller = model.makeStandaloneTerminal(projectPath: directory) } }
+        .onDisappear { if let id = controller?.panelID { Task { await model.closeStandaloneTerminal(id) } } }
+        .navigationTitle(URL(fileURLWithPath: directory).lastPathComponent)
+    }
+}
+
+/// Marks the hosting NSWindow as a terminal tab: shared tabbing identifier (so windows group), never
+/// restored by AppKit, and attached deterministically to an existing terminal window's tab group.
+private struct TerminalWindowConfigurator: NSViewRepresentable {
+    /// Configures as soon as AppKit attaches the view to its window — no timing assumptions.
+    final class HookView: NSView { override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); TerminalWindowConfigurator.configure(window) } }
+    func makeNSView(context: Context) -> NSView { HookView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+    static func configure(_ w: NSWindow?) {
+        guard let w, w.tabbingIdentifier != "c2d.terminal" else { return }
+        w.isRestorable = false
+        w.tabbingIdentifier = "c2d.terminal"
+        w.tabbingMode = .preferred
+        if let host = NSApp.windows.first(where: { $0 !== w && $0.tabbingIdentifier == "c2d.terminal" && $0.isVisible }) {
+            host.addTabbedWindow(w, ordered: .above)
+        }
+        w.makeKeyAndOrderFront(nil)
     }
 }
 
@@ -103,6 +191,10 @@ struct C2DTerminalApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     private var terminating = false
+    /// Installed by the app scene; opens another terminal window (the native tab bar's "+" sends `newWindowForTab:`).
+    var openTerminalWindow: (() -> Void)?
+
+    @objc func newWindowForTab(_ sender: Any?) { openTerminalWindow?() }
 
     /// Folders dropped on the Dock icon or passed to `open` become projects; anything else is
     /// ignored. Handling this here also stops SwiftUI from opening an empty window per argument.

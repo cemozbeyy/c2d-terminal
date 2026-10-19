@@ -82,6 +82,11 @@ final class WorkspaceController {
     }
 
     /// Opens (or reveals) the single optimizer panel for this workspace.
+    var isOptimizerVisible: Bool { layout.visiblePanelIDs.contains { layout.panels[$0]?.kind == .tokenOptimizer } }
+    /// Top-bar toggle: hides the optimizer panel when it is showing, otherwise shows/restores/adds it.
+    func toggleOptimizerPanel() {
+        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { hide(visible) } else { showOptimizerPanel() }
+    }
     func showOptimizerPanel() {
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
         if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }

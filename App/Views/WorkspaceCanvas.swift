@@ -92,6 +92,7 @@ struct SplitView: View {
                     }
                 }
             }
+            .coordinateSpace(name: "split")
         }
     }
 
@@ -99,14 +100,16 @@ struct SplitView: View {
         // A visible, subtle line normally; it brightens to the accent on hover so it's clearly a
         // draggable boundary, and the pointer becomes a column/row-resize cursor.
         Rectangle()
-            .fill(hoveredDivider == index ? Theme.accent : Theme.borderSubtle)
+            .fill(hoveredDivider == index || dragStart != nil ? Theme.accent : Theme.borderSubtle)
             .frame(width: orientation == .horizontal ? dividerThickness : nil,
                    height: orientation == .vertical ? dividerThickness : nil)
             .contentShape(Rectangle())
             .pointerStyle(orientation == .horizontal ? .columnResize : .rowResize)
             .onHover { inside in hoveredDivider = inside ? index : (hoveredDivider == index ? nil : hoveredDivider) }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Measured in the split's own space: in the divider's local space the origin moves with
+                // every weight update, so the translation oscillated and the divider trembled.
+                DragGesture(minimumDistance: 1, coordinateSpace: .named("split"))
                     .onChanged { value in
                         if dragStart == nil { dragStart = weights }
                         guard let start = dragStart, total > 0 else { return }

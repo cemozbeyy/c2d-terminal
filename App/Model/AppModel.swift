@@ -67,6 +67,11 @@ final class AppModel {
 
     func showPalette(prefill: String? = nil) { paletteInitialQuery = prefill; paletteVisible = true }
     /// Developer Mode reveals technical detail; it never changes behaviour (Bible Part 2 §11).
+    /// Token Optimizer on/off (top-bar dropdown). On by default. The flag is the switch the owner asked
+    /// for; what "on" triggers beyond the explicit-context panel is still an open decision (OPEN_DECISIONS).
+    var optimizerEnabled: Bool = (UserDefaults.standard.object(forKey: "optimizerEnabled") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(optimizerEnabled, forKey: "optimizerEnabled") }
+    }
     var developerMode: Bool = UserDefaults.standard.bool(forKey: "developerMode") {
         didSet { UserDefaults.standard.set(developerMode, forKey: "developerMode") }
     }
@@ -899,6 +904,8 @@ final class AppModel {
             report("Layout contained unavailable panels", "\(affected.count) panel(s) kept as placeholders; remove or replace them.")
         }
         let page = WorkspaceController(layout: layout, projectPath: project.path, app: self, restoredFromDisk: restored)
+        // The optimizer is a dropdown switch now, not a workspace panel; drop panels older layouts still carry.
+        for id in page.layout.panels.filter({ $0.value.kind == .tokenOptimizer }).keys { page.close(id) }
         openWorkspaces.append(page)
         showPage(page)
     }
@@ -961,12 +968,33 @@ final class AppModel {
     /// Terminates every live session; called on quit. Returns once all exits were observed or the timeout passed.
     /// Across every open page, not just the visible one — hidden pages keep live shells too.
     var hasUnsavedEditors: Bool { openWorkspaces.contains(where: \.hasUnsavedEditors) }
-    var hasRunningSessions: Bool { openWorkspaces.contains(where: \.hasRunningSessions) }
+    var hasRunningSessions: Bool { openWorkspaces.contains(where: \.hasRunningSessions) || standaloneTerminals.values.contains(where: \.isRunning) }
 
     func shutdown() async {
-        debugTrace("shutdown: terminating \(openWorkspaces.map { $0.terminals.count }.reduce(0, +)) terminal(s) across \(openWorkspaces.count) page(s)")
+        debugTrace("shutdown: terminating \(openWorkspaces.map { $0.terminals.count }.reduce(0, +)) terminal(s) across \(openWorkspaces.count) page(s) + \(standaloneTerminals.count) window terminal(s)")
         for page in openWorkspaces { await page.terminateAllSessions() }
+        for t in standaloneTerminals.values { await t.terminateAndClose() }
         debugTrace("shutdown: all sessions ended")
+    }
+
+    // MARK: Terminal windows (plain shells in their own macOS windows / native tabs, outside any page)
+
+    private(set) var standaloneTerminals: [PanelID: TerminalPanelController] = [:]
+
+    /// The directory a new terminal window starts in: the visible page's project, else home.
+    var terminalWindowDirectory: String { workspace?.projectPath ?? NSHomeDirectory() }
+
+    func makeStandaloneTerminal(projectPath: String) -> TerminalPanelController {
+        let t = TerminalPanelController(panelID: PanelID(), projectPath: projectPath, app: self, previousRecord: nil)
+        standaloneTerminals[t.panelID] = t
+        t.startNewSession()
+        return t
+    }
+
+    /// Window closed: the shell ends with it so nothing outlives the app (ADR-013 / DEF-12).
+    func closeStandaloneTerminal(_ id: PanelID) async {
+        guard let t = standaloneTerminals.removeValue(forKey: id) else { return }
+        await t.terminateAndClose()
     }
 }
 
