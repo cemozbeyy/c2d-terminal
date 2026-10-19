@@ -256,16 +256,82 @@ final class GitController {
     }
 
     var stagedCount: Int { status?.entries.filter(\.hasStagedChange).count ?? 0 }
-    var canCommit: Bool { stagedCount > 0 && !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy }
+    var hasConflicts: Bool { status?.entries.contains(where: \.isConflicted) ?? false }
+    /// Anything a commit could include: staged, unstaged, or untracked (not just already-staged files).
+    var hasCommittableChanges: Bool { status?.entries.contains { $0.hasStagedChange || $0.hasUnstagedChange || $0.isUntracked } ?? false }
+    var canCommit: Bool { !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy && !hasConflicts && hasCommittableChanges }
 
     func commit() async {
         let message = commitMessage
+        let stageEverythingFirst = stagedCount == 0   // VS Code: "Commit" with nothing staged commits all changes
         await perform("Commit") { repo in
+            if stageEverythingFirst { try await repo.stageAll() }
             let hash = try await repo.commit(message: message)
             self.lastCommitHash = hash
             self.commitMessage = ""
         }
         await loadBranchesAndHistory()
+    }
+
+    /// True while an AI commit message is being generated.
+    private(set) var generatingMessage = false
+
+    /// Asks the Claude Code CLI to summarise the to-be-committed diff into a Conventional-Commits message
+    /// (VS Code's ✨ "generate commit message"). Only called when a Claude provider is available; the
+    /// CLI runs off the main thread with the diff on stdin, and the result goes into the message box.
+    func generateCommitMessage(claudePath: String) async {
+        guard !generatingMessage, repository != nil else { return }
+        generatingMessage = true
+        defer { generatingMessage = false }
+        let project = projectPath
+        let instruction = "You are writing a git commit message. Read the diff on stdin and reply with ONE concise message in Conventional Commits style (for example: feat: add X, or fix: handle Y). Reply with only the commit message itself — no quotes, no code fences, no preamble."
+        // The message must describe what the Commit button will actually commit (Bible Part 6 §8): the
+        // index when something is staged, otherwise every tracked change ("Commit all").
+        let diffCmd = stagedCount > 0 ? "git diff --cached" : "git diff HEAD"
+        let cmd = "cd \(Self.shQuote(project)) && \(diffCmd) 2>/dev/null | head -c 120000 | \(Self.shQuote(claudePath)) -p \(Self.shQuote(instruction))"
+        let result: GenOutcome = await Task.detached(priority: .userInitiated) { Self.runGen(cmd) }.value
+        switch result {
+        case .message(let raw):
+            let msg = Self.cleanGeneratedMessage(raw)
+            if msg.isEmpty { lastError = "The agent returned no message." } else { commitMessage = msg }
+        case .failed(let why):
+            lastError = "Couldn’t generate a message: \(why)"
+        }
+    }
+
+    private enum GenOutcome: Sendable { case message(String), failed(String) }
+
+    /// Synchronous (so it can block on the pipes) — always called off the main actor via `Task.detached`.
+    private nonisolated static func runGen(_ cmd: String) -> GenOutcome {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        p.arguments = ["-lc", cmd]
+        p.standardInput = FileHandle.nullDevice
+        let out = Pipe(), err = Pipe()
+        p.standardOutput = out; p.standardError = err
+        do { try p.run() } catch { return .failed("could not launch the agent") }
+        let outBox = DataBox(), errBox = DataBox()
+        let g = DispatchGroup()
+        g.enter(); DispatchQueue.global().async { outBox.data = out.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+        g.enter(); DispatchQueue.global().async { errBox.data = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+        p.waitUntilExit()
+        g.wait()
+        if p.terminationStatus == 0 { return .message(String(decoding: outBox.data, as: UTF8.self)) }
+        let reason = String(decoding: errBox.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return .failed(reason.isEmpty ? "the agent exited with code \(p.terminationStatus)" : String(reason.prefix(200)))
+    }
+
+    private final class DataBox: @unchecked Sendable { var data = Data() }
+
+    private static func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
+    private static func cleanGeneratedMessage(_ raw: String) -> String {
+        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("```") {   // strip a ``` fence if the model wrapped it
+            t = t.replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if t.count >= 2, t.hasPrefix("\""), t.hasSuffix("\"") { t = String(t.dropFirst().dropLast()) }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func checkout(_ branch: String) async {

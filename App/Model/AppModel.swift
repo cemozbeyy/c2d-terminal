@@ -312,17 +312,27 @@ final class AppModel {
                 debugTrace("addPanelCheck: panelsBefore=\(before) panelsAfter=\(ws.layout.panels.count) kinds=\(kinds)")
             }
         }
-        // `-c2dGitPanelCheck YES`: the Source-Control entry opens a VS-Code-style changes panel that
-        // lists the working-tree changes (file groups + per-file diff).
+        // `-c2dGitPanelCheck YES`: the Source-Control rail entry docks a VS-Code-style changes panel on
+        // the left of the workspace (file groups + per-file diff), instead of a full-screen view.
         if UserDefaults.standard.bool(forKey: "c2dGitPanelCheck") {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, let ws = self.workspace else { return }
-                self.destination = .sourceControl   // the left-rail Source Control tab
+                ws.toggleGitPanel()   // docks the Source Control panel on the left of the workspace
                 for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(250)); if ws.git.status != nil { break } }
-                let onTab = self.destination == .sourceControl
+                let docked = ws.layout.visiblePanelIDs.contains { ws.layout.panels[$0]?.kind == .gitChanges }
                 let s = ws.git.status
-                debugTrace("gitPanelCheck: onSourceControlTab=\(onTab) available=\(ws.git.isAvailable) branch=\(s?.branch ?? "?") changed=\(s?.entries.count ?? -1) clean=\(s?.isClean ?? true)")
+                debugTrace("gitPanelCheck: gitPanelDocked=\(docked) available=\(ws.git.isAvailable) branch=\(s?.branch ?? "?") changed=\(s?.entries.count ?? -1) clean=\(s?.isClean ?? true)")
+            }
+        }
+        // `-c2dGenCommitCheck <path>`: the ✨ button's pipeline (diff → agent CLI on stdin → message box)
+        // against a stub executable at <path>, so the check never spends tokens on the real CLI.
+        if let stub = UserDefaults.standard.string(forKey: "c2dGenCommitCheck"), !stub.isEmpty {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                await ws.git.generateCommitMessage(claudePath: stub)
+                debugTrace("genCommitCheck: message=\(ws.git.commitMessage.debugDescription) error=\(ws.git.lastError ?? "nil") generating=\(ws.git.generatingMessage)")
             }
         }
         // `-c2dTabReuseCheck YES`: two terminal tabs in one group keep their own surface across tab
@@ -344,6 +354,23 @@ final class AppModel {
                 ws.close(t1); try? await Task.sleep(for: .milliseconds(700))
                 let id2c = idOf(t2)
                 debugTrace("tabReuse: t1Surface=\(id1 != "nil") t2a=\(id2a.suffix(8)) t2b=\(id2b.suffix(8)) reusedOnSwitch=\(reused) t2SurvivesSiblingClose=\(id2c != "nil" && id2c == id2a)")
+            }
+        }
+        // `-c2dExplorerToggleCheck YES`: the sidebar toggle docks a file explorer when none exists and
+        // hides it when visible.
+        if UserDefaults.standard.bool(forKey: "c2dExplorerToggleCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace else { return }
+                @MainActor func visExplorers() -> Int { ws.layout.visiblePanelIDs.filter { ws.layout.panels[$0]?.kind == .projectExplorer }.count }
+                // Start from none: hide any existing explorer first.
+                while visExplorers() > 0 { if let v = ws.layout.visiblePanelIDs.first(where: { ws.layout.panels[$0]?.kind == .projectExplorer }) { ws.hide(v) }; try? await Task.sleep(for: .milliseconds(200)) }
+                let before = visExplorers()
+                ws.toggleExplorer(); try? await Task.sleep(for: .milliseconds(300))
+                let afterShow = visExplorers()
+                ws.toggleExplorer(); try? await Task.sleep(for: .milliseconds(300))
+                let afterHide = visExplorers()
+                debugTrace("explorerToggle: before=\(before) afterShow=\(afterShow) afterHide=\(afterHide)")
             }
         }
         // `-c2dCtrlCCheck YES`: double Ctrl-C ends an idle shell but never one with a foreground command.

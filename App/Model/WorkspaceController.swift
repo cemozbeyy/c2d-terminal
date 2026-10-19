@@ -88,6 +88,37 @@ final class WorkspaceController {
         addPanel(.tokenOptimizer, title: "Token Optimizer", besideGroup: layout.groupIDs.last)
     }
 
+    /// Shows or hides the file-tree sidebar (VS-Code ⌘B): hides a visible explorer, restores a hidden
+    /// one, or docks a fresh one on the far left when the project's layout has none.
+    func toggleExplorer() { toggleDockedPanel(.projectExplorer, title: "Explorer") }
+
+    /// The Claude Code executable path when that provider is installed — i.e. whether "AI is connected"
+    /// for features like generating a commit message. nil until providers are discovered / if absent.
+    var claudePath: String? { app.providerPaths["claude-code"] }
+    func ensureProvidersLoaded() async { if app.providersRefreshedAt == nil { await app.refreshProviders() } }
+
+    /// Source Control as a left sidebar block (not a full-screen view): reveals a Git changes panel
+    /// docked on the left, next to the editor — the way VS Code shows it.
+    func toggleGitPanel() {
+        toggleDockedPanel(.gitChanges, title: "Changes")
+        if layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == .gitChanges }) {
+            Task { await git.refresh() }
+        }
+    }
+
+    private func toggleDockedPanel(_ kind: PanelKind, title: String) {
+        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == kind }) { hide(visible); return }
+        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == kind }) { restore(hidden); return }
+        let panel = Panel(kind: kind, title: title)
+        mutate("show \(kind.rawValue)") { layout in
+            if let leftmost = layout.groupIDs.first {
+                try layout.add(panel, beside: leftmost, edge: .left)
+            } else {
+                layout.root = .group(id: NodeID(), panels: [panel.id], active: panel.id); layout.panels[panel.id] = panel
+            }
+        }
+    }
+
 
     /// Adds a panel of any kind to the right of `besideGroup` (or as the only panel of an empty layout).
     @discardableResult

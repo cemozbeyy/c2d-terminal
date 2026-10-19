@@ -73,7 +73,7 @@ struct SplitView: View {
     @State private var hoveredDivider: Int?
 
     private let dividerThickness: CGFloat = 6
-    private let minimumSize: CGFloat = 140
+    private let minimumSize: CGFloat = 220   // a docked sidebar (Git / Explorer) stays usable; below this its content breaks
 
     var body: some View {
         GeometryReader { geo in

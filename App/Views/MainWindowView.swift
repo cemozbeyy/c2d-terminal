@@ -23,7 +23,15 @@ struct MainWindowView: View {
     private var mainContent: some View {
         @Bindable var model = model
         return HStack(spacing: 0) {
-            NavigationRail(destination: $model.destination, hasWorkspace: model.workspace != nil)
+            NavigationRail(destination: $model.destination, hasWorkspace: model.workspace != nil) { d in
+                // Source Control opens as a docked left panel in the workspace, not a full-screen page.
+                if d == .sourceControl, let ws = model.workspace {
+                    model.destination = .workspace
+                    ws.toggleGitPanel()
+                } else {
+                    model.destination = d
+                }
+            }
             VStack(spacing: 0) {
                 TopBar()
                 content
@@ -40,17 +48,8 @@ struct MainWindowView: View {
     @ViewBuilder private var content: some View {
         switch model.destination {
         case .projects: ProjectsView()
-        case .workspace:
+        case .workspace, .sourceControl:   // Git is a docked left panel, not a full-screen view (see the rail)
             if let ws = model.workspace { WorkspaceCanvas(workspace: ws) } else { ProjectsView() }
-        case .sourceControl:
-            if let ws = model.workspace {
-                GitPanelView(git: ws.git, workspace: ws)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Theme.panel)
-                    .task(id: model.destination) { await ws.git.refresh() }
-            } else {
-                Text("Open a project to see its source control.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         case .agents: AgentsDestinationView()
         case .tasks:
             if let ws = model.workspace { TasksPanelView(tasks: ws.tasks, workspace: ws).padding(Theme.space3) } else { Text("Open a project to see its tasks.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -63,14 +62,15 @@ struct MainWindowView: View {
 struct NavigationRail: View {
     @Binding var destination: Destination
     let hasWorkspace: Bool
+    var onSelect: (Destination) -> Void
 
     var body: some View {
         VStack(spacing: 4) {
             IconTile(symbol: "terminal.fill", tint: Theme.accent, size: 30).padding(.vertical, 10).accessibilityLabel("C2D Terminal")
             ForEach(Destination.allCases) { d in
-                let enabled = d != .workspace || hasWorkspace
+                let enabled = (d != .workspace && d != .sourceControl) || hasWorkspace
                 let selected = destination == d
-                Button { destination = d } label: {
+                Button { onSelect(d) } label: {
                     VStack(spacing: 4) {
                         Image(systemName: d.symbol).font(.system(size: 17, weight: .medium))
                         Text(d.label).font(.system(size: 9.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
@@ -123,7 +123,7 @@ struct TopBar: View {
 
                 if ws.git.isAvailable {
                     Menu {
-                        Button { model.destination = .sourceControl } label: { Label("Show Changes", systemImage: "arrow.triangle.branch") }
+                        Button { model.destination = .workspace; ws.toggleGitPanel() } label: { Label("Show Changes", systemImage: "arrow.triangle.branch") }
                         Divider()
                         Button("Fetch") { Task { await ws.git.fetch() } }
                         Button(ws.git.behindCount > 0 ? "Pull (↓\(ws.git.behindCount))" : "Pull") { Task { await ws.git.pull() } }
@@ -216,9 +216,11 @@ struct TopBar: View {
             .help("Show process ids, session ids and paths in panel headers (Bible Part 2 §11)")
 
             if let ws = model.workspace {
+                barButton("sidebar.left", "Toggle the file explorer sidebar (⌘B)") { ws.toggleExplorer() }
                 barButton("plus.rectangle", "New terminal — opens a shell in this project (⌘T)") { ws.newTerminal() }
                 barButton("cpu", "New agent — launch a Claude Code session for this project") { showAgentLaunch = true }
                 barButton("gauge.with.dots.needle.33percent", "Token Optimizer — estimate & trim context (estimates only, not billed)") { ws.showOptimizerPanel() }
+                Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, Theme.space3)
