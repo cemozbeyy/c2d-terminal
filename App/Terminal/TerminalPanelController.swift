@@ -26,6 +26,11 @@ final class TerminalPanelController: NSObject {
     @ObservationIgnored private unowned let app: AppModel
     @ObservationIgnored private var session: PTYSession?
     @ObservationIgnored private weak var surface: TerminalView?
+    /// The panel owns its `TerminalView` (not SwiftUI), so switching away from this tab and back reuses
+    /// the same surface with its scrollback and current screen intact — recreating it on every tab
+    /// switch would leave the terminal blank until the next byte of output (closing a sibling tab).
+    @ObservationIgnored var hostedView: TerminalView?
+    @ObservationIgnored var keyMonitor: Any?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     @ObservationIgnored private var lastGrid: (cols: Int, rows: Int) = (0, 0)
@@ -232,6 +237,7 @@ final class TerminalPanelController: NSObject {
     func attach(_ view: TerminalView) {
         surface = view
         attached = true
+        feedTask?.cancel(); feedTask = nil   // a new surface needs its own feed, even if an old one existed
         if started { startFeeding() }
     }
 
@@ -240,6 +246,8 @@ final class TerminalPanelController: NSObject {
         feedTask = nil
         surface = nil
         attached = false
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+        hostedView = nil
     }
 
     private func startFeeding() {

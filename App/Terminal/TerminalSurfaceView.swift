@@ -51,43 +51,54 @@ struct TerminalSurfaceView: NSViewRepresentable {
         return scrollbackLines
     }
 
-    func makeNSView(context: Context) -> TerminalView {
-        // `cols`/`rows` in the options are recomputed from the frame; only `scrollback` matters here.
-        let view = FocusableTerminalView(frame: NSRect(x: 0, y: 0, width: 10, height: 10), font: nil,
-                                         options: TerminalOptions(scrollback: Self.effectiveScrollbackLines))
-        view.terminalDelegate = controller
-        let controller = controller
-        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view] event in
-            guard let view, event.window?.firstResponder === view else { return event }
-            return handleEditingKey(event, view: view, controller: controller) ? nil : event
-        }
-        view.nativeBackgroundColor = NSColor(hex: 0x0B0E16)
-        view.nativeForegroundColor = NSColor(hex: 0xE8EAF1)
-        view.caretColor = NSColor(hex: 0x7C6CF0)
-        view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-        // Cmd-click opens detected file paths and URLs (Bible Part 5 §7.3). Detection runs on hover/click,
-        // never on the output stream, so it adds no cost to rendering.
-        view.linkReporting = .implicit
-        view.linkHighlightMode = .hoverWithModifier
-        controller.attach(view)
-        // A terminal that was just shown (New Session, or a restored panel) takes keyboard focus so the
-        // user can type without clicking first. Deferred: the view has no window yet inside makeNSView.
-        DispatchQueue.main.async { [weak view] in
-            guard let view, let window = view.window, window.isKeyWindow else { return }
+    /// SwiftUI owns this throwaway container; the panel-owned `TerminalView` is moved into it as a
+    /// subview and survives tab switches, so its scrollback and current screen are never lost (and the
+    /// terminal is never blanked when a sibling tab is closed). Returning a cached NSView straight from
+    /// `makeNSView` is unsafe; re-parenting a persistent subview between fresh containers is the robust
+    /// way to keep an AppKit view alive across SwiftUI view-identity changes.
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        let term = controller.hostedView ?? makeTerminal()
+        term.frame = container.bounds
+        term.autoresizingMask = [.width, .height]
+        if term.superview !== container { term.removeFromSuperview(); container.addSubview(term) }
+        DispatchQueue.main.async { [weak term] in
+            guard let term, let window = term.window, window.isKeyWindow else { return }
             if !(window.firstResponder is NSText || window.firstResponder is TerminalView) {
-                window.makeFirstResponder(view)
+                window.makeFirstResponder(term)
             }
         }
-        return view
+        return container
     }
 
-    func updateNSView(_ nsView: TerminalView, context: Context) {}
+    private func makeTerminal() -> FocusableTerminalView {
+        // `cols`/`rows` in the options are recomputed from the frame; only `scrollback` matters here.
+        let fresh = FocusableTerminalView(frame: NSRect(x: 0, y: 0, width: 10, height: 10), font: nil,
+                                          options: TerminalOptions(scrollback: Self.effectiveScrollbackLines))
+        fresh.terminalDelegate = controller
+        let controller = controller
+        controller.keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak fresh] event in
+            guard let fresh, event.window?.firstResponder === fresh else { return event }
+            return handleEditingKey(event, view: fresh, controller: controller) ? nil : event
+        }
+        fresh.nativeBackgroundColor = NSColor(hex: 0x0B0E16)
+        fresh.nativeForegroundColor = NSColor(hex: 0xE8EAF1)
+        fresh.caretColor = NSColor(hex: 0x7C6CF0)
+        fresh.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        // Cmd-click opens detected file paths and URLs (Bible Part 5 §7.3). Detection runs on hover/click,
+        // never on the output stream, so it adds no cost to rendering.
+        fresh.linkReporting = .implicit
+        fresh.linkHighlightMode = .hoverWithModifier
+        controller.hostedView = fresh
+        controller.attach(fresh)
+        return fresh
+    }
 
-    final class Coordinator { var monitor: Any? }
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 
-    static func dismantleNSView(_ nsView: TerminalView, coordinator: Coordinator) {
-        // Detach happens through the controller when the panel closes; a hidden panel keeps its session.
-        if let m = coordinator.monitor { NSEvent.removeMonitor(m); coordinator.monitor = nil }
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        // Tab switch: lift the persistent terminal out of the dying container so it survives for the
+        // next tab (the controller still owns it). It is released in `detach()` when the panel closes.
+        container.subviews.compactMap { $0 as? TerminalView }.forEach { $0.removeFromSuperview() }
     }
 }

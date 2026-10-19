@@ -292,9 +292,10 @@ final class AppModel {
                 ws.newTerminal()
                 for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(200)); if ws.terminals.values.contains(where: { $0.isRunning }) { break } }
                 try? await Task.sleep(for: .milliseconds(600))
-                let fr = NSApp.keyWindow?.firstResponder
+                let fr = (NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.firstResponder != nil && !($0.firstResponder is NSWindow) })?.firstResponder
                 let cls = fr.map { String(describing: type(of: $0)) } ?? "nil"
-                debugTrace("focusCheck: firstResponder=\(cls) isTerminalView=\(cls.contains("TerminalView"))")
+                let anyTerm = NSApp.windows.contains { ($0.firstResponder.map { String(describing: type(of: $0)) } ?? "").contains("TerminalView") }
+                debugTrace("focusCheck: firstResponder=\(cls) isTerminalView=\(cls.contains("TerminalView")) anyWindowTerminalFR=\(anyTerm)")
             }
         }
         // `-c2dAddPanelCheck YES`: the group "+" menu adds a panel of any kind into the group as a tab.
@@ -322,6 +323,27 @@ final class AppModel {
                 let onTab = self.destination == .sourceControl
                 let s = ws.git.status
                 debugTrace("gitPanelCheck: onSourceControlTab=\(onTab) available=\(ws.git.isAvailable) branch=\(s?.branch ?? "?") changed=\(s?.entries.count ?? -1) clean=\(s?.isClean ?? true)")
+            }
+        }
+        // `-c2dTabReuseCheck YES`: two terminal tabs in one group keep their own surface across tab
+        // switches (so a terminal is never blanked when you switch to it or close its sibling).
+        if UserDefaults.standard.bool(forKey: "c2dTabReuseCheck") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let ws = self.workspace, let g = ws.layout.groupIDs.first else { debugTrace("tabReuse: no group"); return }
+                ws.newPanel(.terminal, in: g); try? await Task.sleep(for: .milliseconds(500))
+                guard let t1 = ws.layout.activePanel(in: g) else { debugTrace("tabReuse: no t1"); return }
+                ws.newPanel(.terminal, in: g); try? await Task.sleep(for: .milliseconds(500))
+                guard let t2 = ws.layout.activePanel(in: g), t2 != t1 else { debugTrace("tabReuse: no distinct t2"); return }
+                for _ in 0..<40 { try? await Task.sleep(for: .milliseconds(200)); if [t1, t2].allSatisfy({ ws.terminals[$0]?.isRunning == true }) { break } }
+                @MainActor func idOf(_ panel: PanelID) -> String { ws.terminals[panel]?.hostedView.map { "\(ObjectIdentifier($0))" } ?? "nil" }
+                ws.activate(t2); try? await Task.sleep(for: .milliseconds(700)); let id2a = idOf(t2)
+                ws.activate(t1); try? await Task.sleep(for: .milliseconds(700)); let id1 = idOf(t1)
+                ws.activate(t2); try? await Task.sleep(for: .milliseconds(700)); let id2b = idOf(t2)
+                let reused = id2a != "nil" && id2a == id2b
+                ws.close(t1); try? await Task.sleep(for: .milliseconds(700))
+                let id2c = idOf(t2)
+                debugTrace("tabReuse: t1Surface=\(id1 != "nil") t2a=\(id2a.suffix(8)) t2b=\(id2b.suffix(8)) reusedOnSwitch=\(reused) t2SurvivesSiblingClose=\(id2c != "nil" && id2c == id2a)")
             }
         }
         // `-c2dCtrlCCheck YES`: double Ctrl-C ends an idle shell but never one with a foreground command.
