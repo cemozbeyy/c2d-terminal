@@ -376,7 +376,8 @@ final class AppModel {
                 case .available(let l):
                     let t = l.total
                     debugTrace("ledgerCheck: sessions=\(l.sessions.count) unavailable=\(l.unavailable.count) in=\(t.inputTokens) out=\(t.outputTokens) cacheRead=\(t.cacheReadInputTokens) cacheCreate=\(t.cacheCreationInputTokens) total=\(t.total) format='\(l.formatLabel)' skipped=\(l.skippedRecords) inProgress=\(l.inProgressLines) elapsedMs=\(ms)")
-                    for s in l.sessions { debugTrace("ledgerCheck: session \(s.id) msgs=\(s.messageCount) in=\(s.usage.inputTokens) out=\(s.usage.outputTokens) cacheRead=\(s.usage.cacheReadInputTokens) cacheCreate=\(s.usage.cacheCreationInputTokens) model=\(s.models.joined(separator: "|"))") }
+                    for s in l.sessions { debugTrace("ledgerCheck: session \(s.id) msgs=\(s.messageCount) in=\(s.usage.inputTokens) out=\(s.usage.outputTokens) cacheRead=\(s.usage.cacheReadInputTokens) cacheCreate=\(s.usage.cacheCreationInputTokens) model=\(s.models.joined(separator: "|")) attribution=\(ws.optimizer.attribution[s.id].map { a -> String in switch a { case .linked(let r, let t, _, let lc): "linked(record=\(r) task=\(t ?? "none") lifecycle=\(lc.rawValue))"; case .unmatched: "unmatched"; case .ambiguous(let ids): "ambiguous(\(ids.count))" } } ?? "none")") }
+                    debugTrace("ledgerCheck: launchesWithoutTranscript=\(ws.optimizer.launchesWithoutTranscript.count) agentRecordsWithSessionID=\(self.agentSessions.records(forProject: ws.projectPath).filter { $0.providerSessionID != nil }.count)")
                     for u in l.unavailable { debugTrace("ledgerCheck: unavailable \(u.id): \(u.reason)") }
                 case .unavailable(let reason): debugTrace("ledgerCheck: unavailable: \(reason) elapsedMs=\(ms)")
                 case .none: debugTrace("ledgerCheck: no result (optimizer off?) elapsedMs=\(ms)")

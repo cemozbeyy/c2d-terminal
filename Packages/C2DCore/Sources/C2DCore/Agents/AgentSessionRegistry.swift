@@ -18,6 +18,9 @@ public struct AgentSessionRecord: Codable, Hashable, Sendable, Identifiable {
     public var worktreePath: String?
     public var taskID: String?
     public var taskSummary: String?
+    /// Session id C2D handed to the CLI at launch (`--session-id`). nil for launches before TS-2 and
+    /// for providers without the capability — those sessions stay unmatched in the usage ledger.
+    public var providerSessionID: String?
     public var userTitle: String?
     public var lifecycle: AgentSessionLifecycle
     public var startedAt: Date

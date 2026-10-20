@@ -67,6 +67,7 @@ struct OptimizerPanelView: View {
                             Text(s.models.joined(separator: ", ")).lineLimit(1).frame(width: 130, alignment: .leading).foregroundStyle(Theme.textSecondary)
                             Text("in \(s.usage.inputTokens.formatted()) · out \(s.usage.outputTokens.formatted()) · cache r \(s.usage.cacheReadInputTokens.formatted()) · w \(s.usage.cacheCreationInputTokens.formatted())").lineLimit(1)
                             Spacer()
+                            attributionChip(optimizer.attribution[s.id] ?? .unmatched)
                             Text(s.usage.total.formatted()).bold()
                             Text("\(s.messageCount) msg").foregroundStyle(Theme.textMuted)
                         }
@@ -76,6 +77,12 @@ struct OptimizerPanelView: View {
                     ForEach(l.unavailable, id: \.self) { u in
                         Label("\(u.id.prefix(8))… unavailable: \(u.reason)", systemImage: "exclamationmark.triangle").font(Theme.Typography.micro).foregroundStyle(Theme.warning)
                     }
+                    if !optimizer.launchesWithoutTranscript.isEmpty {
+                        Label("\(optimizer.launchesWithoutTranscript.count) C2D agent launch(es) have no transcript yet (never replied, or the file is not visible yet) — rescan later.", systemImage: "clock")
+                            .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
+                    }
+                    Text("Attribution uses only the session id C2D passed at launch; sessions started outside C2D stay listed as unmatched and are never attributed to a task. Linking a session to a task does not reduce usage.")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                     Text("Top-level session files only; sub-agent transcripts in subfolders are not counted yet. \(l.skippedRecords) non-assistant record(s) skipped unread\(l.inProgressLines > 0 ? ", \(l.inProgressLines) line(s) still being written" : "").")
                         .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                 }
@@ -133,6 +140,22 @@ struct OptimizerPanelView: View {
                 if optimizer.items.isEmpty { Text("Nothing selected. The optimizer never collects context on its own.").font(.caption).foregroundStyle(Theme.textSecondary) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private func attributionChip(_ a: SessionAttribution) -> some View {
+        switch a {
+        case .linked(_, let taskID, let summary, let lifecycle):
+            let title = (summary?.split(separator: "\n").first).map(String.init) ?? ""
+            Text(taskID != nil ? "task: \(title.prefix(24))" : "C2D session" + (lifecycle == .failed ? " · failed" : ""))
+                .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.accent.opacity(0.18), in: Capsule()).foregroundStyle(Theme.accent)
+                .help(taskID.map { "Linked to C2D task \($0): \(summary ?? "")" } ?? "Launched from C2D without a task")
+        case .unmatched:
+            Text("unmatched").padding(.horizontal, 5).padding(.vertical, 1).background(Theme.textMuted.opacity(0.15), in: Capsule()).foregroundStyle(Theme.textMuted)
+                .help("No C2D launch carries this session id: started outside C2D, or before C2D passed session ids.")
+        case .ambiguous(let ids):
+            Text("ambiguous").padding(.horizontal, 5).padding(.vertical, 1).background(Theme.warning.opacity(0.18), in: Capsule()).foregroundStyle(Theme.warning)
+                .help("\(ids.count) C2D records claim this session id; not attributed.")
         }
     }
 

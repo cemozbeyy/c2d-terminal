@@ -405,7 +405,8 @@ struct OptimizerPopover: View {
                 case .available(let l):
                     Text("\(l.total.total.formatted()) tokens in \(l.sessions.count) Claude Code session(s) for this project")
                         .font(Theme.Typography.detail).foregroundStyle(Theme.textPrimary)
-                    Text("provider-reported · \(l.formatLabel)\(l.unavailable.isEmpty ? "" : " · \(l.unavailable.count) session(s) unavailable")")
+                    let linked = o.attribution.values.filter(\.isLinked).count
+                    Text("provider-reported · \(l.formatLabel) · \(linked) linked to C2D launches, \(l.sessions.count - linked) not linked\(l.unavailable.isEmpty ? "" : " · \(l.unavailable.count) unavailable")")
                         .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                 case .unavailable(let reason):
                     Text("Usage unavailable").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)

@@ -32,7 +32,13 @@ import Testing
             try AgentLaunchPlan.make(provider: .claudeCode, executablePath: notExec.path, projectPath: dir.path, workingDirectory: dir.path, task: nil)
         }
         let plan = try AgentLaunchPlan.make(provider: .claudeCode, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
-        #expect(plan.arguments == ["do it"] && plan.environmentAdditions.isEmpty)
+        // TS-2: Claude Code gets a fresh, valid `--session-id` before the prompt; the same id is kept on the plan.
+        #expect(plan.arguments.count == 3 && plan.arguments[0] == "--session-id" && plan.arguments[2] == "do it" && plan.environmentAdditions.isEmpty)
+        #expect(UUID(uuidString: plan.arguments[1]) != nil && plan.providerSessionID == plan.arguments[1])
+        let again = try AgentLaunchPlan.make(provider: .claudeCode, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
+        #expect(again.providerSessionID != plan.providerSessionID, "every launch gets its own id (the CLI refuses a reused one)")
+        let codexPlan = try AgentLaunchPlan.make(provider: .codex, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
+        #expect(codexPlan.arguments.isEmpty && codexPlan.providerSessionID == nil, "unverified provider: no session id, no argv change")
         #expect(plan.displaySummary.contains("Task: do it") && plan.displaySummary.contains("Claude Code"))
     }
 

@@ -120,6 +120,7 @@ final class TerminalPanelController: NSObject {
             var a = AgentSessionRecord(providerID: plan.provider.id, panelID: panelID, projectPath: projectPath, workingDirectory: directory)
             a.terminalSessionID = rec.id
             a.taskSummary = plan.task
+            a.providerSessionID = plan.providerSessionID   // TS-2: the only link between this launch and its transcript
             agentRecord = a
             app.registerAgentSession(a)
         }

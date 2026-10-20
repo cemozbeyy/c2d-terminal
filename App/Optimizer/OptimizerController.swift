@@ -30,6 +30,9 @@ final class OptimizerController {
     private(set) var ledger: TranscriptLedgerResult?
     private(set) var ledgerLoading = false
     private(set) var ledgerScannedAt: Date?
+    // TS-2: transcript session id → attribution, recomputed on every scan from the agent registry (pure, deterministic).
+    private(set) var attribution: [String: SessionAttribution] = [:]
+    private(set) var launchesWithoutTranscript: [AgentSessionRecord] = []
 
     @ObservationIgnored private let store: OptimizationStore?
     @ObservationIgnored private unowned let app: AppModel
@@ -54,6 +57,10 @@ final class OptimizerController {
         let path = projectPath
         ledger = await Task.detached(priority: .userInitiated) { ClaudeTranscriptReader.read(projectPath: path) }.value
         ledgerScannedAt = Date()
+        let sessions: [TranscriptSession] = { if case .available(let l)? = ledger { return l.sessions }; return [] }()
+        let records = app.agentSessions.records(forProject: projectPath)
+        attribution = SessionAttributor.attribute(sessions: sessions, agentRecords: records)
+        launchesWithoutTranscript = SessionAttributor.launchesWithoutTranscript(sessions: sessions, agentRecords: records)
     }
     var entitlement: Entitlement { app.entitlement }
 

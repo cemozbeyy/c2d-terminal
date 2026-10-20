@@ -11,6 +11,9 @@ public struct AgentLaunchPlan: Hashable, Sendable {
     public let workingDirectory: String
     public let task: String?
     public let environmentAdditions: [String: String]
+    /// The session id C2D chose for this launch (passed as `--session-id`), when the provider supports
+    /// one. It is the only evidence the Token Saver uses to link a transcript to this launch.
+    public let providerSessionID: String?
 
     public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?) throws -> AgentLaunchPlan {
         var isDir: ObjCBool = false
@@ -21,8 +24,11 @@ public struct AgentLaunchPlan: Hashable, Sendable {
             throw AgentError.executableNotFound(executablePath)
         }
         guard access(executablePath, X_OK) == 0 else { throw AgentError.executableNotRunnable(executablePath) }
-        return AgentLaunchPlan(provider: provider, executable: executablePath, arguments: provider.launchArguments(task: task),
-                               projectPath: projectPath, workingDirectory: workingDirectory, task: task, environmentAdditions: [:])
+        let sessionID = provider.capabilities.explicitSessionID ? UUID().uuidString.lowercased() : nil   // fresh per launch: the CLI refuses a reused id
+        let arguments = (sessionID.map { ["--session-id", $0] } ?? []) + provider.launchArguments(task: task)
+        return AgentLaunchPlan(provider: provider, executable: executablePath, arguments: arguments,
+                               projectPath: projectPath, workingDirectory: workingDirectory, task: task, environmentAdditions: [:],
+                               providerSessionID: sessionID)
     }
 
     public var displaySummary: String {

@@ -218,3 +218,96 @@ import Testing
         #expect(l.unavailable.contains { $0.reason.contains("another directory") })
     }
 }
+
+// MARK: - Token Saver TS-2: transcript ↔ C2D launch attribution
+
+@Suite struct SessionAttributionTests {
+    private let cwd = "/Users/someone/dev/proj"
+    private let idA = "11111111-1111-4111-8111-111111111111"
+    private let idB = "22222222-2222-4222-8222-222222222222"
+    private let idExt = "33333333-3333-4333-8333-333333333333"
+
+    private func session(_ id: String) -> TranscriptSession {
+        TranscriptSession(id: id, fileURL: URL(fileURLWithPath: "/x/\(id).jsonl"), cwd: cwd, cliVersion: "2.1.303", models: ["m"], gitBranch: nil,
+                          firstTimestamp: Date(timeIntervalSince1970: 1000), lastTimestamp: Date(timeIntervalSince1970: 2000), messageCount: 1,
+                          usage: ProviderUsage(inputTokens: 1, outputTokens: 2))
+    }
+    private func record(sessionID: String?, taskID: String? = nil, lifecycle: AgentSessionLifecycle = .exited, id: String = UUID().uuidString) -> AgentSessionRecord {
+        var r = AgentSessionRecord(id: id, providerID: "claude-code", panelID: nil, projectPath: cwd, workingDirectory: cwd, taskID: taskID, taskSummary: taskID.map { "Task \($0)" })
+        r.providerSessionID = sessionID; r.lifecycle = lifecycle
+        return r
+    }
+
+    @Test func explicitIdLinksToExactlyThatLaunch() {
+        let a = SessionAttributor.attribute(sessions: [session(idA)], agentRecords: [record(sessionID: idA, taskID: "T1", id: "R1"), record(sessionID: idB, taskID: "T2", id: "R2")])
+        #expect(a[idA] == .linked(agentSessionID: "R1", taskID: "T1", taskSummary: "Task T1", lifecycle: .exited))
+    }
+
+    @Test func externalSessionStaysVisibleButUnmatched() {
+        let a = SessionAttributor.attribute(sessions: [session(idExt), session(idA)], agentRecords: [record(sessionID: idA)])
+        #expect(a[idExt] == .unmatched)
+        #expect(a[idA]?.isLinked == true)
+        #expect(a.count == 2, "unmatched sessions are kept, never dropped")
+    }
+
+    @Test func sameDirectoryAndTimeNeverProduceAGuess() {
+        // Two C2D launches in the same cwd and time window but without session ids (pre-TS-2 or codex): no match.
+        let a = SessionAttributor.attribute(sessions: [session(idA)], agentRecords: [record(sessionID: nil, taskID: "T1"), record(sessionID: nil, taskID: "T2")])
+        #expect(a[idA] == .unmatched)
+    }
+
+    @Test func duplicateClaimsAreAmbiguousNotResolved() {
+        let a = SessionAttributor.attribute(sessions: [session(idA)], agentRecords: [record(sessionID: idA, id: "R2"), record(sessionID: idA.uppercased(), id: "R1")])
+        #expect(a[idA] == .ambiguous(agentSessionIDs: ["R1", "R2"]))
+    }
+
+    @Test func noCandidatesIsUnmatchedAndLaunchWithoutTranscriptIsPending() {
+        let launched = record(sessionID: idB, taskID: "T9", lifecycle: .running)
+        let a = SessionAttributor.attribute(sessions: [session(idA)], agentRecords: [launched])
+        #expect(a[idA] == .unmatched)
+        #expect(SessionAttributor.launchesWithoutTranscript(sessions: [session(idA)], agentRecords: [launched]).map(\.id) == [launched.id])
+        // The transcript appears later: the next (identical) reconciliation links it and clears the pending entry.
+        let later = SessionAttributor.attribute(sessions: [session(idA), session(idB)], agentRecords: [launched])
+        #expect(later[idB]?.isLinked == true)
+        #expect(SessionAttributor.launchesWithoutTranscript(sessions: [session(idA), session(idB)], agentRecords: [launched]).isEmpty)
+    }
+
+    @Test func repeatedRescansAreIdempotent() {
+        let recs = [record(sessionID: idA, taskID: "T1", id: "R1"), record(sessionID: nil)]
+        let first = SessionAttributor.attribute(sessions: [session(idA), session(idExt)], agentRecords: recs)
+        let second = SessionAttributor.attribute(sessions: [session(idA), session(idExt)], agentRecords: recs)
+        #expect(first == second && first.count == 2)
+    }
+
+    @Test func cancelledOrFailedLaunchesNeverAttractForeignTranscripts() {
+        let failed = record(sessionID: idB, taskID: "T1", lifecycle: .failed)
+        let cancelled = record(sessionID: nil, taskID: "T2", lifecycle: .exited)
+        let a = SessionAttributor.attribute(sessions: [session(idA)], agentRecords: [failed, cancelled])
+        #expect(a[idA] == .unmatched)
+        // A launch that failed *after* producing a transcript is still truthfully linked, flagged with its lifecycle.
+        let b = SessionAttributor.attribute(sessions: [session(idB)], agentRecords: [failed])
+        if case .linked(_, _, _, let lc)? = b[idB] { #expect(lc == .failed) } else { Issue.record("expected linked") }
+    }
+
+    @Test func malformedIdsAreNeverEvidence() {
+        let a = SessionAttributor.attribute(sessions: [session(idA), session("not-a-uuid")],
+                                            agentRecords: [record(sessionID: ""), record(sessionID: "garbage"), record(sessionID: "not-a-uuid")])
+        #expect(a[idA] == .unmatched && a["not-a-uuid"] == .unmatched)
+        #expect(SessionAttributor.launchesWithoutTranscript(sessions: [], agentRecords: [record(sessionID: "garbage")]).isEmpty, "a malformed id is not a pending launch either")
+    }
+
+    @Test func subAgentTranscriptsInSubfoldersAreNotCountedByTheParentScan() throws {
+        let project = "/Users/someone/dev/sub"
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("ledger-sub-\(UUID().uuidString)")
+        let folder = ClaudeTranscriptReader.projectFolder(for: project, claudeHome: home)
+        let sub = folder.appendingPathComponent("S1").appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        let rec = { (id: String, out: Int) in
+            #"{"type":"assistant","cwd":"\#(project)","sessionId":"S1","version":"2.1.303","timestamp":"2026-10-19T10:00:00.000Z","message":{"id":"\#(id)","model":"m","usage":{"input_tokens":1,"output_tokens":\#(out),"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#
+        }
+        try (rec("m1", 10) + "\n").write(to: folder.appendingPathComponent("S1.jsonl"), atomically: true, encoding: .utf8)
+        try (rec("m2", 999) + "\n").write(to: sub.appendingPathComponent("agent-x.jsonl"), atomically: true, encoding: .utf8)
+        guard case .available(let l) = ClaudeTranscriptReader.read(projectPath: project, claudeHome: home) else { Issue.record("expected ledger"); return }
+        #expect(l.sessions.count == 1 && l.total.outputTokens == 10, "sub-agent usage must not be folded into the parent (overlap unknown)")
+    }
+}

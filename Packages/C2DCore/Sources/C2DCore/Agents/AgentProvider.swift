@@ -9,16 +9,21 @@ public struct AgentCapabilities: Codable, Hashable, Sendable {
     public var structuredEvents = false
     public var permissionPrompts = false
     public var usageReporting = false
+    /// The CLI accepts a caller-chosen session id (`--session-id <uuid>`), so the transcript it writes
+    /// can be tied to the launching C2D agent record without guessing (Token Saver TS-2).
+    public var explicitSessionID = false
     public var notes = ""
 
     public init(interactiveTerminal: Bool = false, initialPromptArgument: Bool = false, sessionResume: Bool = false,
-                structuredEvents: Bool = false, permissionPrompts: Bool = false, usageReporting: Bool = false, notes: String = "") {
+                structuredEvents: Bool = false, permissionPrompts: Bool = false, usageReporting: Bool = false,
+                explicitSessionID: Bool = false, notes: String = "") {
         self.interactiveTerminal = interactiveTerminal
         self.initialPromptArgument = initialPromptArgument
         self.sessionResume = sessionResume
         self.structuredEvents = structuredEvents
         self.permissionPrompts = permissionPrompts
         self.usageReporting = usageReporting
+        self.explicitSessionID = explicitSessionID
         self.notes = notes
     }
 }
@@ -53,8 +58,8 @@ public struct AgentProvider: Codable, Hashable, Sendable, Identifiable {
     public static let claudeCode = AgentProvider(
         id: "claude-code", displayName: "Claude Code", executableNames: ["claude"],
         capabilities: AgentCapabilities(
-            interactiveTerminal: true, initialPromptArgument: true,
-            notes: "Interactive TUI through the PTY only. `--resume`, `--print`, structured events, permission prompts and usage reporting exist in `claude --help` but are UNVERIFIED by C2D and not exposed; awaitingUser is never inferred because the CLI gives no structured signal."))
+            interactiveTerminal: true, initialPromptArgument: true, explicitSessionID: true,
+            notes: "Interactive TUI through the PTY only. `--session-id <uuid>` verified on CLI 2.1.303 (rejects a non-UUID before any request) and used to tie the transcript to the C2D launch. `--resume`, `--print`, structured events, permission prompts and usage reporting exist in `claude --help` but are UNVERIFIED by C2D and not exposed; awaitingUser is never inferred because the CLI gives no structured signal."))
 
     /// UNVERIFIED: Codex is not installed on the development machine; the prompt argument is an
     /// assumption and must be checked before `initialPromptArgument` is turned on.
