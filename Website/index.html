@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="C2D Terminal is a native macOS terminal and workspace for developers who work with Claude Code, local projects and Git.">
+<title>C2D Terminal — Native macOS workspace for Claude Code, Git and real terminals</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 1280px container; hero = copy left / tilted app window right with floating real-UI panels joined by violet light wires; highlights; "separate tools → one workspace" converge strip; screenshot cards; demo; philosophy; pricing; FAQ. Single dark theme = the app's Midnight Violet. Motion: CSS only + tiny scroll/IO script, all behind prefers-reduced-motion. */
+:root{
+  --bg:#0a0a12;
+  --bg-2:#101019;
+  --card:#12121c;
+  --line:#23233a;
+  --fg:#f2f2f8;
+  --fg-2:#a4a4bb;
+  --fg-3:#6c6c85;
+  --accent:#6f5cf1;
+  --accent-2:#8f80ff;
+  --accent-soft:rgba(111,92,241,.14);
+  --glow:rgba(143,128,255,.55);
+  --ok:#3fc380;
+  --warn:#e2b53f;
+  --font:"Inter","SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  --mono:"JetBrains Mono","SF Mono",Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent-2);outline-offset:3px}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.02em}
+p{margin:0}
+img{max-width:100%;display:block;height:auto}
+svg{display:block}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2)}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer;font-family:inherit;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease}
+.btn:hover{transform:translateY(-1px);border-color:rgba(111,92,241,.5)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 8px 30px rgba(111,92,241,.35)}
+.btn.primary:hover{background:#7b69f5;box-shadow:0 12px 36px rgba(111,92,241,.5)}
+.btn svg{width:18px;height:18px}
+.btn small{display:block;font-weight:400;font-size:12px;opacity:.8;line-height:1.2}
+.btn.big{padding:11px 18px;text-align:left}
+.btn.big svg{width:22px;height:22px}
+
+/* nav */
+.nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-block:14px;border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);background:rgba(10,10,18,.78);backdrop-filter:blur(14px);z-index:5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+.brand .mark{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;box-shadow:0 0 18px rgba(111,92,241,.5)}
+.brand .mark svg{width:18px;height:18px}
+.nav ul{list-style:none;margin:0;padding:0;display:flex;gap:6px;color:var(--fg-2);font-size:14px;font-weight:500}
+.nav ul a{padding:7px 12px;border-radius:8px;transition:color .18s,background .18s}
+.nav ul a:hover{color:var(--fg)}
+.nav ul a[aria-current="true"]{color:var(--fg);background:var(--accent-soft)}
+@media (max-width:900px){.nav ul{display:none}}
+
+/* hero */
+.hero-bg{position:relative;overflow:hidden}
+.hero-bg .glow{position:absolute;inset:-10% 0;pointer-events:none;will-change:transform;background:
+  radial-gradient(720px 440px at 70% 42%,rgba(111,92,241,.42),transparent 65%),
+  radial-gradient(520px 360px at 94% 18%,rgba(60,120,255,.22),transparent 60%),
+  radial-gradient(460px 340px at 58% 98%,rgba(150,70,220,.22),transparent 60%)}
+.hero-bg .ridge{position:absolute;left:0;right:0;bottom:-2px;height:140px;pointer-events:none;background:linear-gradient(180deg,transparent,var(--bg) 85%)}
+.hero{position:relative;display:grid;grid-template-columns:5fr 7fr;gap:56px;align-items:center;padding-block:72px 64px}
+.hero-copy{display:grid;gap:24px;min-width:0;position:relative;z-index:2}
+.hero h1{font-weight:700;font-size:clamp(34px,3.6vw,52px);line-height:1.1}
+.hero h1 span{color:var(--accent-2)}
+.hero .lede{font-size:17px;color:var(--fg-2);max-width:50ch;line-height:1.6}
+.cta{display:flex;flex-wrap:wrap;gap:14px;align-items:stretch}
+.checks{display:flex;flex-wrap:wrap;gap:12px 28px;font-size:14px;color:var(--fg-2)}
+.checks span{display:inline-flex;align-items:center;gap:8px}
+.checks svg{width:18px;height:18px;color:var(--accent-2)}
+.win{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);box-shadow:0 40px 100px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset}
+
+/* hero stage: tilted window + floating panels + wires */
+.stage{position:relative;min-width:0;perspective:1500px;padding:28px 64px 28px 52px}
+.hero-win{position:relative;z-index:1;transform:rotateY(-7deg) rotateX(3deg);transform-origin:50% 50%;will-change:transform}
+.wires{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.wires path{fill:none;stroke:url(#wire);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linecap:round;opacity:.9}
+.wires .dash{stroke:#c9c0ff;stroke-dasharray:4 14;opacity:.9}
+.wires circle{fill:var(--accent-2);filter:drop-shadow(0 0 6px var(--glow))}
+.fp{position:absolute;z-index:3;border:1px solid rgba(143,128,255,.35);border-radius:12px;background:rgba(18,18,30,.78);backdrop-filter:blur(10px);box-shadow:0 20px 50px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.03) inset,0 0 30px rgba(111,92,241,.12);padding:12px 14px;display:grid;gap:9px;font-size:13px;color:var(--fg-2);min-width:0}
+.fp .h{display:flex;align-items:center;gap:8px;color:var(--fg);font-weight:600;font-size:13px}
+.fp .h svg{width:15px;height:15px;color:var(--accent-2)}
+.fp ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.fp li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp li svg{width:13px;height:13px;color:var(--accent-2);flex:none}
+.fp li b{margin-left:auto;color:var(--warn);font-weight:600;font-family:var(--mono);font-size:11px}
+.fp .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fp .ok{color:var(--ok);font-weight:600}
+.fp .mono{font-family:var(--mono);font-size:11px;color:var(--fg-3)}
+.fp .inp{border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--fg-3);background:rgba(10,10,18,.6)}
+.fp .dots{display:flex;gap:5px}.fp .dots i{width:9px;height:9px;border-radius:50%;display:block}
+.fp .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:rgba(255,120,60,.14);color:#ff9a6b;border:1px solid rgba(255,140,80,.3);font-size:16px}
+.fp-explorer{left:0;top:16px;width:160px}
+.fp-git{left:0;bottom:54px;width:204px}
+.fp-claude{right:0;top:4px;width:178px}
+.fp-tasks{right:4px;top:44%;width:156px}
+.fp-themes{right:0;bottom:40px;width:160px}
+@media (prefers-reduced-motion:no-preference){
+  .fp{animation:float 7s ease-in-out infinite}
+  .fp-git{animation-duration:8.5s;animation-delay:-2s}.fp-claude{animation-duration:7.5s;animation-delay:-1s}.fp-tasks{animation-duration:9s;animation-delay:-4s}.fp-themes{animation-duration:8s;animation-delay:-3s}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .wires .dash{animation:wire 2.6s linear infinite}
+  @keyframes wire{to{stroke-dashoffset:-36}}
+  .hero-copy>*{animation:up .6s ease both}.hero-copy>*:nth-child(2){animation-delay:.06s}.hero-copy>*:nth-child(3){animation-delay:.12s}.hero-copy>*:nth-child(4){animation-delay:.18s}.hero-copy>*:nth-child(5){animation-delay:.24s}
+  .stage{animation:up .9s .15s ease both}
+  @keyframes up{from{opacity:.001;transform:translateY(12px)}to{opacity:1;transform:none}}
+}
+@media (max-width:1100px){.fp,.wires{display:none}.stage{padding:0}.hero-win{transform:none}}
+@media (max-width:960px){.hero{grid-template-columns:1fr;gap:36px}}
+
+/* highlights */
+.hl{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;padding-block:48px 56px}
+.hl>div{display:grid;grid-template-columns:44px 1fr;gap:16px;align-items:start;min-width:0}
+.hl .ic{width:44px;height:44px;border-radius:11px;border:1px solid rgba(111,92,241,.5);background:var(--accent-soft);display:grid;place-items:center;color:var(--accent-2);box-shadow:0 0 24px rgba(111,92,241,.15)}
+.hl .ic svg{width:22px;height:22px}
+.hl h3{font-size:16px;font-weight:600;margin-bottom:6px}
+.hl p{color:var(--fg-2);font-size:14.5px}
+@media (max-width:860px){.hl{grid-template-columns:1fr}}
+
+/* converge: separate tools → one workspace */
+.conv{position:relative;display:grid;grid-template-columns:4fr 8fr;gap:40px;align-items:center;padding-block:56px 72px;border-top:1px solid var(--line)}
+.conv .copy{display:grid;gap:20px;min-width:0}
+.conv h2{font-weight:700;font-size:clamp(26px,2.8vw,36px);line-height:1.15}
+.conv h2 span{color:var(--accent-2)}
+.conv .copy p{color:var(--fg-2);font-size:16px;max-width:44ch;line-height:1.6}
+.converge{position:relative;display:grid;grid-template-columns:repeat(4,1fr) 1.7fr;gap:20px;align-items:end;perspective:1400px;min-width:0}
+.converge .cw{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.converge .cw path{fill:none;stroke:url(#wire2);stroke-width:1.5;vector-effect:non-scaling-stroke;opacity:.7}
+.pane{position:relative;z-index:1;display:grid;gap:10px;min-width:0}
+.pane .lbl{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;line-height:1.25}
+.pane .lbl i{width:8px;height:8px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 10px var(--glow);margin-top:5px;flex:none}
+.pane .lbl small{display:block;color:var(--fg-3);font-weight:400;font-size:12px}
+.pane .img{height:220px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg-2);transform:rotateY(18deg) translateZ(0);transform-origin:left center;box-shadow:0 24px 50px rgba(0,0,0,.5);transition:transform .35s ease,border-color .35s ease}
+.pane:nth-child(2) .img{transform:rotateY(14deg)}.pane:nth-child(3) .img{transform:rotateY(10deg)}.pane:nth-child(4) .img{transform:rotateY(6deg)}
+.pane:hover .img{transform:rotateY(0);border-color:rgba(143,128,255,.6)}
+.pane img{width:100%;height:100%;object-fit:cover;object-position:left top}
+.pane.full{z-index:1}
+.pane.full .img{height:auto;transform:none;aspect-ratio:1600/962}
+.pane.full .lbl{color:var(--fg)}.pane.full .lbl small{color:var(--accent-2)}
+@media (max-width:1100px){.converge{grid-template-columns:repeat(2,1fr)}.pane.full{grid-column:1/-1}.pane .img{transform:none}.pane:nth-child(n) .img{transform:none}.converge .cw{display:none}}
+@media (max-width:960px){.conv{grid-template-columns:1fr}}
+
+/* cards */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.cards.two{grid-template-columns:3fr 2fr;margin-top:20px}
+.card{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:24px 24px 0;display:grid;grid-template-rows:auto 1fr;gap:20px;overflow:hidden;min-width:0;transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}
+.card:hover{transform:translateY(-4px);border-color:rgba(143,128,255,.55);box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(111,92,241,.2),0 0 40px rgba(111,92,241,.12)}
+.card .top{display:grid;gap:8px}
+.card .eyebrow{display:flex;align-items:center;gap:8px}
+.card .eyebrow svg{width:16px;height:16px}
+.card h3{font-size:17px;font-weight:600}
+.card p{color:var(--fg-2);font-size:14.5px;max-width:44ch}
+.card .img{border:1px solid var(--line);border-bottom:0;border-radius:10px 10px 0 0;overflow:hidden;background:var(--bg-2);align-self:end}
+.card .img img{width:100%;transition:transform .4s cubic-bezier(.2,.7,.2,1);transform-origin:center top}
+.card:hover .img img{transform:scale(1.05)}
+.card.themes{grid-template-columns:1fr 3fr;grid-template-rows:auto;align-items:center;padding-bottom:22px}
+.card.themes .img{border-bottom:1px solid var(--line);border-radius:10px}
+@media (max-width:960px){.cards,.cards.two{grid-template-columns:1fr}.card.themes{grid-template-columns:1fr}}
+
+section{padding-block:40px}
+.sec{padding-block:88px;border-top:1px solid var(--line)}
+.head{display:grid;gap:12px;max-width:640px;margin-bottom:40px}
+.head h2{font-weight:700;font-size:clamp(26px,2.8vw,34px);line-height:1.15}
+.head p{color:var(--fg-2);font-size:16px;line-height:1.6}
+
+/* demo */
+.demo{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000;aspect-ratio:16/9;max-width:100%;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.demo video{width:100%;height:100%;object-fit:cover;display:block}
+.demo .play{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:12px;background:linear-gradient(180deg,rgba(10,10,18,.15),rgba(10,10,18,.65));color:#fff;font-weight:600;cursor:default}
+.demo .play i{width:72px;height:72px;border-radius:50%;background:var(--accent);display:grid;place-items:center;box-shadow:0 10px 40px rgba(111,92,241,.5);transition:transform .2s}
+.demo .play:hover i{transform:scale(1.06)}
+.demo .play svg{width:28px;height:28px;margin-left:4px}
+.demo .play small{font-weight:400;color:var(--fg-2);font-size:13px}
+
+/* philosophy */
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.step{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:26px;display:grid;gap:10px;align-content:start;transition:transform .25s ease,border-color .25s ease}
+.step:hover{transform:translateY(-3px);border-color:rgba(143,128,255,.5)}
+.step .no{font-family:var(--mono);font-size:12px;color:var(--accent-2)}
+.step h3{font-size:17px;font-weight:600}
+.step p{color:var(--fg-2);font-size:15px}
+.step code{font-family:var(--mono);font-size:12px;color:var(--fg-3);white-space:normal;border-top:1px solid var(--line);padding-top:12px;margin-top:6px}
+@media (max-width:860px){.flow{grid-template-columns:1fr}}
+.principles{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:40px}
+.principles div{display:grid;gap:6px}
+.principles b{font-size:15px}
+.principles p{color:var(--fg-3);font-size:14px}
+@media (max-width:860px){.principles{grid-template-columns:repeat(2,1fr)}}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px}
+.plan{border:1px solid var(--line);border-radius:14px;padding:30px;display:grid;gap:18px;align-content:start;background:var(--card);transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+.plan:hover{transform:translateY(-4px);border-color:rgba(143,128,255,.55)}
+.plan.premium{border-color:rgba(111,92,241,.6);box-shadow:0 0 0 4px var(--accent-soft)}
+.plan .name{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:18px}
+.pill{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg-2)}
+.pill.ok{color:var(--ok);border-color:rgba(63,195,128,.4)}
+.pill.acc{color:var(--accent-2);border-color:rgba(111,92,241,.6);background:var(--accent-soft)}
+.plan .price{font-weight:700;font-size:36px;line-height:1;letter-spacing:-.02em}
+.plan .price small{font-weight:400;font-size:14px;color:var(--fg-3);letter-spacing:0}
+.plan ul{margin:0;padding:0;list-style:none;display:grid;gap:9px;color:var(--fg-2);font-size:15px}
+.plan li{display:flex;gap:10px}.plan li::before{content:"✓";color:var(--accent-2);flex:none}
+.plan .fine{font-size:13px;color:var(--fg-3)}
+@media (max-width:680px){.plans{grid-template-columns:1fr}}
+
+/* faq */
+.faq{max-width:760px;display:grid;gap:10px}
+details{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:0 20px;transition:border-color .2s}
+details[open],details:hover{border-color:rgba(143,128,255,.45)}
+summary{cursor:pointer;list-style:none;padding-block:16px;font-weight:600;display:flex;justify-content:space-between;gap:16px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--accent-2);font-size:20px;flex:none}
+details[open] summary::after{content:"–"}
+details p{color:var(--fg-2);padding-bottom:18px;font-size:15px}
+
+/* final + footer */
+.final{position:relative;padding-block:88px;border-top:1px solid var(--line);display:grid;gap:20px;justify-items:center;text-align:center;overflow:hidden}
+.final::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(600px 300px at 50% 100%,rgba(111,92,241,.28),transparent 70%)}
+.final>*{position:relative}
+.final h2{font-weight:700;font-size:clamp(28px,3vw,40px);line-height:1.15;max-width:18ch}
+.final p{color:var(--fg-2);max-width:54ch}
+footer{border-top:1px solid var(--line);padding-block:28px 40px;display:flex;flex-wrap:wrap;gap:12px 32px;justify-content:space-between;color:var(--fg-3);font-size:13px}
+footer ul{list-style:none;margin:0;padding:0;display:flex;gap:20px}
+
+/* scroll reveal (applied by script only when motion is allowed and the element starts below the fold) */
+.pre{opacity:0;transform:translateY(18px)}
+.in{opacity:1;transform:none;transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8f80ff" stop-opacity="0"/><stop offset=".5" stop-color="#8f80ff"/><stop offset="1" stop-color="#5ac8ff" stop-opacity=".6"/></linearGradient>
+    <linearGradient id="wire2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8f80ff" stop-opacity=".1"/><stop offset="1" stop-color="#8f80ff"/></linearGradient>
+  </defs>
+  <symbol id="i-term" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m8 10 3 2-3 2M13 14h3"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4-4m-4 4-4-4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-2M12 13.5v2"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 1.5 1.5L8 6M4 13l1.5 1.5L8 12M4 19l1.5 1.5L8 18M11 7h9M11 13h9M11 19h9"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2s-1-2 0-3 2 0 4 0a3 3 0 0 0 3-3 10 10 0 0 0-9-10z"/><circle cx="7.5" cy="12" r="1"/><circle cx="9.5" cy="8" r="1"/><circle cx="14" cy="7" r="1"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+</svg>
+
+<div class="wrap">
+<nav class="nav">
+  <a class="brand" href="#top"><span class="mark"><svg><use href="#i-term"/></svg></span>C2D Terminal</a>
+  <ul id="menu">
+    <li><a href="#workspace">Workspace</a></li>
+    <li><a href="#git">Git &amp; Agents</a></li>
+    <li><a href="#philosophy">Philosophy</a></li>
+    <li><a href="#pricing">Pricing</a></li>
+    <li><a href="#faq">FAQ</a></li>
+  </ul>
+  <a class="btn primary" href="#download"><svg><use href="#i-dl"/></svg>Download for macOS</a>
+</nav>
+</div>
+
+<div class="hero-bg" id="top">
+<div class="glow" id="glow"></div>
+<div class="wrap">
+<header class="hero">
+  <div class="hero-copy">
+    <span class="eyebrow">A native macOS developer workspace</span>
+    <h1>One workspace.<br>Every agent.<br><span>Full control.</span></h1>
+    <p class="lede">C2D Terminal is a native macOS terminal and workspace for developers who work with Claude Code, local projects, Git, and real development workflows, all in one app.</p>
+    <div class="cta">
+      <a class="btn primary big" href="#download"><svg><use href="#i-dl"/></svg><span>Download for macOS<small>Apple Silicon (M1/M2/M3/M4)</small></span></a>
+      <a class="btn big" href="#demo"><svg><use href="#i-play"/></svg>Watch demo</a>
+    </div>
+    <div class="checks">
+      <span><svg><use href="#i-check"/></svg>Native macOS</span>
+      <span><svg><use href="#i-check"/></svg>Free to start</span>
+      <span><svg><use href="#i-check"/></svg>Local-first, your own provider access</span>
+    </div>
+  </div>
+
+  <div class="stage" id="workspace">
+    <svg class="wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M14 22 C 20 26, 24 30, 30 34"/><path class="dash" d="M14 22 C 20 26, 24 30, 30 34"/>
+      <path d="M16 78 C 22 74, 26 70, 32 66"/><path class="dash" d="M16 78 C 22 74, 26 70, 32 66"/>
+      <path d="M70 30 C 76 26, 80 22, 86 18"/><path class="dash" d="M70 30 C 76 26, 80 22, 86 18"/>
+      <path d="M72 52 C 78 52, 82 52, 88 52"/><path class="dash" d="M72 52 C 78 52, 82 52, 88 52"/>
+      <path d="M70 72 C 76 76, 80 80, 86 84"/><path class="dash" d="M70 72 C 76 76, 80 80, 86 84"/>
+      <circle cx="30" cy="34" r=".6"/><circle cx="32" cy="66" r=".6"/><circle cx="70" cy="30" r=".6"/><circle cx="72" cy="52" r=".6"/><circle cx="70" cy="72" r=".6"/>
+    </svg>
+    <div class="win hero-win" id="hero-win"><img src="shots/shot1.jpg" width="1600" height="962" alt="C2D Terminal workspace: navigation rail, Explorer, Editor, Agent panel and a running zsh terminal"></div>
+
+    <div class="fp fp-explorer" aria-hidden="true"><div class="h"><svg><use href="#i-folder"/></svg>Explorer</div><ul><li><svg><use href="#i-folder"/></svg>App</li><li><svg><use href="#i-folder"/></svg>Packages</li><li><svg><use href="#i-folder"/></svg>docs</li><li><svg><use href="#i-folder"/></svg>Scripts</li></ul></div>
+    <div class="fp fp-git" aria-hidden="true"><div class="h"><svg><use href="#i-git"/></svg>Git Changes</div><ul><li><svg><use href="#i-file"/></svg>SyntaxHighlighter.swift<b>M</b></li><li><svg><use href="#i-file"/></svg>GitController.swift<b>M</b></li><li><svg><use href="#i-file"/></svg>AppModel.swift<b>M</b></li></ul></div>
+    <div class="fp fp-claude" aria-hidden="true"><div class="row"><span class="logo">✳</span><div><div class="h">Claude Code</div><div><span class="ok">Ready</span> <span class="mono">v2.1.303</span></div></div></div></div>
+    <div class="fp fp-tasks" aria-hidden="true"><div class="h"><svg><use href="#i-task"/></svg>Tasks</div><div class="inp">New task…</div><div class="inp">Add details…</div><div class="inp">Stay focused…</div></div>
+    <div class="fp fp-themes" aria-hidden="true"><div class="h"><svg><use href="#i-palette"/></svg>Themes</div><div class="dots"><i style="background:#8f80ff"></i><i style="background:#4fd1c5"></i><i style="background:#f0a04b"></i><i style="background:#e9e9f2"></i></div><div>Midnight Violet</div></div>
+  </div>
+</header>
+</div>
+<div class="ridge"></div>
+</div>
+
+<div class="wrap">
+<div class="hl">
+  <div class="rv"><span class="ic"><svg><use href="#i-term"/></svg></span><div><h3>Real terminal</h3><p>A fast, native macOS terminal with real PTY sessions, deep scrollback, multiple tabs, and full shell support.</p></div></div>
+  <div class="rv"><span class="ic"><svg><use href="#i-git"/></svg></span><div><h3>Git built in</h3><p>View changes, stage files or hunks, commit, and manage your branches directly in C2D Terminal.</p></div></div>
+  <div class="rv"><span class="ic"><svg><use href="#i-layers"/></svg></span><div><h3>Agent sessions</h3><p>Run Claude Code and other agents in a dedicated panel. Manage providers and sessions with a single click.</p></div></div>
+</div>
+
+<section class="conv" id="one">
+  <div class="copy rv">
+    <span class="eyebrow">From separate together</span>
+    <h2>From separate tools to <span>one workspace.</span></h2>
+    <p>Terminal, editor, file explorer, Git, agents, tasks and more. Everything you need, working together in a single, flexible, multi-panel workspace.</p>
+    <div class="cta"><a class="btn" href="#demo"><svg><use href="#i-play"/></svg>See it in action</a></div>
+  </div>
+  <div class="converge rv">
+    <svg class="cw" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M12 40 C 40 40, 50 60, 72 60"/><path d="M30 40 C 50 40, 55 58, 72 58"/><path d="M48 40 C 60 40, 62 56, 72 56"/><path d="M62 40 C 68 40, 68 54, 72 54"/>
+    </svg>
+    <div class="pane"><div class="lbl"><i></i><span>Explorer<small>Your files</small></span></div><div class="img"><img src="shots/p-explorer.jpg" width="370" height="565" alt="Explorer panel with the project tree"></div></div>
+    <div class="pane"><div class="lbl"><i></i><span>Editor<small>Write and refactor</small></span></div><div class="img"><img src="shots/p-editor.jpg" width="538" height="565" alt="Editor panel showing project.yml"></div></div>
+    <div class="pane"><div class="lbl"><i></i><span>Agent<small>Claude Code and more</small></span></div><div class="img"><img src="shots/p-agent.jpg" width="565" height="565" alt="Agent panel with Start Agent button"></div></div>
+    <div class="pane"><div class="lbl"><i></i><span>Git<small>Changes and commits</small></span></div><div class="img"><img src="shots/p-git.jpg" width="300" height="560" alt="Changes panel with nine modified files"></div></div>
+    <div class="pane full"><div class="lbl"><i></i><span>One workspace<small>Everything in sync</small></span></div><div class="img win"><img src="shots/shot1.jpg" width="1600" height="962" alt="The full C2D Terminal workspace with all panels docked"></div></div>
+  </div>
+</section>
+
+<section id="git" style="padding-top:0">
+<div class="cards">
+  <div class="card rv">
+    <div class="top"><span class="eyebrow"><svg><use href="#i-git"/></svg>Git integration</span><h3>Built-in Git, no context switching</h3><p>View changes, stage files or hunks, commit, and manage your branches and worktrees directly in C2D Terminal.</p></div>
+    <div class="img"><img src="shots/card-git.jpg" width="500" height="430" alt="Changes panel with a commit message field, Commit all button and the list of modified files"></div>
+  </div>
+  <div class="card rv">
+    <div class="top"><span class="eyebrow"><svg><use href="#i-cpu"/></svg>Agents</span><h3>Work with Claude Code and more</h3><p>Run Claude Code in a dedicated panel. C2D detects installed providers and manages sessions with a single click. Codex and other CLI agents follow through adapters.</p></div>
+    <div class="img"><img src="shots/card-agents.jpg" width="1000" height="225" alt="Agents screen: Claude Code ready with path and version, Codex not installed, no sessions yet"></div>
+  </div>
+  <div class="card rv">
+    <div class="top"><span class="eyebrow"><svg><use href="#i-task"/></svg>Tasks</span><h3>Keep track of your work</h3><p>Create tasks, add details and dependencies, and stay focused. An agent saying "done" never marks a task verified.</p></div>
+    <div class="img"><img src="shots/card-tasks.jpg" width="900" height="330" alt="Tasks screen with new task field, filter and empty list"></div>
+  </div>
+</div>
+<div class="cards two">
+  <div class="card themes rv">
+    <div class="top"><span class="eyebrow"><svg><use href="#i-palette"/></svg>Theme marketplace</span><h3>Make it yours</h3><p>Choose from built-in themes like Midnight Violet, Ocean, Ember and Daylight. Apply instantly and switch anytime.</p></div>
+    <div class="img"><img src="shots/card-themes.jpg" width="1420" height="200" alt="Four theme cards: Midnight Violet active, Ocean, Ember and Daylight"></div>
+  </div>
+  <div class="card rv">
+    <div class="top"><span class="eyebrow"><svg><use href="#i-folder"/></svg>Projects</span><h3>Open your projects, instantly</h3><p>Manage your projects and jump into your workspace with its saved layout. Everything stays local on your Mac.</p></div>
+    <div class="img"><img src="shots/card-projects.jpg" width="1300" height="200" alt="Projects screen in the light Daylight theme with one active project"></div>
+  </div>
+</div>
+</section>
+
+<section class="sec" id="demo">
+  <div class="head rv"><span class="eyebrow">Demo</span><h2>See a full loop in two minutes</h2><p>Open a project, start Claude Code in a panel, watch the changes land in Git, run the tests in the same terminal, commit.</p></div>
+  <div class="demo rv">
+    <video id="demo-video" poster="shots/shot1.jpg" preload="none" playsinline controls></video>
+    <div class="play" id="demo-overlay"><i><svg><use href="#i-play"/></svg></i><span>Watch the demo</span><small>Video coming soon</small></div>
+  </div>
+</section>
+
+<section class="sec" id="philosophy">
+  <div class="head rv"><span class="eyebrow">Philosophy</span><h2>Agents propose. You inspect. You decide.</h2><p>The rule behind every agent integration: no change is accepted, committed or pushed because an agent said it was done.</p></div>
+  <div class="flow">
+    <div class="step rv"><span class="no">01 · Session</span><h3>An agent works in a real PTY</h3><p>Rooted at the project directory you chose. Its output and process state are shown as they are, never summarized into "thinking…".</p><code>zsh · Running · pid 47545 · started in ~/myprojects/c2d-terminal</code></div>
+    <div class="step rv"><span class="no">02 · Review</span><h3>Its changes land in Git, not in your trust</h3><p>Changed files appear in the Changes panel with diffs and hunks, right next to the editor.</p><code>CHANGES 9 · Stage all · Select a file to see its diff</code></div>
+    <div class="step rv"><span class="no">03 · Decide</span><h3>You run tests, then commit</h3><p>Approvals, commits and pushes are explicit actions. The terminal that runs your test suite is the same terminal, so the evidence sits next to the claim.</p><code>swift test --package-path Packages/C2DCore → 160 tests passed</code></div>
+  </div>
+  <div class="principles rv">
+    <div><b>Terminal-first</b><p>Real shell compatibility is the foundation, not a feature.</p></div>
+    <div><b>Truthful state</b><p>Unknown, running, failed and done are never conflated.</p></div>
+    <div><b>Local-first</b><p>No C2D cloud is required. Source stays on your machine.</p></div>
+    <div><b>Bring your own access</b><p>Use your own provider accounts. C2D does not resell tokens.</p></div>
+  </div>
+</section>
+
+<section class="sec" id="pricing">
+  <div class="head rv"><span class="eyebrow">Pricing</span><h2>The terminal is free. Optimization is the upgrade.</h2><p>Premium never locks basic terminal, editor or Git features. It pays for C2D-developed token optimization, and only once the savings are measured against task success.</p></div>
+  <div class="plans">
+    <div class="plan rv">
+      <div class="name"><span>Core</span><span class="pill ok">Free</span></div>
+      <div class="price">$0 <small>forever</small></div>
+      <ul><li>Real PTY terminals, unlimited</li><li>Editor, explorer, dockable layouts</li><li>Full Git panel with worktrees</li><li>Agent session manager</li><li>Tasks with dependencies</li><li>Themes and token usage measurement</li></ul>
+    </div>
+    <div class="plan premium rv">
+      <div class="name"><span>Premium</span><span class="pill acc">Planned</span></div>
+      <div class="price">$4.99 <small>/ month · target price</small></div>
+      <ul><li>Everything in Core</li><li>C2D token optimization features</li><li>Savings reported against task success, never estimated</li><li>Usage analysis across agents and projects</li></ul>
+      <p class="fine">Pricing and feature set are subject to validation. Billing is not live yet.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="faq">
+  <div class="head rv"><span class="eyebrow">FAQ</span><h2>Questions developers ask first</h2></div>
+  <div class="faq rv">
+    <details open><summary>Is it a real terminal or a chat window?</summary><p>A real terminal. Every shell and agent runs in a genuine PTY session with your own shell config and PATH. Interactive CLIs work as they do in Terminal.app.</p></details>
+    <details><summary>Which agents are supported?</summary><p>Claude Code today. C2D detects the installed binary and version and runs it in a session it owns. OpenAI Codex and other CLI agents follow through adapters; C2D never pretends they share one API.</p></details>
+    <details><summary>Does my code leave my machine?</summary><p>Not to C2D. Core development needs no C2D cloud service. Agents talk to the provider you configured with your own access, and you are responsible for those charges.</p></details>
+    <details><summary>Will an agent commit or push for me?</summary><p>No. Commits, pushes, pulls and discards are explicit actions in the Git panel. An agent finishing a task never changes your repository state on its own.</p></details>
+    <details><summary>What are the requirements?</summary><p>macOS 15 or later. Built in Swift with SwiftUI and AppKit. Signed and notarized builds outside the Mac App Store are planned.</p></details>
+  </div>
+</section>
+
+<section class="final" id="download">
+  <span class="eyebrow">Get C2D Terminal</span>
+  <h2>Ready when your agents are.</h2>
+  <p>Native macOS. Free core. Your projects, your agents, your Git, in one window.</p>
+  <div class="cta"><a class="btn primary big" href="#download"><svg><use href="#i-dl"/></svg><span>Download for macOS<small>Apple Silicon (M1/M2/M3/M4) · macOS 15+</small></span></a></div>
+</section>
+
+<footer>
+  <span>© 2026 C2D Works · C2D Terminal</span>
+  <ul><li><a href="#workspace">Workspace</a></li><li><a href="#philosophy">Philosophy</a></li><li><a href="#pricing">Pricing</a></li><li><a href="#faq">FAQ</a></li></ul>
+</footer>
+</div>
+
+<script>
+(function(){
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var narrow=matchMedia('(max-width: 1100px)').matches;
+
+  // Demo video: add <source src="demo.mp4"> to #demo-video; the overlay then becomes a play button.
+  var v=document.getElementById('demo-video'),o=document.getElementById('demo-overlay');
+  if(v&&o){
+    var has=!!(v.currentSrc||v.querySelector('source')||v.getAttribute('src'));
+    if(has){o.querySelector('small').textContent='2 min';o.style.cursor='pointer';
+      o.addEventListener('click',function(){o.hidden=true;v.play().catch(function(){})});}
+  }
+
+  // Nav active state
+  var links=[].slice.call(document.querySelectorAll('#menu a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'))}).filter(Boolean);
+  if('IntersectionObserver' in window&&secs.length){
+    var nav=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;
+      links.forEach(function(a){a.setAttribute('aria-current',a.getAttribute('href')==='#'+e.target.id?'true':'false')})})},{rootMargin:'-40% 0px -55% 0px'});
+    secs.forEach(function(s){nav.observe(s)});
+  }
+
+  if(reduce)return;
+
+  // Scroll reveal: only for elements that start below the fold, so the first frame is complete.
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.remove('pre');e.target.classList.add('in');io.unobserve(e.target)}})},{rootMargin:'0px 0px -8% 0px'});
+    [].forEach.call(document.querySelectorAll('.rv'),function(el){
+      if(el.getBoundingClientRect().top>innerHeight){el.classList.add('pre');io.observe(el)}
+    });
+  }
+
+  // Hero: window flattens as you scroll; glow drifts slightly (parallax). Skipped on narrow screens.
+  var win=document.getElementById('hero-win'),glow=document.getElementById('glow'),ticking=false;
+  function frame(){
+    ticking=false;var y=scrollY;
+    if(!narrow&&win){var t=Math.min(1,y/420);win.style.transform='rotateY('+(-7*(1-t))+'deg) rotateX('+(3*(1-t))+'deg)';}
+    if(glow){glow.style.transform='translateY('+(y*0.12)+'px)';}
+  }
+  addEventListener('scroll',function(){if(!ticking){ticking=true;requestAnimationFrame(frame)}},{passive:true});
+  frame();
+})();
+</script>
+</body>
+</html>

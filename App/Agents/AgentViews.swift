@@ -56,7 +56,7 @@ struct AgentPanelView: View {
                     Button("Start Agent…") { showLaunch = true }.tint(Theme.accent).buttonStyle(.borderedProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.terminalBackground)
+                .background(Theme.panel)   // placeholder, not a terminal: readable in light themes
             }
         }
         .sheet(isPresented: $showLaunch) { AgentLaunchSheet(workspace: workspace, targetPanel: controller.panelID) }

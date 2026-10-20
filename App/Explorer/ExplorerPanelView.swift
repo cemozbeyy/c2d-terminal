@@ -65,8 +65,9 @@ struct ExplorerPanelView: View {
             } else {
                 Spacer().frame(width: 10)
             }
-            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.text").foregroundStyle(entry.isDirectory ? Theme.info : Theme.textSecondary).font(Theme.Typography.detail)
-            Text(entry.name).font(Theme.Typography.body).lineLimit(1)
+            let style = entry.isDirectory ? (explorer.expanded.contains(entry.path) ? "folder" : "folder.fill", Theme.info) : FileIcon.style(for: entry.name)
+            Image(systemName: style.0).foregroundStyle(style.1).font(Theme.Typography.body).frame(width: 16)
+            Text(entry.name).font(Theme.Typography.title2).foregroundStyle(Theme.textPrimary).lineLimit(1)   // colour lives in the icon; tinted names fail on tinted panels
             if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(Theme.textSecondary) }
             Spacer()
             if let badge = workspace.git.badges[entry.path] {
@@ -75,7 +76,7 @@ struct ExplorerPanelView: View {
                     .padding(.trailing, 8).accessibilityLabel("git status \(badge)")
             }
         }
-        .padding(.leading, CGFloat(depth) * 14 + 8).padding(.vertical, 2)
+        .padding(.leading, CGFloat(depth) * 16 + 8).padding(.vertical, 4)
         .background(explorer.selectedPath == entry.path ? Theme.accentSoft : .clear)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -116,5 +117,31 @@ struct ExplorerPanelView: View {
         default: break
         }
         naming = nil
+    }
+}
+
+/// Symbol and tint per file type so a tree is scannable at a glance (VS-Code-style file icons, SF Symbols only).
+enum FileIcon {
+    static func style(for name: String) -> (String, Color) {
+        let lower = name.lowercased()
+        if lower == "dockerfile" || lower.hasPrefix("docker-compose") { return ("shippingbox.fill", Theme.info) }
+        if lower.hasSuffix(".lock") || lower.hasSuffix("-lock.json") || lower.hasSuffix("-lock.yaml") { return ("lock.fill", Theme.textMuted) }
+        switch (lower as NSString).pathExtension {
+        case "swift": return ("swift", .orange)
+        case "js", "mjs", "cjs", "jsx": return ("curlybraces", .yellow)
+        case "ts", "tsx", "mts": return ("curlybraces", Theme.info)
+        case "py", "rb", "go", "rs", "java", "kt", "c", "cpp", "h", "m", "cs", "php": return ("chevron.left.forwardslash.chevron.right", .mint)
+        case "sh", "zsh", "bash", "fish", "command": return ("terminal.fill", Theme.success)
+        case "md", "markdown", "txt", "rst": return ("text.alignleft", Theme.accent)
+        case "json", "yml", "yaml", "toml", "plist", "xml", "ini", "env", "cfg", "conf": return ("gearshape.fill", .purple)
+        case "html", "htm", "vue", "svelte": return ("chevron.left.slash.chevron.right", .orange)
+        case "css", "scss", "sass", "less": return ("paintbrush.fill", .pink)
+        case "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "icns", "heic": return ("photo.fill", .pink)
+        case "pdf": return ("doc.richtext.fill", Theme.error)
+        case "sqlite", "db", "sql": return ("cylinder.fill", .teal)
+        case "zip", "tar", "gz", "dmg": return ("archivebox.fill", Theme.textMuted)
+        case "xcodeproj", "xcworkspace", "pbxproj": return ("hammer.fill", Theme.info)
+        default: return ("doc.text", Theme.textSecondary)
+        }
     }
 }

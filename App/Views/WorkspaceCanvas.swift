@@ -390,7 +390,7 @@ struct TerminalPanelView: View {
                     Button("New Session") { controller.startNewSession() }.tint(Theme.accent).buttonStyle(.borderedProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.terminalBackground)
+                .background(Theme.panel)   // placeholder, not a terminal: readable in light themes
             }
         }
     }
