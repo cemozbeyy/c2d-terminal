@@ -178,7 +178,11 @@ private func twoGroups() -> (WorkspaceLayout, Panel, Panel, NodeID, NodeID) {
 
     @Test func presetsDegradeToAvailableKinds() {
         let full = LayoutPreset.development.makeLayout(available: [.projectExplorer, .editor, .terminal, .agentSession])
-        #expect(full.panels.count == 4)
+        #expect(full.panels.count == 3, "development preset has no agent column")
+        #expect(full.panels.values.map(\.kind).sorted { $0.rawValue < $1.rawValue } == [.editor, .projectExplorer, .terminal])
+        if case .split(_, .vertical, let rows, _) = full.root, rows.count == 2, case .split(_, .horizontal, _, _) = rows[0] {} else {
+            Issue.record("development preset should be explorer|editor on top, terminal underneath")
+        }
         #expect(full.isBuiltIn)
         let partial = LayoutPreset.development.makeLayout(available: [.terminal])
         #expect(partial.panels.count == 1)

@@ -30,8 +30,15 @@ struct C2DTerminalApp: App {
                             try? await Task.sleep(for: .seconds(2))
                             openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory))
                             try? await Task.sleep(for: .seconds(1))
-                            delegate.newWindowForTab(nil)   // what the native "+" in the tab bar sends
+                            // What the native "+" in the tab bar sends: `newWindowForTab:` with a nil target up the responder chain.
+                            let sent = NSApp.sendAction(Selector(("newWindowForTab:")), to: nil, from: NSApp.keyWindow)
+                            debugTrace("terminalWindowCheck: plusViaResponderChain=\(sent) keyWindow=\(NSApp.keyWindow?.title ?? "nil")")
                             try? await Task.sleep(for: .milliseconds(2500))
+                            for (win, panes) in model.standaloneWindowPanes {   // what each pane's split button sends
+                                if let first = panes.first { model.splitStandalone(window: win, after: first) }
+                            }
+                            try? await Task.sleep(for: .milliseconds(1500))
+                            debugTrace("terminalWindowCheck: split panesPerWindow=\(model.standaloneWindowPanes.values.map(\.count)) running=\(model.standaloneTerminals.values.filter(\.isRunning).count)")
                             let wins = NSApp.windows.filter { $0.tabbingIdentifier == "c2d.terminal" && $0.isVisible }
                             let tabs = wins.first?.tabbedWindows?.count ?? -1
                             let running = model.standaloneTerminals.values.filter(\.isRunning).count
@@ -135,7 +142,7 @@ struct C2DTerminalApp: App {
         // Plain terminals in their own windows; macOS groups them as native tabs (the "+" in the tab
         // bar and ⌘N open another). They belong to no page and end when their window closes.
         WindowGroup("Terminal", id: "terminal", for: TerminalWindowRequest.self) { $request in
-            TerminalWindowView(directory: request?.directory ?? NSHomeDirectory())
+            TerminalWindowView(request: request ?? TerminalWindowRequest(directory: NSHomeDirectory()))
                 .environment(model)
                 .frame(minWidth: 520, minHeight: 320)
         }
@@ -150,21 +157,28 @@ struct TerminalWindowRequest: Hashable, Codable {
     var directory: String
 }
 
-/// One standalone shell for the terminal `WindowGroup`.
+/// One terminal window: native macOS tabs across the top, side-by-side shells (panes) inside a tab.
 private struct TerminalWindowView: View {
     @Environment(AppModel.self) private var model
-    let directory: String
-    @State private var controller: TerminalPanelController?
+    @Environment(\.dismiss) private var dismiss
+    let request: TerminalWindowRequest
 
     var body: some View {
-        Group {
-            if let controller { TerminalPanelView(controller: controller) } else { Color.clear }
+        HSplitView {
+            ForEach(model.standaloneWindowPanes[request.id] ?? [], id: \.self) { id in
+                if let t = model.standaloneTerminals[id] {
+                    TerminalPanelView(controller: t,
+                                      onSplit: { model.splitStandalone(window: request.id, after: id) },
+                                      onClose: { Task { if await !model.closeStandalonePane(window: request.id, id) { dismiss() } } })
+                        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }
         .background(Theme.window)
         .background(TerminalWindowConfigurator())
-        .onAppear { if controller == nil { controller = model.makeStandaloneTerminal(projectPath: directory) } }
-        .onDisappear { if let id = controller?.panelID { Task { await model.closeStandaloneTerminal(id) } } }
-        .navigationTitle(URL(fileURLWithPath: directory).lastPathComponent)
+        .onAppear { model.openStandaloneWindow(request.id, directory: request.directory) }
+        .onDisappear { Task { await model.closeStandaloneWindow(request.id) } }
+        .navigationTitle(URL(fileURLWithPath: request.directory).lastPathComponent)
     }
 }
 
@@ -184,6 +198,9 @@ private struct TerminalWindowConfigurator: NSViewRepresentable {
             host.addTabbedWindow(w, ordered: .above)
         }
         w.makeKeyAndOrderFront(nil)
+        // iTerm-style: the tab bar (with its "+") is always there, even for a single tab.
+        if w.tabGroup?.isTabBarVisible != true { w.toggleTabBar(nil) }
+        debugTrace("terminalWindow: configured '\(w.title)' tabGroup=\(w.tabGroup != nil) tabBarVisible=\(w.tabGroup?.isTabBarVisible ?? false) tabs=\(w.tabbedWindows?.count ?? 1)")
     }
 }
 

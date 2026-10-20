@@ -1017,6 +1017,38 @@ final class AppModel {
         guard let t = standaloneTerminals.removeValue(forKey: id) else { return }
         await t.terminateAndClose()
     }
+
+    /// Panes of each terminal window, left to right: iTerm-style side-by-side splits. Native macOS
+    /// tabs are the window's tabs; this is the split inside one tab.
+    // ponytail: one horizontal row per window; a nested split tree would reuse WorkspaceLayout if ever needed.
+    private(set) var standaloneWindowPanes: [UUID: [PanelID]] = [:]
+
+    /// First pane of a window, created when the window appears (idempotent).
+    func openStandaloneWindow(_ window: UUID, directory: String) {
+        guard standaloneWindowPanes[window] == nil else { return }
+        standaloneWindowPanes[window] = [makeStandaloneTerminal(projectPath: directory).panelID]
+    }
+
+    /// Adds a shell to the right of `pane`, starting in that pane's current directory.
+    func splitStandalone(window: UUID, after pane: PanelID) {
+        guard var panes = standaloneWindowPanes[window], let i = panes.firstIndex(of: pane) else { return }
+        let dir = standaloneTerminals[pane]?.resolutionDirectory ?? terminalWindowDirectory
+        panes.insert(makeStandaloneTerminal(projectPath: dir).panelID, at: i + 1)
+        standaloneWindowPanes[window] = panes
+    }
+
+    /// Ends one pane's shell; returns whether the window still has panes.
+    @discardableResult
+    func closeStandalonePane(window: UUID, _ pane: PanelID) async -> Bool {
+        standaloneWindowPanes[window]?.removeAll { $0 == pane }
+        await closeStandaloneTerminal(pane)
+        return !(standaloneWindowPanes[window]?.isEmpty ?? true)
+    }
+
+    /// Window closed: every pane's shell ends with it.
+    func closeStandaloneWindow(_ window: UUID) async {
+        for pane in standaloneWindowPanes.removeValue(forKey: window) ?? [] { await closeStandaloneTerminal(pane) }
+    }
 }
 
 // MARK: - Launch benchmark helpers (Bible Part 15 §14.1)

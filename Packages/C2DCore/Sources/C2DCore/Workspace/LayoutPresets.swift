@@ -16,7 +16,7 @@ public enum LayoutPreset: String, CaseIterable, Sendable {
 
     public var summary: String {
         switch self {
-        case .development: "Explorer, editor, terminal and one agent."
+        case .development: "Explorer beside the editor, terminal underneath."
         case .multiAgent: "Several agent sessions with the task overview."
         case .terminalFocus: "A large terminal and little else."
         case .codeReview: "Changed files, diff and editor side by side."
@@ -45,14 +45,14 @@ public enum LayoutPreset: String, CaseIterable, Sendable {
         let root: LayoutNode?
         switch self {
         case .development:
+            // VS-Code shape (owner request 2026-10-20, ADR-024): explorer docked left of the editor,
+            // terminal full-width underneath. No agent column; agents open on demand.
             let explorer = keep(panel(.projectExplorer, "Explorer"))
             let editor = keep(panel(.editor, "Editor"))
             let terminal = keep(panel(.terminal, "Terminal"))
-            let agent = keep(panel(.agentSession, "Agent"))
-            root = split(.horizontal, [
-                (group([explorer]), 0.18),
-                (split(.vertical, [(group([editor]), 0.65), (group([terminal]), 0.35)]), 0.57),
-                (group([agent]), 0.25),
+            root = split(.vertical, [
+                (split(.horizontal, [(group([explorer]), 0.18), (group([editor]), 0.82)]), 0.7),
+                (group([terminal]), 0.3),
             ])
         case .multiAgent:
             let a1 = keep(panel(.agentSession, "Agent 1"))

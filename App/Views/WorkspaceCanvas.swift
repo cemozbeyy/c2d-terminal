@@ -340,6 +340,10 @@ struct UnavailablePanelView: View {
 struct TerminalPanelView: View {
     @Environment(AppModel.self) private var model
     let controller: TerminalPanelController
+    /// Terminal-window panes only: split this pane to the right / close this pane. Workspace panels
+    /// split by drag-and-drop and close from their group tab, so they pass nothing.
+    var onSplit: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -360,6 +364,16 @@ struct TerminalPanelView: View {
                 Spacer()
                 if controller.isRunning {
                     Button("Stop") { Task { await controller.terminate() } }.help("SIGHUP, then SIGKILL after 2 s")
+                } else if controller.state?.isFinished == true {
+                    Button("New Session") { controller.startNewSession() }.help("Starts a fresh shell here; the exit output above is replaced.")
+                }
+                if let onSplit {
+                    Button(action: onSplit) { Image(systemName: "rectangle.split.2x1").font(Theme.Typography.detail).fontWeight(.semibold) }
+                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split right: a new shell beside this one")
+                }
+                if let onClose {
+                    Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Close this pane (ends its shell)")
                 }
             }
             .padding(.horizontal, Theme.space2).frame(height: 28)

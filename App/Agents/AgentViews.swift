@@ -30,6 +30,9 @@ struct AgentPanelView: View {
                 Spacer()
                 if controller.isRunning {
                     Button("Stop") { Task { await controller.terminate() } }.help("SIGHUP, then SIGKILL after 2 s. Files already changed stay changed.")
+                } else if controller.state?.isFinished == true, controller.agentPlan != nil {
+                    // The surface stays mounted so the exit output is readable; the restart lives in the header.
+                    Button("New Session") { controller.startNewSession() }.help("Starts the provider again in the same directory.")
                 }
             }
             .padding(.horizontal, Theme.space2).padding(.vertical, 6)

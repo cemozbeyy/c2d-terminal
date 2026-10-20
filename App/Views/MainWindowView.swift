@@ -97,6 +97,7 @@ struct NavigationRail: View {
 
 struct TopBar: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @State private var showAgentLaunch = false
     #if DEBUG
     @State private var showOptimizerPopover = UserDefaults.standard.bool(forKey: "c2dOptimizerPopoverCheck")   // `-c2dOptimizerPopoverCheck YES`: start with the card open (screenshot checks)
@@ -137,7 +138,9 @@ struct TopBar: View {
                     Divider()
                     Button("Open Folder…") { model.promptOpenProject() }
                     Divider()
-                    Button("New Terminal Window") { (NSApp.delegate as? AppDelegate)?.newWindowForTab(nil) }.keyboardShortcut("n", modifiers: .command)
+                    // Same path as the File-menu ⌘N. `NSApp.delegate as? AppDelegate` is nil under SwiftUI
+                    // (it installs its own wrapper delegate), so the menu must open the window itself.
+                    Button("New Terminal Window") { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
                     } label: {
                         Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                             .frame(width: 24, height: 24).contentShape(Rectangle())
