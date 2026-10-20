@@ -98,6 +98,10 @@ public struct GitBranch: Hashable, Sendable {
     public let isCurrent: Bool
     public let upstream: String?
     public let head: String
+    /// Tip commit, for VS Code-style branch pickers.
+    public var lastCommitDate: Date? = nil
+    public var lastCommitAuthor = ""
+    public var lastCommitSubject = ""
 }
 
 public struct GitCommit: Hashable, Sendable {
@@ -538,6 +542,12 @@ public actor GitRepository {
 
     /// Pushes the current branch to its configured upstream. Requires an upstream (never sets one
     /// implicitly, §10) and never force-pushes from the UI.
+    /// VS Code's "Publish Branch": pushes the current branch to `remote` and sets it as upstream.
+    public func publish(remote: String = "origin") async throws {
+        let r = try await run(["push", "-u", remote, "HEAD"], allowFailure: true)
+        guard r.code == 0 else { throw Self.classifyRemoteFailure(code: r.code, stderr: r.stderr) }
+    }
+
     public func push(force: Bool = false) async throws {
         guard try await hasUpstream() else { throw GitError.noUpstreamConfigured }
         var args = ["push"]
@@ -564,16 +574,19 @@ public actor GitRepository {
     // MARK: Branches and history
 
     public func branches() async throws -> [GitBranch] {
-        let out = try await run(["for-each-ref", "refs/heads", "--format=%(refname:short)\u{1f}%(HEAD)\u{1f}%(upstream:short)\u{1f}%(objectname:short)"]).stdout
+        // Most recently committed first, like VS Code's branch picker.
+        let out = try await run(["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\u{1f}%(HEAD)\u{1f}%(upstream:short)\u{1f}%(objectname:short)\u{1f}%(committerdate:unix)\u{1f}%(authorname)\u{1f}%(subject)"]).stdout
         return out.split(separator: "\n").compactMap { line in
             let p = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
-            guard p.count == 4 else { return nil }
-            return GitBranch(name: String(p[0]), isCurrent: p[1] == "*", upstream: p[2].isEmpty ? nil : String(p[2]), head: String(p[3]))
+            guard p.count == 7 else { return nil }
+            return GitBranch(name: String(p[0]), isCurrent: p[1] == "*", upstream: p[2].isEmpty ? nil : String(p[2]), head: String(p[3]),
+                             lastCommitDate: TimeInterval(p[4]).map(Date.init(timeIntervalSince1970:)), lastCommitAuthor: String(p[5]), lastCommitSubject: String(p[6]))
         }
     }
 
-    public func createBranch(_ name: String, checkout: Bool) async throws {
-        _ = try await run(checkout ? ["checkout", "-b", name] : ["branch", name])
+    /// `from` is the start point (branch, tag or commit); nil means HEAD.
+    public func createBranch(_ name: String, checkout: Bool, from: String? = nil) async throws {
+        _ = try await run((checkout ? ["checkout", "-b", name] : ["branch", name]) + (from.map { [$0] } ?? []))
     }
 
     /// Refuses on a dirty tree unless forced; never stashes silently (Bible Part 6 §10).

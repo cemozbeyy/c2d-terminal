@@ -158,36 +158,6 @@ struct TopBar: View {
                 .padding(3)
                 .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
 
-                if ws.git.isAvailable {
-                    Menu {
-                        Button { model.destination = .workspace; ws.toggleGitPanel() } label: { Label("Show Changes", systemImage: "arrow.triangle.branch") }
-                        Divider()
-                        Button("Fetch") { Task { await ws.git.fetch() } }
-                        Button(ws.git.behindCount > 0 ? "Pull (↓\(ws.git.behindCount))" : "Pull") { Task { await ws.git.pull() } }
-                        Button(ws.git.aheadCount > 0 ? "Push (↑\(ws.git.aheadCount))" : "Push") { Task { await ws.git.push() } }
-                        if !ws.git.hasUpstream {
-                            Divider()
-                            Text("No upstream — set one from the terminal: git push -u origin \(ws.git.status?.branch ?? "")")
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.branch").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
-                            Text(ws.git.branchLabel).font(Theme.Typography.body).fontWeight(.medium).lineLimit(1).foregroundStyle(Theme.textPrimary)
-                            if ws.git.isBusy {
-                                ProgressView().controlSize(.mini).scaleEffect(0.7)
-                            } else {
-                                Circle().fill(ws.git.status?.isClean == true ? Theme.success : Theme.warning).frame(width: 7, height: 7)
-                                    .accessibilityLabel(ws.git.status?.isClean == true ? "clean" : "changes")
-                            }
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().clickCursor()
-                    .disabled(ws.git.isBusy)
-                    .help(ws.git.repository?.isLinkedWorktree == true ? "Linked worktree: \(ws.git.repository?.root ?? "")" : "Fetch / Pull / Push · \(ws.git.repository?.root ?? "")")
-                }
-
                 Menu {
                     ForEach(LayoutPreset.allCases, id: \.self) { p in Button(p.displayName) { ws.apply(p) } }
                     Divider()
@@ -299,6 +269,7 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: Theme.space3) {
             if let ws = model.workspace {
+                if ws.git.isAvailable { GitStatusBarItems(git: ws.git) }
                 Text("\(ws.layout.visiblePanelIDs.count) panel(s)")
                 if let err = ws.lastSaveError {
                     Label("Layout not saved: \(err)", systemImage: "exclamationmark.triangle").foregroundStyle(Theme.warning)

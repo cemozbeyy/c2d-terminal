@@ -77,6 +77,15 @@ import Testing
         #expect(GitRepository.remoteFailureTitle(.commandFailed(code: 1, stderr: ""), operation: "Fetch") == "Fetch failed")
     }
 
+    @Test func publishPushesNewBranchAndSetsUpstream() async throws {
+        let r = try await makeRemotePair(); defer { r.cleanup() }
+        try await r.work.createBranch("feature", checkout: true)
+        #expect(try await r.work.hasUpstream() == false)
+        try await r.work.publish()
+        #expect(try await r.work.hasUpstream())
+        #expect(try await run(r.originURL, ["branch", "--list", "feature"]).contains("feature"))
+    }
+
     // MARK: Pull without upstream
 
     @Test func pullWithoutUpstreamThrowsBeforeTouchingAnything() async throws {

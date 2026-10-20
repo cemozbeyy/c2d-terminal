@@ -15,8 +15,6 @@ struct GitPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch").foregroundStyle(Theme.warning)
-                Text(git.branchLabel).font(.caption).bold().lineLimit(1).truncationMode(.middle).layoutPriority(1)
                 if git.isBusy { ProgressView().controlSize(.mini) }
                 Spacer(minLength: 4)
                 Picker("", selection: $section) {
@@ -567,5 +565,156 @@ struct ConflictResolutionView: View {
         case .addedByUs: "added by us"; case .addedByThem: "added by them"
         case .deletedByUs: "deleted by us"; case .deletedByThem: "deleted by them"; case .unknown: "conflict"
         }
+    }
+}
+
+/// VS Code's status-bar Git items: "⑂ main*" opens the branch picker, the sync button pulls/pushes
+/// ("0↓ 1↑") or publishes a branch that has no upstream yet.
+struct GitStatusBarItems: View {
+    @Bindable var git: GitController
+    @State private var picking = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { picking = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.branch")
+                    Text((git.status?.branch ?? git.branchLabel) + (git.status?.isClean == false ? "*" : "")).lineLimit(1)
+                }
+                .padding(.horizontal, 6).frame(maxHeight: .infinity).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).clickCursor().help("Checkout branch…")
+            .popover(isPresented: $picking, arrowEdge: .top) { BranchPicker(git: git, isPresented: $picking) }
+
+            Button { Task { git.hasUpstream ? await git.sync() : await git.publish() } } label: {
+                HStack(spacing: 4) {
+                    if git.isBusy { ProgressView().controlSize(.mini).scaleEffect(0.7) }
+                    else { Image(systemName: git.hasUpstream ? "arrow.triangle.2.circlepath" : "icloud.and.arrow.up") }
+                    if git.hasUpstream { Text("\(git.behindCount)↓ \(git.aheadCount)↑") }
+                }
+                .padding(.horizontal, 6).frame(maxHeight: .infinity).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).clickCursor().disabled(git.isBusy)
+            .help(git.hasUpstream ? "Synchronize Changes (pull ↓\(git.behindCount), push ↑\(git.aheadCount))" : "Publish Branch to origin")
+        }
+        .foregroundStyle(Theme.textSecondary)
+    }
+}
+
+/// VS Code's "Select a branch or tag to checkout" quick pick: create a branch (from HEAD or from
+/// another branch) or check one out. Errors (e.g. a dirty tree refusing checkout) stay visible here.
+private struct BranchPicker: View {
+    @Bindable var git: GitController
+    @Binding var isPresented: Bool
+    @State private var query = ""
+    @State private var mode = Mode.pick
+    @FocusState private var focused: Bool
+
+    enum Mode: Equatable { case pick, pickBase, name(from: String?) }
+
+    private var filtered: [GitBranch] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? git.branches : git.branches.filter { $0.name.lowercased().contains(q) }
+    }
+
+    private var placeholder: String {
+        switch mode {
+        case .pick: "Select a branch to checkout"
+        case .pickBase: "Select a ref to create the branch from"
+        case .name(let from): "Branch name" + (from.map { " (from \($0))" } ?? "") + " — ⏎ to create"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField(placeholder, text: $query).textFieldStyle(.plain).font(.system(size: 13)).focused($focused)
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(Theme.field, in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent.opacity(0.7)))
+                .padding(8)
+                .onSubmit(submit)
+            if let err = git.lastError {
+                Text(err).font(.caption).foregroundStyle(Theme.warning).lineLimit(4).padding(.horizontal, 10).padding(.bottom, 6)
+            }
+            if case .name = mode {} else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if mode == .pick {
+                            action("plus", "Create new branch…") { mode = .name(from: nil); query = "" }
+                            action("plus", "Create new branch from…") { mode = .pickBase; query = "" }
+                            Divider().padding(.vertical, 3)
+                        }
+                        ForEach(filtered, id: \.self) { b in
+                            BranchPickerRow(branch: b) { choose(b) }
+                        }
+                    }
+                    .padding(.horizontal, 4).padding(.bottom, 6)
+                }
+                .frame(maxHeight: 380)
+            }
+        }
+        .frame(width: 520)
+        .background(Theme.panel)
+        .task { git.lastError = nil; focused = true; await git.loadBranchesAndHistory() }
+    }
+
+    private func action(_ symbol: String, _ title: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Label(title, systemImage: symbol).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
+        }
+        .buttonStyle(PickerRowStyle()).clickCursor()
+    }
+
+    private func choose(_ b: GitBranch) {
+        if mode == .pickBase { mode = .name(from: b.name); query = ""; return }
+        guard !b.isCurrent else { isPresented = false; return }
+        Task { await git.checkout(b.name); if git.lastError == nil { isPresented = false } }
+    }
+
+    private func submit() {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        switch mode {
+        case .name(let from):
+            guard !q.isEmpty else { return }
+            Task { await git.createBranch(q, from: from); if git.lastError == nil { isPresented = false } }
+        case .pick, .pickBase:
+            if let first = filtered.first { choose(first) }
+        }
+    }
+}
+
+private struct BranchPickerRow: View {
+    let branch: GitBranch
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 11))
+                    Text(branch.name).font(.system(size: 13, weight: branch.isCurrent ? .semibold : .regular))
+                    if let d = branch.lastCommitDate { Text(d.formatted(.relative(presentation: .named))).font(.system(size: 11)).foregroundStyle(Theme.textMuted) }
+                    Spacer()
+                    if branch.isCurrent { Image(systemName: "checkmark").font(.system(size: 11)).foregroundStyle(Theme.accent) }
+                }
+                if !branch.lastCommitSubject.isEmpty {
+                    Text("\(branch.lastCommitAuthor) • \(branch.lastCommitSubject)").font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
+        }
+        .buttonStyle(PickerRowStyle()).clickCursor()
+    }
+}
+
+private struct PickerRowStyle: ButtonStyle {
+    @State private var hovering = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Theme.textPrimary)
+            .background(RoundedRectangle(cornerRadius: 4).fill(hovering || configuration.isPressed ? Theme.accent.opacity(0.25) : .clear))
+            .onHover { hovering = $0 }
     }
 }

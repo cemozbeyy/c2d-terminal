@@ -246,6 +246,15 @@ final class GitController {
         await loadBranchesAndHistory()
     }
     func push() async { await perform("Push", remote: true) { try await $0.push() } }
+    func publish() async { await perform("Publish branch", remote: true) { try await $0.publish() } }
+
+    /// VS Code's status-bar sync: fetch, pull when behind, push when ahead.
+    func sync() async {
+        await fetch()
+        guard lastError == nil else { return }
+        if behindCount > 0 { await pull(); guard lastError == nil else { return } }
+        if aheadCount > 0 { await push() }
+    }
 
     var aheadCount: Int { status?.ahead ?? 0 }
     var behindCount: Int { status?.behind ?? 0 }
@@ -368,8 +377,8 @@ final class GitController {
         await loadBranchesAndHistory()
     }
 
-    func createBranch(_ name: String) async {
-        await perform("Create branch") { try await $0.createBranch(name, checkout: true) }
+    func createBranch(_ name: String, from: String? = nil) async {
+        await perform("Create branch") { try await $0.createBranch(name, checkout: true, from: from) }
         await loadBranchesAndHistory()
     }
 

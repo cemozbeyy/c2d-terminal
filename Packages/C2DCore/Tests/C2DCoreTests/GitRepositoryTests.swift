@@ -147,6 +147,7 @@ import Testing
         try await r.repo.createBranch("feature", checkout: true)
         var b = try await r.repo.branches()
         #expect(b.map(\.name).sorted() == ["feature", "main"] && b.first { $0.isCurrent }?.name == "feature")
+        #expect(b[0].lastCommitSubject == "c1" && b[0].lastCommitDate != nil)
         try r.write("a", "2")
         await #expect(throws: GitError.dirtyWorkingTree) { try await r.repo.checkout(branch: "main") }
         #expect(try r.read("a") == "2", "refusal left the change alone")
@@ -156,6 +157,8 @@ import Testing
         b = try await r.repo.branches()
         #expect(b.first { $0.isCurrent }?.name == "main")
         #expect(try await r.repo.status().branch == "main")
+        try await r.repo.createBranch("from-feature", checkout: false, from: "feature")
+        #expect(try await r.repo.branches().contains { $0.name == "from-feature" && !$0.isCurrent })
     }
 
     @Test func logIsNewestFirstAndBounded() async throws {
