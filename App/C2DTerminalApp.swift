@@ -37,7 +37,9 @@ struct C2DTerminalApp: App {
                             for (win, panes) in model.standaloneWindowPanes {   // what each pane's split button sends
                                 if let first = panes.first { model.splitStandalone(window: win, after: first) }
                             }
+                            if let first = model.standaloneWindowTitles.first { model.revealStandaloneWindow(first.id) }   // what the page menu sends
                             try? await Task.sleep(for: .milliseconds(1500))
+                            debugTrace("terminalWindowCheck: menuTitles=\(model.standaloneWindowTitles.map(\.title)) keyIsTerminal=\(NSApp.keyWindow?.tabbingIdentifier == "c2d.terminal")")
                             debugTrace("terminalWindowCheck: split panesPerWindow=\(model.standaloneWindowPanes.values.map(\.count)) running=\(model.standaloneTerminals.values.filter(\.isRunning).count)")
                             let wins = NSApp.windows.filter { $0.tabbingIdentifier == "c2d.terminal" && $0.isVisible }
                             let tabs = wins.first?.tabbedWindows?.count ?? -1
@@ -52,6 +54,17 @@ struct C2DTerminalApp: App {
                     }
                     #endif
                     #if DEBUG
+                    // `-c2dResizeCheck YES`: after 3 s shrink the main window by 400×200 pt; every terminal
+                    // panel's grid must follow (trace "grid …"), proving Bible Part 4 §5.2 resize→PTY.
+                    if UserDefaults.standard.bool(forKey: "c2dResizeCheck") {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(3))
+                            guard let w = NSApp.windows.first(where: { $0.isVisible && $0.tabbingIdentifier != "c2d.terminal" }) else { return }
+                            var f = w.frame; f.size.width -= 400; f.size.height -= 200; f.origin.y += 200
+                            debugTrace("resizeCheck: \(Int(w.frame.width))x\(Int(w.frame.height)) → \(Int(f.width))x\(Int(f.height))")
+                            w.setFrame(f, display: true)
+                        }
+                    }
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(2))
                         let desc = NSApp.windows.map { "\(type(of: $0)) '\($0.title)' \(Int($0.frame.width))x\(Int($0.frame.height)) visible=\($0.isVisible)" }
@@ -175,7 +188,7 @@ private struct TerminalWindowView: View {
             }
         }
         .background(Theme.window)
-        .background(TerminalWindowConfigurator())
+        .background(TerminalWindowConfigurator(window: request.id))
         .onAppear { model.openStandaloneWindow(request.id, directory: request.directory) }
         .onDisappear { Task { await model.closeStandaloneWindow(request.id) } }
         .navigationTitle(URL(fileURLWithPath: request.directory).lastPathComponent)
@@ -185,12 +198,17 @@ private struct TerminalWindowView: View {
 /// Marks the hosting NSWindow as a terminal tab: shared tabbing identifier (so windows group), never
 /// restored by AppKit, and attached deterministically to an existing terminal window's tab group.
 private struct TerminalWindowConfigurator: NSViewRepresentable {
+    let window: UUID
     /// Configures as soon as AppKit attaches the view to its window — no timing assumptions.
-    final class HookView: NSView { override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); TerminalWindowConfigurator.configure(window) } }
-    func makeNSView(context: Context) -> NSView { HookView() }
+    final class HookView: NSView {
+        var id = UUID()
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); TerminalWindowConfigurator.configure(window, id: id) }
+    }
+    func makeNSView(context: Context) -> NSView { let v = HookView(); v.id = window; return v }
     func updateNSView(_ nsView: NSView, context: Context) {}
-    static func configure(_ w: NSWindow?) {
+    static func configure(_ w: NSWindow?, id: UUID) {
         guard let w, w.tabbingIdentifier != "c2d.terminal" else { return }
+        w.identifier = AppModel.terminalWindowIdentifier(id)   // lets the main window's menu bring this one back
         w.isRestorable = false
         w.tabbingIdentifier = "c2d.terminal"
         w.tabbingMode = .preferred

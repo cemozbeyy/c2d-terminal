@@ -141,6 +141,13 @@ struct TopBar: View {
                     // Same path as the File-menu ⌘N. `NSApp.delegate as? AppDelegate` is nil under SwiftUI
                     // (it installs its own wrapper delegate), so the menu must open the window itself.
                     Button("New Terminal Window") { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
+                    let windows = model.standaloneWindowTitles
+                    if !windows.isEmpty {
+                        Divider()
+                        Section("Terminal Windows") {   // bring one back when other apps cover it
+                            ForEach(windows, id: \.id) { w in Button(w.title) { model.revealStandaloneWindow(w.id) } }
+                        }
+                    }
                     } label: {
                         Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                             .frame(width: 24, height: 24).contentShape(Rectangle())

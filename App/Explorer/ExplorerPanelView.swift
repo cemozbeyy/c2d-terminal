@@ -8,6 +8,7 @@ struct ExplorerPanelView: View {
     @State private var naming: (kind: String, directory: String, entry: FileEntry?)?
     @State private var newName = ""
     @State private var trashTarget: FileEntry?
+    @State private var hoveredPath: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,8 +78,9 @@ struct ExplorerPanelView: View {
             }
         }
         .padding(.leading, CGFloat(depth) * 16 + 8).padding(.vertical, 4)
-        .background(explorer.selectedPath == entry.path ? Theme.accentSoft : .clear)
-        .contentShape(Rectangle())
+        .background(explorer.selectedPath == entry.path ? Theme.accentSoft : hoveredPath == entry.path ? Theme.elevated : .clear)
+        .contentShape(Rectangle()).clickCursor()
+        .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
         .onTapGesture {
             explorer.selectedPath = entry.path
             if entry.isDirectory { explorer.toggle(entry) } else { workspace.openFile(path: entry.path) }

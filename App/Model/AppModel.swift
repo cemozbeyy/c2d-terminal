@@ -1045,6 +1045,24 @@ final class AppModel {
         return !(standaloneWindowPanes[window]?.isEmpty ?? true)
     }
 
+    /// Open terminal windows for menus, sorted by title: (window id, "folder · 2 panes").
+    var standaloneWindowTitles: [(id: UUID, title: String)] {
+        standaloneWindowPanes.compactMap { id, panes in
+            guard let first = panes.first, let t = standaloneTerminals[first] else { return nil }
+            let name = URL(fileURLWithPath: t.projectPath).lastPathComponent
+            return (id, panes.count > 1 ? "\(name) · \(panes.count) panes" : name)
+        }.sorted { $0.title < $1.title }
+    }
+
+    static func terminalWindowIdentifier(_ window: UUID) -> NSUserInterfaceItemIdentifier { .init("c2d.terminal.\(window.uuidString)") }
+
+    /// Brings a terminal window (possibly a background tab, possibly behind other apps) to the front.
+    func revealStandaloneWindow(_ window: UUID) {
+        guard let w = NSApp.windows.first(where: { $0.identifier == Self.terminalWindowIdentifier(window) }) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil)
+    }
+
     /// Window closed: every pane's shell ends with it.
     func closeStandaloneWindow(_ window: UUID) async {
         for pane in standaloneWindowPanes.removeValue(forKey: window) ?? [] { await closeStandaloneTerminal(pane) }
