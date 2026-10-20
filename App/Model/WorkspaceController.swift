@@ -97,6 +97,18 @@ final class WorkspaceController {
     /// one, or docks a fresh one on the far left when the project's layout has none.
     func toggleExplorer() { toggleDockedPanel(.projectExplorer, title: "Explorer") }
 
+    /// "Reveal in Explorer View": expands the file's ancestors, selects it and shows the explorer.
+    func revealInExplorer(_ path: String) {
+        let file = ExplorerController.canonical(path)
+        let root = ExplorerController.canonical(explorer.rootPath)
+        var dir = (file as NSString).deletingLastPathComponent
+        var ancestors: [String] = []
+        while dir.hasPrefix(root), dir != root { ancestors.append(dir); dir = (dir as NSString).deletingLastPathComponent }
+        for d in ancestors.reversed() { explorer.expanded.insert(d); explorer.reload(d) }
+        explorer.selectedPath = file
+        if !layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == .projectExplorer }) { toggleExplorer() }
+    }
+
     /// The Claude Code executable path when that provider is installed — i.e. whether "AI is connected"
     /// for features like generating a commit message. nil until providers are discovered / if absent.
     var claudePath: String? { app.providerPaths["claude-code"] }

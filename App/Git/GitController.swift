@@ -32,8 +32,10 @@ final class GitController {
     var abortRequest: MergeOperation?
     var commitMessage = ""
     private(set) var lastCommitHash: String?
-    /// Path waiting for discard confirmation (destructive, Bible Part 6 §9).
-    var discardRequest: String?
+    /// Paths waiting for discard confirmation (destructive, Bible Part 6 §9).
+    var discardRequest: [String]?
+    /// When set, the History section shows only commits touching this path ("View File History").
+    var historyPath: String?
     var worktreeRemoveRequest: GitWorktree?
 
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
@@ -53,6 +55,9 @@ final class GitController {
     }
 
     var isAvailable: Bool { repository != nil }
+
+    /// Status paths are repo-root relative.
+    func absolutePath(_ path: String) -> String { ((repository?.root ?? projectPath) as NSString).appendingPathComponent(path) }
 
     var branchLabel: String {
         guard let s = status else { return repository == nil ? "no git" : "…" }
@@ -140,7 +145,7 @@ final class GitController {
         guard let repo = repository else { return }
         do {
             branches = try await repo.branches()
-            history = try await repo.log(limit: 50)
+            history = try await repo.log(limit: 50, path: historyPath)
         } catch { lastError = describe(error) }
     }
 
@@ -250,9 +255,33 @@ final class GitController {
     func unstage(_ paths: [String]) async { await perform("Unstage") { try await $0.unstage(paths: paths) } }
     func stageAll() async { await perform("Stage all") { try await $0.stageAll() } }
 
-    func discard(_ path: String) async {
+    func discard(_ paths: [String]) async {
         discardRequest = nil
-        await perform("Discard") { try await $0.discardChanges(paths: [path]) }
+        await perform("Discard") { try await $0.discardChanges(paths: paths) }
+    }
+
+    /// Writes HEAD's copy of `path` to a temp file and returns it, for "Open File (HEAD)".
+    func headCopy(of path: String) async -> String? {
+        guard let repo = repository else { return nil }
+        do {
+            let data = try await repo.contentAtHEAD(path: path)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-head-\(UUID().uuidString.prefix(8))")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("\((path as NSString).lastPathComponent) (HEAD)")
+            try data.write(to: url)
+            return url.path
+        } catch { lastError = "Open File (HEAD): \(describe(error))"; return nil }
+    }
+
+    /// Appends `path` (anchored to the repo root) to the root `.gitignore`.
+    func addToGitignore(_ path: String) async {
+        guard let root = repository?.root else { return }
+        let url = URL(fileURLWithPath: root).appendingPathComponent(".gitignore")
+        var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+        text += "/\(path)\n"
+        do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { lastError = "Add to .gitignore: \(error.localizedDescription)" }
+        await refresh()
     }
 
     var stagedCount: Int { status?.entries.filter(\.hasStagedChange).count ?? 0 }

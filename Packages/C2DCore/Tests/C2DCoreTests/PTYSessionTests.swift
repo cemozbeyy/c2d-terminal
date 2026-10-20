@@ -184,6 +184,20 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
         }
     }
 
+    /// A full-screen program (Claude Code, vim) only redraws at the new width when SIGWINCH reaches it,
+    /// which needs the slave to be the child's controlling tty — the PTY size alone is not enough.
+    @Test func resizeDeliversSIGWINCHToTheChild() async throws {
+        try await withSession(sh("trap 'echo WINCH-$(stty size)' WINCH; echo TPGID-$(ps -o tpgid= -p $$ | tr -d ' ')-READY; while :; do sleep 0.1; done")) { session in
+            try await session.start()
+            let collector = OutputCollector(session)
+            let ready = await collector.contains("-READY")
+            #expect(!ready.contains("TPGID-0-"), "child has no controlling tty")
+            try await session.resize(TerminalSize(rows: 30, columns: 101))
+            let text = await collector.contains("WINCH-30 101")
+            #expect(text.contains("WINCH-30 101"))
+        }
+    }
+
     @Test func initialSizeIsAppliedAndResizePropagates() async throws {
         try await withSession(program("/bin/sh", [], ).withSize(rows: 31, columns: 97)) { session in
             try await session.start()

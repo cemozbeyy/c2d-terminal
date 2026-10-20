@@ -166,6 +166,15 @@ import Testing
         #expect(log[0].shortHash.count >= 7 && log[0].date <= Date())
     }
 
+    @Test func fileHistoryAndHeadContent() async throws {
+        let r = try await makeRepo(); defer { r.cleanup() }
+        try r.write("a", "1"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "a1")
+        try r.write("b", "1"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "b1")
+        try r.write("a", "2")
+        #expect(try await r.repo.log(path: "a").map(\.subject) == ["a1"])
+        #expect(String(decoding: try await r.repo.contentAtHEAD(path: "a"), as: UTF8.self) == "1")
+    }
+
     @Test func worktreeLifecycleAndDirtyRefusal() async throws {
         let r = try await makeRepo(); defer { r.cleanup() }
         try r.write("a", "1"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "c1")

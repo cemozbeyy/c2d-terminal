@@ -176,6 +176,7 @@ section{padding-block:40px}
 .demo .play i{width:72px;height:72px;border-radius:50%;background:var(--accent);display:grid;place-items:center;box-shadow:0 10px 40px rgba(111,92,241,.5);transition:transform .2s}
 .demo .play:hover i{transform:scale(1.06)}
 .demo .play svg{width:28px;height:28px;margin-left:4px}
+.demo .play[hidden]{display:none}
 .demo .play small{font-weight:400;color:var(--fg-2);font-size:13px}
 
 /* philosophy */
@@ -363,9 +364,9 @@ footer ul{list-style:none;margin:0;padding:0;display:flex;gap:20px}
 </section>
 
 <section class="sec" id="demo">
-  <div class="head rv"><span class="eyebrow">Demo</span><h2>See a full loop in two minutes</h2><p>Open a project, start Claude Code in a panel, watch the changes land in Git, run the tests in the same terminal, commit.</p></div>
+  <div class="head rv"><span class="eyebrow">Demo</span><h2>See a full loop in 45 seconds</h2><p>Open a project, work next to Claude Code in a panel, switch themes, run the tests in the same terminal and review the changes in Git.</p></div>
   <div class="demo rv">
-    <video id="demo-video" poster="shots/shot1.jpg" preload="none" playsinline controls></video>
+    <video id="demo-video" poster="shots/demo-poster.jpg" preload="none" playsinline><source src="demo.mp4" type="video/mp4"></video>
     <div class="play" id="demo-overlay"><i><svg><use href="#i-play"/></svg></i><span>Watch the demo</span><small>Video coming soon</small></div>
   </div>
 </section>
@@ -431,12 +432,14 @@ footer ul{list-style:none;margin:0;padding:0;display:flex;gap:20px}
   var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   var narrow=matchMedia('(max-width: 1100px)').matches;
 
-  // Demo video: add <source src="demo.mp4"> to #demo-video; the overlay then becomes a play button.
+  // Demo video: #demo-video has a <source>, so the overlay then becomes a play button.
   var v=document.getElementById('demo-video'),o=document.getElementById('demo-overlay');
   if(v&&o){
     var has=!!(v.currentSrc||v.querySelector('source')||v.getAttribute('src'));
-    if(has){o.querySelector('small').textContent='2 min';o.style.cursor='pointer';
-      o.addEventListener('click',function(){o.hidden=true;v.play().catch(function(){})});}
+    if(has){o.querySelector('small').textContent='45 sec';o.style.cursor='pointer';
+      o.addEventListener('click',function(){v.play().catch(function(){})});
+      v.addEventListener('play',function(){o.hidden=true;v.controls=true});
+      v.addEventListener('ended',function(){o.hidden=false;v.controls=false;v.load()});}
   }
 
   // Nav active state

@@ -1,3 +1,4 @@
+import AppKit
 import C2DCore
 import SwiftUI
 
@@ -9,6 +10,7 @@ struct GitPanelView: View {
     @State private var newWorktreePath = ""
     @State private var newWorktreeBranch = ""
     @State private var newWorktreeCreates = true
+    @State private var collapsed: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +49,10 @@ struct GitPanelView: View {
         .alert("Discard changes?", isPresented: Binding(get: { git.discardRequest != nil }, set: { if !$0 { git.discardRequest = nil } })) {
             Button("Discard", role: .destructive) { if let p = git.discardRequest { Task { await git.discard(p) } } }
             Button("Cancel", role: .cancel) { git.discardRequest = nil }
-        } message: { Text("Unstaged modifications to \(git.discardRequest ?? "") are replaced with the index version. This cannot be undone.") }
+        } message: {
+            let paths = git.discardRequest ?? []
+            Text("Unstaged modifications to \(paths.count == 1 ? paths[0] : "\(paths.count) files") are replaced with the index version. This cannot be undone.")
+        }
         .alert("Remove worktree?", isPresented: Binding(get: { git.worktreeRemoveRequest != nil }, set: { if !$0 { git.worktreeRemoveRequest = nil } })) {
             Button("Remove", role: .destructive) { if let w = git.worktreeRemoveRequest { Task { await git.removeWorktree(w) } } }
             Button("Cancel", role: .cancel) { git.worktreeRemoveRequest = nil }
@@ -77,100 +82,113 @@ struct GitPanelView: View {
         VStack(spacing: 0) {
             operationBanner
             composer
-            Divider()
-            VSplitView {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if let s = git.status {
-                            if s.isClean { Text("No changes").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
-                            let conflicted = s.entries.filter(\.isConflicted)
-                            let staged = s.entries.filter(\.hasStagedChange)
-                            let unstaged = s.entries.filter(\.hasUnstagedChange)
-                            let untracked = s.entries.filter(\.isUntracked)
-                            if !conflicted.isEmpty { group("Merge Changes", conflicted, staged: false, showStage: false) }
-                            if !staged.isEmpty { group("Staged Changes", staged, staged: true, showStage: true) }
-                            if !unstaged.isEmpty { group("Changes", unstaged, staged: false, showStage: true) }
-                            if !untracked.isEmpty { group("Untracked", untracked, staged: false, showStage: true) }
+            if git.selectedPath == nil {
+                changeList
+            } else {
+                VSplitView {
+                    changeList
+                    Group {
+                        if git.selectedIsConflicted, let path = git.selectedPath {
+                            ConflictResolutionView(git: git, workspace: workspace, path: path)
                         } else {
-                            Text("Reading status…").font(.caption).foregroundStyle(Theme.textSecondary).padding(8)
+                            DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
+                                     hunkActionTitle: git.hunkActionTitle,
+                                     onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } },
+                                     onClose: { git.selectedPath = nil })
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 100)
                 }
-                .frame(maxWidth: .infinity, minHeight: 120)
-                Group {
-                    if git.selectedIsConflicted, let path = git.selectedPath {
-                        ConflictResolutionView(git: git, workspace: workspace, path: path)
-                    } else {
-                        DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
-                                 hunkActionTitle: git.hunkActionTitle,
-                                 onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } })
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 100)
             }
         }
+    }
+
+    private var changeList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if let s = git.status {
+                    if s.isClean { Text("No changes").font(.caption).foregroundStyle(Theme.textSecondary).padding(10) }
+                    let conflicted = s.entries.filter(\.isConflicted)
+                    let staged = s.entries.filter(\.hasStagedChange)
+                    let unstaged = s.entries.filter(\.hasUnstagedChange)
+                    let untracked = s.entries.filter(\.isUntracked)
+                    if !conflicted.isEmpty { group("Merge Changes", conflicted, kind: .conflicted) }
+                    if !staged.isEmpty { group("Staged Changes", staged, kind: .staged) }
+                    if !unstaged.isEmpty { group("Changes", unstaged, kind: .unstaged) }
+                    if !untracked.isEmpty { group("Untracked", untracked, kind: .untracked) }
+                } else {
+                    Text("Reading status…").font(.caption).foregroundStyle(Theme.textSecondary).padding(10)
+                }
+            }
+            .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
     }
 
     private var diffTitle: String {
-        guard let p = git.selectedPath else { return "Select a file to see its diff" }
+        guard let p = git.selectedPath else { return "" }
         return (git.selectedIsStaged ? "Index vs HEAD — " : "Working tree vs index — ") + p
     }
 
-    private func group(_ title: String, _ entries: [GitStatusEntry], staged: Bool, showStage: Bool) -> some View {
-        Section {
-            ForEach(entries, id: \.self) { e in
-                GitChangeRow(entry: e, staged: staged, showStage: showStage, git: git)
-            }
-        } header: {
-            HStack(spacing: 6) {
-                Text(title.uppercased()).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.textMuted)
-                Text("\(entries.count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textMuted)
-                    .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.elevated, in: Capsule())
-                Spacer()
-                if showStage && !staged {
-                    Button(staged ? "Unstage all" : "Stage all") { Task { await git.stageAll() } }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent).clickCursor()
-                }
-            }
-            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 3)
+    @ViewBuilder private func group(_ title: String, _ entries: [GitStatusEntry], kind: GitChangeGroup) -> some View {
+        let open = !collapsed.contains(title)
+        GitGroupHeader(title: title, count: entries.count, open: open, kind: kind, paths: entries.map(\.path), git: git, workspace: workspace) {
+            if open { collapsed.insert(title) } else { collapsed.remove(title) }
         }
+        if open {
+            ForEach(entries, id: \.self) { e in
+                GitChangeRow(entry: e, kind: kind, git: git, workspace: workspace, onHistory: { showHistory(for: e.path) })
+            }
+        }
+    }
+
+    private func showHistory(for path: String) {
+        git.historyPath = path
+        section = 3
+        Task { await git.loadBranchesAndHistory() }
     }
 
     private var composer: some View {
         VStack(spacing: 6) {
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $git.commitMessage).font(Theme.Typography.body).frame(height: 46).scrollContentBackground(.hidden)
-                    .padding(4).background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(Theme.borderSubtle))
-                if git.commitMessage.isEmpty {
-                    Text("Message (⌘⏎ to commit)").font(Theme.Typography.body).foregroundStyle(Theme.textMuted).padding(10).allowsHitTesting(false)
-                }
+            HStack(alignment: .top, spacing: 4) {
+                TextField("Message (⌘⏎ to commit on \"\(git.status?.branch ?? "HEAD")\")", text: $git.commitMessage, axis: .vertical)
+                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...8)
                 // ✨ Generate commit message — only when a Claude provider is connected (VS Code's sparkle).
                 if let claude = workspace.claudePath {
-                    Button {
-                        Task { await git.generateCommitMessage(claudePath: claude) }
-                    } label: {
+                    Button { Task { await git.generateCommitMessage(claudePath: claude) } } label: {
                         Group {
-                            if git.generatingMessage { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "sparkles").font(.system(size: 13, weight: .semibold)) }
+                            if git.generatingMessage { ProgressView().controlSize(.mini) }
+                            else { Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold)) }
                         }
-                        .frame(width: 22, height: 22)
+                        .frame(width: 16, height: 16).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).foregroundStyle(Theme.accent).clickCursor()
                     .disabled(git.generatingMessage || git.isBusy)
                     .help("Generate a commit message with Claude Code")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(6).allowsHitTesting(true)
                 }
             }
-            Button {
-                Task { await git.commit() }
-            } label: {
-                Text(git.stagedCount > 0 ? "Commit (\(git.stagedCount))" : "Commit all").frame(maxWidth: .infinity)
+            .padding(.horizontal, 6).padding(.vertical, 4)
+            .background(Theme.field, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.borderSubtle))
+            // VS Code's split commit button: primary action + a chevron menu, one 28pt bar.
+            HStack(spacing: 0) {
+                Button { Task { await git.commit() } } label: {
+                    Label(git.stagedCount > 0 ? "Commit (\(git.stagedCount))" : "Commit", systemImage: "checkmark")
+                        .font(.system(size: 13)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command)
+                Rectangle().fill(Theme.onAccent.opacity(0.35)).frame(width: 1, height: 16)
+                Menu {
+                    Button("Commit & Push") { Task { await git.commit(); if git.lastError == nil { await git.push() } } }
+                } label: { Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28).contentShape(Rectangle()) }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             }
-            .controlSize(.large).buttonStyle(.borderedProminent).tint(Theme.accent).clickCursor()
-            .disabled(!git.canCommit).keyboardShortcut(.return, modifiers: .command)
+            .foregroundStyle(Theme.onAccent).frame(height: 28)
+            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 4))
+            .opacity(git.canCommit ? 1 : 0.5).clickCursor()
+            .disabled(!git.canCommit)
         }
-        .padding(10)
+        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 4)
         .task { await workspace.ensureProvidersLoaded() }
     }
 
@@ -234,6 +252,22 @@ struct GitPanelView: View {
     }
 
     private var historyView: some View {
+        VStack(spacing: 0) {
+            if let p = git.historyPath {
+                HStack {
+                    Text("History of \(p)").font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button { git.historyPath = nil; Task { await git.loadBranchesAndHistory() } } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).clickCursor().help("Show all history")
+                }
+                .padding(.horizontal, 8).frame(height: 24)
+                Divider()
+            }
+            historyList
+        }
+    }
+
+    private var historyList: some View {
         List(git.history, id: \.self) { c in
             HStack(alignment: .top) {
                 Text(c.shortHash).font(Theme.Typography.monoMetadata).foregroundStyle(Theme.textSecondary)
@@ -247,49 +281,142 @@ struct GitPanelView: View {
     }
 }
 
-/// One file in the changes list: a compact single line (name + dimmed folder, status letter on the
-/// right) with stage/unstage/discard revealed on hover, the way VS Code's Source Control looks.
+enum GitChangeGroup { case conflicted, staged, unstaged, untracked }
+
+/// Collapsible group header ("⌄ Changes … 7") with VS Code's hover actions and context menu.
+private struct GitGroupHeader: View {
+    let title: String
+    let count: Int
+    let open: Bool
+    let kind: GitChangeGroup
+    let paths: [String]
+    @Bindable var git: GitController
+    let workspace: WorkspaceController
+    let toggle: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textSecondary).frame(width: 14)
+            Text(title).font(.system(size: 13)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+            Spacer(minLength: 4)
+            if hovering {
+                GitIconButton(symbol: "doc.on.doc", help: "Open Changed Files") { for p in paths { workspace.openFile(path: git.absolutePath(p)) } }
+                switch kind {
+                case .staged: GitIconButton(symbol: "minus", help: "Unstage All Changes") { Task { await git.unstage(paths) } }
+                case .unstaged:
+                    GitIconButton(symbol: "arrow.uturn.backward", help: "Discard All Changes") { git.discardRequest = paths }
+                    GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
+                case .untracked: GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
+                case .conflicted: EmptyView()
+                }
+            }
+            Text("\(count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.accent, in: Capsule())
+        }
+        .padding(.leading, 4).padding(.trailing, 10).frame(height: 24)
+        .background(hovering ? Theme.elevated.opacity(0.6) : .clear)
+        .contentShape(Rectangle()).clickCursor()
+        .onTapGesture(perform: toggle)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            switch kind {
+            case .staged: Button("Unstage All Changes") { Task { await git.unstage(paths) } }
+            case .unstaged:
+                Button("Discard All Changes") { git.discardRequest = paths }
+                Button("Stage All Changes") { Task { await git.stage(paths) } }
+            case .untracked: Button("Stage All Changes") { Task { await git.stage(paths) } }
+            case .conflicted: EmptyView()
+            }
+        }
+    }
+}
+
+/// One file in the changes list: icon, name + dimmed folder, status letter on the right; inline
+/// actions on hover and the full VS Code context menu on right-click.
 private struct GitChangeRow: View {
     let entry: GitStatusEntry
-    let staged: Bool
-    let showStage: Bool
+    let kind: GitChangeGroup
     @Bindable var git: GitController
+    let workspace: WorkspaceController
+    let onHistory: () -> Void
     @State private var hovering = false
+
+    private var staged: Bool { kind == .staged }
 
     var body: some View {
         let change = staged ? entry.staged : entry.unstaged
         let letter = entry.isConflicted ? "C" : entry.isUntracked ? "U" : String(change.rawValue)
         let folder = entry.originalPath.map { "← \($0)" } ?? (entry.path as NSString).deletingLastPathComponent
+        let name = (entry.path as NSString).lastPathComponent
+        let icon = FileIcon.style(for: name)
         let selected = git.selectedPath == entry.path && git.selectedIsStaged == staged
-        return HStack(spacing: 6) {
-            Text((entry.path as NSString).lastPathComponent).font(.caption).lineLimit(1).layoutPriority(1)
-            if !folder.isEmpty { Text(folder).font(Theme.Typography.micro).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle) }
+        return HStack(spacing: 5) {
+            Image(systemName: icon.0).font(.system(size: 12)).foregroundStyle(icon.1).frame(width: 16)
+            Text(name).font(.system(size: 13)).strikethrough(change == .deleted).lineLimit(1).layoutPriority(1)
+            if !folder.isEmpty { Text(folder).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle) }
             Spacer(minLength: 4)
-            if hovering && showStage {
-                if staged {
-                    rowIcon("minus", "Unstage", Theme.accent) { Task { await git.unstage([entry.path]) } }
-                } else {
-                    if !entry.isUntracked { rowIcon("arrow.uturn.backward", "Discard changes", Theme.error) { git.discardRequest = entry.path } }
-                    rowIcon("plus", "Stage", Theme.accent) { Task { await git.stage([entry.path]) } }
+            if hovering {
+                GitIconButton(symbol: "doc", help: "Open File") { openFile() }
+                switch kind {
+                case .staged: GitIconButton(symbol: "minus", help: "Unstage Changes") { Task { await git.unstage([entry.path]) } }
+                case .unstaged:
+                    GitIconButton(symbol: "arrow.uturn.backward", help: "Discard Changes") { git.discardRequest = [entry.path] }
+                    GitIconButton(symbol: "plus", help: "Stage Changes") { Task { await git.stage([entry.path]) } }
+                case .untracked: GitIconButton(symbol: "plus", help: "Stage Changes") { Task { await git.stage([entry.path]) } }
+                case .conflicted: EmptyView()
                 }
             }
-            Text(letter).font(Theme.Typography.monoBody).bold().foregroundStyle(color(letter)).frame(width: 12)
+            Text(letter).font(.system(size: 13, weight: .semibold)).foregroundStyle(color(letter)).frame(width: 14)
         }
-        .padding(.horizontal, 10).padding(.vertical, 2.5)
+        .padding(.leading, 22).padding(.trailing, 10).frame(height: 22)
         .background(selected ? Theme.accent.opacity(0.18) : (hovering ? Theme.elevated.opacity(0.6) : .clear))
-        .contentShape(Rectangle())
-        .onTapGesture { Task { await git.select(path: entry.path, staged: staged) } }
+        .overlay(alignment: .leading) { Rectangle().fill(Theme.borderSubtle).frame(width: 1).padding(.leading, 10) }   // tree guide
+        .contentShape(Rectangle()).clickCursor()
+        .onTapGesture { openChanges() }
         .onHover { hovering = $0 }
+        .contextMenu { menu }
         .accessibilityLabel("\(letter) \(entry.path)")
     }
 
-    private func rowIcon(_ symbol: String, _ help: String, _ tint: Color, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint).frame(width: 18, height: 16).contentShape(Rectangle()) }
-            .buttonStyle(.plain).clickCursor().help(help)
+    @ViewBuilder private var menu: some View {
+        Button("Open Changes") { openChanges() }
+        Button("Open File") { openFile() }
+        Button("Open File (HEAD)") { Task { if let p = await git.headCopy(of: entry.path) { workspace.openFile(path: p) } } }
+            .disabled(entry.isUntracked || entry.staged == .added)
+        Divider()
+        switch kind {
+        case .staged: Button("Unstage Changes") { Task { await git.unstage([entry.path]) } }
+        case .unstaged:
+            Button("Discard Changes") { git.discardRequest = [entry.path] }
+            Button("Stage Changes") { Task { await git.stage([entry.path]) } }
+        case .untracked: Button("Stage Changes") { Task { await git.stage([entry.path]) } }
+        case .conflicted: EmptyView()
+        }
+        Button("Add to .gitignore") { Task { await git.addToGitignore(entry.path) } }
+        Divider()
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: git.absolutePath(entry.path))]) }
+        Button("Reveal in Explorer View") { workspace.revealInExplorer(git.absolutePath(entry.path)) }
+        Divider()
+        Button("View File History") { onHistory() }.disabled(entry.isUntracked)
     }
+
+    private func openChanges() { Task { await git.select(path: entry.path, staged: staged) } }
+    private func openFile() { workspace.openFile(path: git.absolutePath(entry.path)) }
 
     private func color(_ letter: String) -> Color {
         switch letter { case "A", "U": .green; case "D": .red; case "C": .orange; default: .yellow }
+    }
+}
+
+private struct GitIconButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textSecondary).frame(width: 18, height: 18).contentShape(Rectangle()) }
+            .buttonStyle(.plain).clickCursor().help(help)
     }
 }
 
@@ -301,6 +428,7 @@ struct DiffView: View {
     /// `nil` hides the per-hunk button (binary, new/deleted, conflicted, or nothing selected).
     var hunkActionTitle: String? = nil
     var onHunkAction: ((Int, DiffHunk) -> Void)? = nil
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -308,6 +436,7 @@ struct DiffView: View {
                 Text(title).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 if truncated { Text("truncated to \(GitController.diffLineLimit) lines").font(.caption).foregroundStyle(Theme.warning) }
+                if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain).clickCursor().help("Close diff") }
             }
             .padding(.horizontal, 8).frame(height: 22)
             Divider()

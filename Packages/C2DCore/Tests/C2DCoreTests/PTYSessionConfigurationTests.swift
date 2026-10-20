@@ -51,6 +51,15 @@ import Testing
         #expect(PTYSessionConfiguration.inheritedEnvironment(term: "dumb")["TERM"] == "dumb")
     }
 
+    @Test func inheritedEnvironmentDropsClaudeSessionMarkers() {
+        setenv("CLAUDECODE", "1", 1); setenv("CLAUDE_CODE_CHILD_SESSION", "1", 1); setenv("CLAUDE_CONFIG_DIR", "/tmp/c2d-test", 1)
+        defer { unsetenv("CLAUDECODE"); unsetenv("CLAUDE_CODE_CHILD_SESSION"); unsetenv("CLAUDE_CONFIG_DIR") }
+        let env = PTYSessionConfiguration.inheritedEnvironment()
+        #expect(env["CLAUDECODE"] == nil)
+        #expect(env["CLAUDE_CODE_CHILD_SESSION"] == nil)
+        #expect(env["CLAUDE_CONFIG_DIR"] == "/tmp/c2d-test")
+    }
+
     @Test func errorsCarryNoEnvironmentValues() {
         // The error type can only hold paths, keys and errno values by construction.
         let e: PTYError = .spawnFailed(errno: 13)

@@ -585,8 +585,9 @@ public actor GitRepository {
         _ = try await run(force ? ["checkout", "-f", branch] : ["checkout", branch])
     }
 
-    public func log(limit: Int = 50) async throws -> [GitCommit] {
-        let r = try await run(["log", "-n", "\(max(limit, 1))", "--format=%H\u{1f}%h\u{1f}%an\u{1f}%at\u{1f}%s"], allowFailure: true)
+    /// `path` limits the log to commits touching that file (following renames).
+    public func log(limit: Int = 50, path: String? = nil) async throws -> [GitCommit] {
+        let r = try await run(["log", "-n", "\(max(limit, 1))", "--format=%H\u{1f}%h\u{1f}%an\u{1f}%at\u{1f}%s"] + (path.map { ["--follow", "--", $0] } ?? []), allowFailure: true)
         guard r.code == 0 else {
             if r.stderr.contains("does not have any commits") || r.stderr.contains("bad default revision") { return [] }
             throw GitError.commandFailed(code: r.code, stderr: r.stderr)
@@ -596,6 +597,13 @@ public actor GitRepository {
             guard p.count == 5, let t = TimeInterval(p[3]) else { return nil }
             return GitCommit(hash: String(p[0]), shortHash: String(p[1]), author: String(p[2]), date: Date(timeIntervalSince1970: t), subject: String(p[4]))
         }
+    }
+
+    /// The file's content at HEAD (`git show HEAD:<path>`); throws when HEAD doesn't have it.
+    public func contentAtHEAD(path: String) async throws -> Data {
+        let d = try await execute(["show", "HEAD:\(path)"], input: nil)   // raw bytes: binary files survive
+        guard d.code == 0 else { throw GitError.commandFailed(code: d.code, stderr: String(decoding: d.stderr, as: UTF8.self)) }
+        return d.stdout
     }
 
     // MARK: Worktrees

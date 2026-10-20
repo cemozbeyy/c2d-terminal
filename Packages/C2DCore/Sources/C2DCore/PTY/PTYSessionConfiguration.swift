@@ -79,8 +79,12 @@ public struct PTYSessionConfiguration: Sendable {
     /// have the user's login-shell environment (PATH, exports from dotfiles). The
     /// child shell builds that itself when started as a login/interactive shell.
     /// Never log the result; it may contain credentials.
+    ///
+    /// Claude Code's per-session markers (`CLAUDECODE`, `CLAUDE_CODE_*`) are dropped: when C2D itself was
+    /// started from a Claude Code session, a Claude launched in our terminal would otherwise think it is
+    /// that session's child and turn transcript saving off. User config such as `CLAUDE_CONFIG_DIR` stays.
     public static func inheritedEnvironment(term: String = "xterm-256color") -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
+        var env = ProcessInfo.processInfo.environment.filter { !($0.key == "CLAUDECODE" || $0.key.hasPrefix("CLAUDE_CODE_")) }
         env["TERM"] = term
         return env
     }

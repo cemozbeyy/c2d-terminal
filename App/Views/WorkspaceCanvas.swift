@@ -78,8 +78,7 @@ struct SplitView: View {
     var body: some View {
         GeometryReader { geo in
             let total = (orientation == .horizontal ? geo.size.width : geo.size.height) - dividerThickness * CGFloat(children.count - 1)
-            let sum = weights.reduce(0, +)
-            let sizes = weights.map { max(0, total * CGFloat($0 / max(sum, 0.0001))) }
+            let sizes = distribute(total: max(0, total))
             let layout = orientation == .horizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
             layout {
                 ForEach(Array(children.enumerated()), id: \.element.id) { index, child in
@@ -94,6 +93,47 @@ struct SplitView: View {
             }
             .coordinateSpace(name: "split")
         }
+    }
+
+    /// Distribute `total` across the children by weight, but never below each child's usable floor —
+    /// so shrinking the window can't squeeze an agent/terminal column down to a few columns (it reflows
+    /// to garbage there). Children below their floor are pinned to it and the rest share what's left by
+    /// weight. Only when even the floors don't fit do they scale down together, so nothing overflows.
+    private func distribute(total: CGFloat) -> [CGFloat] {
+        let sum = weights.reduce(0, +)
+        guard total > 0, sum > 0 else { return weights.map { _ in 0 } }
+        let mins = children.map(minSize)
+        let minTotal = mins.reduce(0, +)
+        if total <= minTotal { return minTotal > 0 ? mins.map { total * ($0 / minTotal) } : weights.map { _ in total / CGFloat(weights.count) } }
+        var sizes = weights.map { total * CGFloat($0 / sum) }
+        var pinned = Set<Int>()
+        for _ in sizes.indices {
+            let below = sizes.indices.filter { !pinned.contains($0) && sizes[$0] < mins[$0] }
+            if below.isEmpty { break }
+            pinned.formUnion(below)
+            let remaining = total - pinned.reduce(0) { $0 + mins[$1] }
+            let freeWeight = sizes.indices.filter { !pinned.contains($0) }.reduce(0.0) { $0 + weights[$1] }
+            for i in sizes.indices {
+                if pinned.contains(i) { sizes[i] = mins[i] }
+                else if freeWeight > 0 { sizes[i] = max(0, remaining) * CGFloat(weights[i] / freeWeight) }
+            }
+        }
+        return sizes
+    }
+
+    /// A child's floor along the split axis. Horizontal: the widest floor among the kinds it hosts —
+    /// an agent needs ~75 columns to render its TUI, a terminal/editor less, a sidebar least. Vertical
+    /// splits only need a modest height floor so a stacked panel keeps a few rows.
+    private func minSize(_ node: LayoutNode) -> CGFloat {
+        guard orientation == .horizontal else { return 120 }
+        let floors = node.panelIDs.map { id -> CGFloat in
+            switch workspace.layout.panels[id]?.kind {
+            case .some(.agentSession): return 560
+            case .some(.terminal), .some(.editor): return 360
+            default: return 200
+            }
+        }
+        return floors.max() ?? 200
     }
 
     private func divider(at index: Int, total: CGFloat) -> some View {
