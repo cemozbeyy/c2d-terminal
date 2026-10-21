@@ -20,14 +20,31 @@ struct OptimizerPanelView: View {
                             HStack {
                                 Stepper("Budget \(optimizer.budgetTokens)", value: $optimizer.budgetTokens, in: 1000...200_000, step: 1000).font(.caption)
                                 Button("Check budget") { optimizer.measureOnly() }.font(.caption)
-                                Button("Optimize (deterministic)") { optimizer.optimize() }.font(.caption).disabled(!optimizer.entitlement.isPremium)
-                                    .help(optimizer.entitlement.isPremium ? "Exact-duplicate removal and whitespace normalization only; nothing semantic." : "Premium capability; no billing provider is configured in this build.")
+                                Toggle("Fold long output (lossy, marked)", isOn: $optimizer.lossyOutputFolding).font(.caption).toggleStyle(.checkbox)
+                                    .help("Also folds lines that differ only in numbers, cuts long compiler invocations and trims the middle of very long output. Every line recognised as an error, warning or file:line (English tool output) is kept; each cut leaves a [c2d: …] marker; the original stays here.")
+                                Button("Optimize (deterministic)") { optimizer.optimize() }.font(.caption)
+                                    .help("Deterministic only: terminal output condensed (lines recognised as errors/warnings/file:line always kept), exact duplicates removed, whitespace normalized. Nothing semantic.")
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 if let verdict = optimizer.budgetVerdict { budget(verdict) }
+                if !optimizer.items.isEmpty {
+                    GroupBox("Hand-off") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Button("Copy as Markdown") { optimizer.copyHandOff() }.font(.caption)
+                                Button("Write .c2d/context.md") { optimizer.writeHandOffFile() }.font(.caption)
+                                    .help("Replaces the previous .c2d/context.md C2D wrote; .c2d/ is git-ignored by its own .gitignore.")
+                            }
+                            Text(optimizer.result == nil ? "Hands over the items as selected." : "Hands over the optimized items (originals stay in the result list).")
+                                .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
+                            if let note = optimizer.handOffNote { Text(note).font(.caption).foregroundStyle(Theme.textSecondary) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
                 if let r = optimizer.result, let rep = optimizer.report { resultView(r, rep) }
                 history
                 if let err = optimizer.lastError {
@@ -66,6 +83,8 @@ struct OptimizerPanelView: View {
                             Text(s.lastTimestamp.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—").frame(width: 120, alignment: .leading)
                             Text(s.models.joined(separator: ", ")).lineLimit(1).frame(width: 130, alignment: .leading).foregroundStyle(Theme.textSecondary)
                             Text("in \(s.usage.inputTokens.formatted()) · out \(s.usage.outputTokens.formatted()) · cache r \(s.usage.cacheReadInputTokens.formatted()) · w \(s.usage.cacheCreationInputTokens.formatted())").lineLimit(1)
+                            Text("context \(s.lastContextTokens.formatted()) · peak \(s.peakContextTokens.formatted())").lineLimit(1).foregroundStyle(Theme.textSecondary)
+                                .help("Input the newest / largest request sent (uncached + cache read + cache write). Every later reply in this session re-reads at least this much.")
                             Spacer()
                             attributionChip(optimizer.attribution[s.id] ?? .unmatched)
                             Text(s.usage.total.formatted()).bold()
@@ -81,6 +100,8 @@ struct OptimizerPanelView: View {
                         Label("\(optimizer.launchesWithoutTranscript.count) C2D agent launch(es) have no transcript yet (never replied, or the file is not visible yet) — rescan later.", systemImage: "clock")
                             .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                     }
+                    Text("Cache reads are usually most of the total: each reply re-sends the whole conversation so far. A session's “context” is what its newest reply re-read; shorter sessions (or a fresh session with a written hand-off) re-read less. This is a measurement, not a saving.")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                     Text("Attribution uses only the session id C2D passed at launch; sessions started outside C2D stay listed as unmatched and are never attributed to a task. Linking a session to a task does not reduce usage.")
                         .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                     Text("Top-level session files only; sub-agent transcripts in subfolders are not counted yet. \(l.skippedRecords) non-assistant record(s) skipped unread\(l.inProgressLines > 0 ? ", \(l.inProgressLines) line(s) still being written" : "").")
@@ -119,6 +140,13 @@ struct OptimizerPanelView: View {
                 HStack {
                     Button("Add open editor files") { optimizer.addOpenEditorFiles(workspace) }.font(.caption)
                     Button("Add unstaged Git diff") { Task { await optimizer.addGitDiff(workspace.git) } }.font(.caption).disabled(!workspace.git.isAvailable)
+                    Menu("Add terminal output") {
+                        ForEach(workspace.terminals.values.sorted { $0.title < $1.title }, id: \.panelID) { t in
+                            Button(t.title) { optimizer.addTerminalOutput(t) }
+                        }
+                    }
+                    .font(.caption).fixedSize().disabled(workspace.terminals.isEmpty)
+                    .help("Adds the terminal's scrollback as shown. Optimize condenses it: repeats and progress folded, recognised error/warning/file:line lines kept, original retained.")
                     if let t = workspace.tasks.selected { Button("Add task “\(t.title.prefix(18))…”") { optimizer.addTask(t) }.font(.caption) }
                     Spacer()
                     Button("Clear") { optimizer.clear() }.font(.caption).disabled(optimizer.items.isEmpty)

@@ -610,7 +610,9 @@ private struct BranchPicker: View {
     @State private var mode = Mode.pick
     @FocusState private var focused: Bool
 
-    enum Mode: Equatable { case pick, pickBase, name(from: String?) }
+    enum Mode: Equatable { case pick, pickBase, pickDetached, name(from: String?) }
+    /// Shown after a Stash & Checkout so the user knows where their changes went.
+    @State private var stashNote: String?
 
     private var filtered: [GitBranch] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -621,6 +623,7 @@ private struct BranchPicker: View {
         switch mode {
         case .pick: "Select a branch to checkout"
         case .pickBase: "Select a ref to create the branch from"
+        case .pickDetached: "Select a branch, or type a tag/commit, to checkout detached"
         case .name(let from): "Branch name" + (from.map { " (from \($0))" } ?? "") + " — ⏎ to create"
         }
     }
@@ -633,7 +636,25 @@ private struct BranchPicker: View {
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent.opacity(0.7)))
                 .padding(8)
                 .onSubmit(submit)
-            if let err = git.lastError {
+            if let block = git.checkoutBlocked {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Checking out \(block.ref) would overwrite your uncommitted changes to \(block.paths.prefix(3).joined(separator: ", "))\(block.paths.count > 3 ? " and \(block.paths.count - 3) more" : ""). Nothing was changed.")
+                        .font(.caption).foregroundStyle(Theme.warning).fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Stash & Checkout") {
+                            Task {
+                                await git.stashAndCheckout()
+                                if git.lastError == nil { stashNote = "Switched to \(block.ref). Your changes are in stash@{0} — run git stash pop to bring them back." }
+                            }
+                        }
+                        Button("Cancel") { git.cancelBlockedCheckout() }
+                    }
+                    .controlSize(.small).disabled(git.isBusy)
+                }
+                .padding(.horizontal, 10).padding(.bottom, 8)
+            } else if let note = stashNote {
+                Text(note).font(.caption).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 10).padding(.bottom, 8)
+            } else if let err = git.lastError {
                 Text(err).font(.caption).foregroundStyle(Theme.warning).lineLimit(4).padding(.horizontal, 10).padding(.bottom, 6)
             }
             if case .name = mode {} else {
@@ -642,6 +663,7 @@ private struct BranchPicker: View {
                         if mode == .pick {
                             action("plus", "Create new branch…") { mode = .name(from: nil); query = "" }
                             action("plus", "Create new branch from…") { mode = .pickBase; query = "" }
+                            action("arrow.triangle.pull", "Checkout detached…") { mode = .pickDetached; query = "" }
                             Divider().padding(.vertical, 3)
                         }
                         ForEach(filtered, id: \.self) { b in
@@ -655,7 +677,7 @@ private struct BranchPicker: View {
         }
         .frame(width: 520)
         .background(Theme.panel)
-        .task { git.lastError = nil; focused = true; await git.loadBranchesAndHistory() }
+        .task { git.cancelBlockedCheckout(); focused = true; await git.loadBranchesAndHistory() }
     }
 
     private func action(_ symbol: String, _ title: String, _ run: @escaping () -> Void) -> some View {
@@ -668,8 +690,10 @@ private struct BranchPicker: View {
 
     private func choose(_ b: GitBranch) {
         if mode == .pickBase { mode = .name(from: b.name); query = ""; return }
-        guard !b.isCurrent else { isPresented = false; return }
-        Task { await git.checkout(b.name); if git.lastError == nil { isPresented = false } }
+        let detached = mode == .pickDetached
+        guard detached || !b.isCurrent else { isPresented = false; return }
+        stashNote = nil
+        Task { await git.checkout(b.name, detached: detached); if git.lastError == nil { isPresented = false } }
     }
 
     private func submit() {
@@ -678,7 +702,10 @@ private struct BranchPicker: View {
         case .name(let from):
             guard !q.isEmpty else { return }
             Task { await git.createBranch(q, from: from); if git.lastError == nil { isPresented = false } }
-        case .pick, .pickBase:
+        case .pickDetached where filtered.isEmpty && !q.isEmpty:   // a typed tag or commit
+            stashNote = nil
+            Task { await git.checkout(q, detached: true); if git.lastError == nil { isPresented = false } }
+        case .pick, .pickBase, .pickDetached:
             if let first = filtered.first { choose(first) }
         }
     }

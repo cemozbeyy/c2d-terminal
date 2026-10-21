@@ -24,6 +24,8 @@ public enum GitError: Error, Equatable, Sendable {
     case noUpstreamConfigured
     /// The operation was terminated (e.g. the 30s timeout); the remote state is unknown, not failed.
     case operationTimedOut
+    /// Git refused a checkout because it would overwrite these uncommitted (or untracked) files.
+    case checkoutWouldOverwrite(paths: [String])
 }
 
 /// Which merge-conflict shape a path is in, from `git status --porcelain=v2` `u` XY codes.
@@ -590,12 +592,33 @@ public actor GitRepository {
     }
 
     /// Refuses on a dirty tree unless forced; never stashes silently (Bible Part 6 §10).
+    /// Like VS Code: uncommitted changes travel to the new branch, and git itself refuses (nothing
+    /// changed) when they would be overwritten → `checkoutWouldOverwrite`. `force` discards them.
     public func checkout(branch: String, force: Bool = false) async throws {
-        if !force {
-            let s = try await status()
-            if s.entries.contains(where: { !$0.isUntracked }) { throw GitError.dirtyWorkingTree }
-        }
-        _ = try await run(force ? ["checkout", "-f", branch] : ["checkout", branch])
+        try await checkout(force ? ["checkout", "-f", branch] : ["checkout", branch])
+    }
+
+    /// `git checkout --detach <ref>`: a branch, tag or commit, with HEAD detached.
+    public func checkoutDetached(_ ref: String) async throws {
+        try await checkout(["checkout", "--detach", ref])
+    }
+
+    private func checkout(_ args: [String]) async throws {
+        let r = try await run(args, allowFailure: true)
+        guard r.code != 0 else { return }
+        if let paths = Self.overwrittenPaths(r.stderr) { throw GitError.checkoutWouldOverwrite(paths: paths) }
+        throw GitError.commandFailed(code: r.code, stderr: r.stderr)
+    }
+
+    /// Files git lists (tab-indented, `LC_ALL=C`) after "… would be overwritten by checkout:".
+    static func overwrittenPaths(_ stderr: String) -> [String]? {
+        guard stderr.contains("would be overwritten by checkout") else { return nil }
+        return stderr.split(separator: "\n").filter { $0.hasPrefix("\t") }.map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// `git stash push --include-untracked -m <message>`: everything uncommitted goes to `stash@{0}`.
+    public func stash(message: String) async throws {
+        _ = try await run(["stash", "push", "--include-untracked", "-m", message])
     }
 
     /// `path` limits the log to commits touching that file (following renames).

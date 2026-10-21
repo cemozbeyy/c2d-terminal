@@ -19,6 +19,9 @@ public struct ProviderUsage: Hashable, Codable, Sendable {
 
     /// Everything the provider counted for the request (uncached input + cache read + cache creation + output).
     public var total: Int { inputTokens + outputTokens + cacheReadInputTokens + cacheCreationInputTokens }
+    /// The context one request sent (uncached + cache read + cache creation input). Each later request re-sends
+    /// at least this much, which is why long sessions dominate usage.
+    public var contextTokens: Int { inputTokens + cacheReadInputTokens + cacheCreationInputTokens }
 
     public static func + (a: ProviderUsage, b: ProviderUsage) -> ProviderUsage {
         ProviderUsage(inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens,
@@ -39,6 +42,16 @@ public struct TranscriptSession: Identifiable, Hashable, Sendable {
     public let lastTimestamp: Date?
     public let messageCount: Int      // distinct assistant messages (duplicate records of one message count once)
     public let usage: ProviderUsage
+    /// Context size (provider-reported input incl. cache) of the newest request and of the largest one.
+    public var lastContextTokens = 0
+    public var peakContextTokens = 0
+    /// How far C2D trusts this session's format: a hand-verified CLI version, or one that only passed the read-time shape check.
+    public var formatCheck: FormatCheck = .handVerified
+}
+
+public enum FormatCheck: Hashable, Sendable {
+    case handVerified   // CLI version in `ClaudeTranscriptReader.verifiedCLIVersions`
+    case shapeChecked   // any other version whose records passed the read-time shape check (TSD-06); not hand-verified
 }
 
 /// A session file the reader refused to count, with the reason (shown to the user, never guessed around).
@@ -58,10 +71,14 @@ public struct TranscriptLedger: Sendable {
     public var scannedFiles: Int { sessions.count + unavailable.count }
     public var total: ProviderUsage { sessions.map(\.usage).reduce(ProviderUsage(), +) }
     public var source: MeasurementSource { .providerConfirmed }
-    /// "CLI v2.1.303 format (verified)" — the versions actually seen in counted sessions.
+    /// "CLI v2.1.303 format (verified) · CLI v2.1.306 format (shape-checked, not hand-verified)" — versions seen in counted sessions.
     public var formatLabel: String {
-        let versions = Set(sessions.map(\.cliVersion)).sorted()
-        return versions.isEmpty ? "no verified session" : "CLI v\(versions.joined(separator: ", v")) format (verified)"
+        func label(_ check: FormatCheck, _ suffix: String) -> String? {
+            let versions = Set(sessions.filter { $0.formatCheck == check }.map(\.cliVersion)).sorted()
+            return versions.isEmpty ? nil : "CLI v\(versions.joined(separator: ", v")) format (\(suffix))"
+        }
+        let parts = [label(.handVerified, "verified"), label(.shapeChecked, "shape-checked, not hand-verified")].compactMap { $0 }
+        return parts.isEmpty ? "no verified session" : parts.joined(separator: " · ")
     }
 }
 
@@ -71,9 +88,12 @@ public enum TranscriptLedgerResult: Sendable {
 }
 
 public enum ClaudeTranscriptReader {
-    /// CLI versions whose transcript shape was checked by hand (OPEN_DECISIONS §4.5 proposal: pin, never guess).
-    /// A session written by any other version is reported as unavailable until that version is verified.
-    public static let verifiedCLIVersions: Set<String> = ["2.1.303"]
+    /// CLI versions whose transcript shape was checked by hand. Any other version is accepted only when every record
+    /// passes the read-time shape check in `readSession` (TSD-06), and is labelled "shape-checked, not hand-verified".
+    /// 2.1.304 / 2.1.305 added 2026-10-21 after `docs/token-saver/transcript_shape_check.py` on this Mac: identical
+    /// usage keys and integer types as 2.1.303, and in all 262 multi-record messages the input/cache-read counts are
+    /// identical across records with output non-decreasing (so "last record per message id" stays correct).
+    public static let verifiedCLIVersions: Set<String> = ["2.1.303", "2.1.304", "2.1.305"]
 
     /// `CLAUDE_CONFIG_DIR` if set, else `~/.claude`.
     public static func defaultClaudeHome() -> URL {
@@ -160,7 +180,11 @@ public enum ClaudeTranscriptReader {
             guard let message = record["message"] as? [String: Any] else { return .failure(Failure(message: "assistant record on line \(lineNumber) has no message")) }
             guard let usageDict = message["usage"] as? [String: Any] else { return .failure(Failure(message: "assistant record on line \(lineNumber) has no usage")) }
             func count(_ key: String, required: Bool) -> Int? {
-                if let n = usageDict[key] as? NSNumber { return n.intValue }
+                // Non-negative integers only: JSONSerialization also hands back booleans and fractions as NSNumber.
+                if let n = usageDict[key] as? NSNumber {
+                    guard CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue >= 0, n.doubleValue == Double(n.int64Value) else { return nil }
+                    return n.intValue
+                }
                 return usageDict[key] == nil && !required ? 0 : nil
             }
             guard let input = count("input_tokens", required: true), let output = count("output_tokens", required: true),
@@ -175,14 +199,17 @@ public enum ClaudeTranscriptReader {
             let model = message["model"] as? String
             if let model, model != "<synthetic>" { models.insert(model) }   // CLI-generated placeholder records (usage all 0, verified) are counted but not listed as a model
             let ts = (record["timestamp"] as? String).flatMap(parseTimestamp)
-            if messages[id] == nil { order.append(id) }
-            messages[id] = Message(usage: ProviderUsage(inputTokens: input, outputTokens: output, cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheCreate), model: model, timestamp: ts)
+            let usage = ProviderUsage(inputTokens: input, outputTokens: output, cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheCreate)
+            // Streamed records of one message must repeat the same input and grow output, or "last record wins" would
+            // be a guess (held in all ~7 000 multi-record messages across 22 CLI versions on the dev Mac, 2026-10-21).
+            if let prev = messages[id]?.usage {
+                guard prev.inputTokens == input, prev.cacheReadInputTokens == cacheRead, prev.cacheCreationInputTokens == cacheCreate,
+                      output >= prev.outputTokens
+                else { return .failure(Failure(message: "usage records of one message disagree on line \(lineNumber) — numbers withheld rather than guessed")) }
+            } else { order.append(id) }
+            messages[id] = Message(usage: usage, model: model, timestamp: ts)
         }
 
-        let unverified = versions.subtracting(verifiedCLIVersions)
-        if !unverified.isEmpty {
-            return .failure(Failure(message: "CLI version \(unverified.sorted().joined(separator: ", ")) not yet verified — numbers withheld rather than guessed"))
-        }
         let wanted = URL(fileURLWithPath: projectPath).standardizedFileURL.path
         if let other = cwds.first(where: { URL(fileURLWithPath: $0).standardizedFileURL.path != wanted }) {
             return .failure(Failure(message: "transcript belongs to another directory (\(other))"))
@@ -194,7 +221,10 @@ public enum ClaudeTranscriptReader {
             id: sessionID ?? fileURL.deletingPathExtension().lastPathComponent, fileURL: fileURL, cwd: cwds.first,
             cliVersion: versions.sorted().joined(separator: ", "), models: models.sorted(), gitBranch: gitBranch,
             firstTimestamp: stamps.min(), lastTimestamp: stamps.max(), messageCount: messages.count,
-            usage: messages.values.map(\.usage).reduce(ProviderUsage(), +))
+            usage: messages.values.map(\.usage).reduce(ProviderUsage(), +),
+            lastContextTokens: order.last.flatMap { messages[$0]?.usage.contextTokens } ?? 0,
+            peakContextTokens: messages.values.map(\.usage.contextTokens).max() ?? 0,
+            formatCheck: versions.isSubset(of: verifiedCLIVersions) ? .handVerified : .shapeChecked)
         return .success(SessionRead(session: session, skippedRecords: skipped, inProgressLines: inProgress))
     }
 

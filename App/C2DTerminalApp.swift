@@ -34,12 +34,23 @@ struct C2DTerminalApp: App {
                             let sent = NSApp.sendAction(Selector(("newWindowForTab:")), to: nil, from: NSApp.keyWindow)
                             debugTrace("terminalWindowCheck: plusViaResponderChain=\(sent) keyWindow=\(NSApp.keyWindow?.title ?? "nil")")
                             try? await Task.sleep(for: .milliseconds(2500))
-                            for (win, panes) in model.standaloneWindowPanes {   // what each pane's split button sends
-                                if let first = panes.first { model.splitStandalone(window: win, after: first) }
+                            for (win, panes) in model.standaloneWindowPanes {   // what each pane's split buttons send
+                                if let first = panes.first { model.splitStandalone(window: win, after: first); model.splitStandalone(window: win, after: first, down: true) }
+                            }
+                            try? await Task.sleep(for: .milliseconds(800))
+                            debugTrace("terminalWindowCheck: nested trees=\(model.standaloneWindowLayouts.values.map { "\($0)" })")
+                            if let (win, panes) = model.standaloneWindowPanes.first, let first = panes.first {   // closing a nested pane collapses its split
+                                await model.closeStandalonePane(window: win, first)
+                                debugTrace("terminalWindowCheck: afterPaneClose panes=\(model.standaloneWindowPanes[win]?.count ?? 0) tree=\(model.standaloneWindowLayouts[win].map { "\($0)" } ?? "nil")")
                             }
                             if let first = model.standaloneWindowTitles.first { model.revealStandaloneWindow(first.id) }   // what the page menu sends
                             try? await Task.sleep(for: .milliseconds(1500))
                             debugTrace("terminalWindowCheck: menuTitles=\(model.standaloneWindowTitles.map(\.title)) keyIsTerminal=\(NSApp.keyWindow?.tabbingIdentifier == "c2d.terminal")")
+                            if let f = model.focusedStandalonePane {   // what ⌘D sends
+                                let before = model.standaloneWindowPanes[f.window]?.count ?? 0
+                                model.splitStandalone(window: f.window, after: f.pane)
+                                debugTrace("terminalWindowCheck: cmdD panes \(before)→\(model.standaloneWindowPanes[f.window]?.count ?? 0)")
+                            } else { debugTrace("terminalWindowCheck: cmdD no focused pane") }
                             debugTrace("terminalWindowCheck: split panesPerWindow=\(model.standaloneWindowPanes.values.map(\.count)) running=\(model.standaloneTerminals.values.filter(\.isRunning).count)")
                             let wins = NSApp.windows.filter { $0.tabbingIdentifier == "c2d.terminal" && $0.isVisible }
                             let tabs = wins.first?.tabbedWindows?.count ?? -1
@@ -90,6 +101,13 @@ struct C2DTerminalApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: 1240, height: 780)
         .commands {
+            CommandMenu("Shell") {
+                // iTerm's split shortcuts; act on the focused pane of the key terminal window.
+                Button("Split Right") { if let f = model.focusedStandalonePane { model.splitStandalone(window: f.window, after: f.pane) } }
+                    .keyboardShortcut("d", modifiers: .command)
+                Button("Split Down") { if let f = model.focusedStandalonePane { model.splitStandalone(window: f.window, after: f.pane, down: true) } }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Terminal Window") { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
                     .keyboardShortcut("n", modifiers: .command)
@@ -177,21 +195,40 @@ private struct TerminalWindowView: View {
     let request: TerminalWindowRequest
 
     var body: some View {
-        HSplitView {
-            ForEach(model.standaloneWindowPanes[request.id] ?? [], id: \.self) { id in
-                if let t = model.standaloneTerminals[id] {
-                    TerminalPanelView(controller: t,
-                                      onSplit: { model.splitStandalone(window: request.id, after: id) },
-                                      onClose: { Task { if await !model.closeStandalonePane(window: request.id, id) { dismiss() } } })
-                        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
+        ZStack {   // never empty: onAppear must fire before the first pane exists
+            Theme.window
+            if let tree = model.standaloneWindowLayouts[request.id] { PaneTreeView(tree: tree, window: request.id, dismiss: { dismiss() }) }
         }
-        .background(Theme.window)
         .background(TerminalWindowConfigurator(window: request.id))
         .onAppear { model.openStandaloneWindow(request.id, directory: request.directory) }
         .onDisappear { Task { await model.closeStandaloneWindow(request.id) } }
         .navigationTitle(URL(fileURLWithPath: request.directory).lastPathComponent)
+    }
+}
+
+/// One node of a terminal window's split tree: a shell pane, or a row/column of subtrees.
+private struct PaneTreeView: View {
+    @Environment(AppModel.self) private var model
+    let tree: PaneTree
+    let window: UUID
+    let dismiss: () -> Void
+
+    var body: some View {
+        switch tree {
+        case .pane(let id):
+            if let t = model.standaloneTerminals[id] {
+                TerminalPanelView(controller: t,
+                                  onSplit: { model.splitStandalone(window: window, after: id, down: $0) },
+                                  onClose: { Task { if await !model.closeStandalonePane(window: window, id) { dismiss() } } })
+                    .frame(minWidth: 240, maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
+            }
+        case .split(let down, let kids):
+            if down {
+                VSplitView { ForEach(kids, id: \.self) { PaneTreeView(tree: $0, window: window, dismiss: dismiss) } }
+            } else {
+                HSplitView { ForEach(kids, id: \.self) { PaneTreeView(tree: $0, window: window, dismiss: dismiss) } }
+            }
+        }
     }
 }
 

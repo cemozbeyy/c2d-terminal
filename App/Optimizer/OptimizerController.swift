@@ -1,3 +1,4 @@
+import AppKit
 import C2DCore
 import Foundation
 import Observation
@@ -24,6 +25,9 @@ final class OptimizerController {
     private(set) var history: [OptimizationRecord] = []
     private(set) var totals: [MeasurementSource: SourceTotals] = [:]
     var budgetTokens = 8000
+    /// Off by default: only lossless output steps (escapes, counted repeats, file grouping). On adds the marked,
+    /// lossy steps — similar-line folding, long-invocation elision, middle truncation — never touching diagnostics.
+    var lossyOutputFolding = false
     var lastError: String?
 
     // Token Saver TS-1: provider-reported usage read from Claude Code's local transcripts (read-only, on demand, nothing stored).
@@ -86,6 +90,19 @@ final class OptimizerController {
         add(ContextItem(kind: .instructions, content: text, mandatory: true))
     }
 
+    /// TS-4 source: the terminal's text as rendered (escapes already interpreted by the emulator) — the user's
+    /// selection when there is one, else scrollback + screen. The user picks the terminal; nothing is collected on its own.
+    func addTerminalOutput(_ terminal: TerminalPanelController) {
+        guard let view = terminal.hostedView else { lastError = "That terminal has no visible output yet."; return }
+        let selected = view.getSelection()
+        if selected == nil { view.selectAll() }
+        var text = selected ?? view.getSelection() ?? ""
+        if selected == nil { view.selectNone() }
+        while text.hasSuffix("\n") || text.hasSuffix(" ") { text.removeLast() }
+        guard !text.isEmpty else { lastError = "That terminal is empty."; return }
+        add(ContextItem(kind: .terminalOutput, path: terminal.title, content: text))
+    }
+
     func addGitDiff(_ git: GitController) async {
         guard let repo = git.repository, let status = git.status else { lastError = "No Git status available."; return }
         for entry in status.entries where entry.hasUnstagedChange || entry.isUntracked {
@@ -95,7 +112,7 @@ final class OptimizerController {
         }
     }
 
-    // MARK: Optimization (premium) and measurement (free)
+    // MARK: Optimization and measurement — both free: deterministic, local, lossless unless the user opts in (TSD-04)
 
     func measureOnly() {
         guard !items.isEmpty else { return }
@@ -103,12 +120,37 @@ final class OptimizerController {
     }
 
     func optimize() {
-        guard app.entitlement.isPremium else { lastError = "Optimization is a Premium capability. Measurement stays available."; return }
         guard !items.isEmpty else { return }
-        let r = ContextOptimizer.deduplicate(ContextPayload(items: items))
+        let r = ContextOptimizer.optimize(ContextPayload(items: items), output: lossyOutputFolding ? .init() : .lossless)
         result = r
         report = SavingsReport.make(baseline: r.before, optimized: r.after, optimizerCost: 0)
         budgetVerdict = ContextOptimizer.budgetCheck(r.payload, budgetTokens: budgetTokens)
+    }
+
+    // MARK: Hand-off (TS-3): what was prepared and where it went — never "sent to the model" (ADR-023)
+
+    private(set) var handOffNote: String?
+    private var handOffPayload: ContextPayload { result?.payload ?? ContextPayload(items: items) }
+    private var handOffMarkdown: String { ContextOptimizer.handOffMarkdown(handOffPayload, title: "Context prepared in C2D — \(Date().formatted(date: .abbreviated, time: .shortened))") }
+
+    func copyHandOff() {
+        let text = handOffMarkdown
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        handOffNote = "Copied ~\(TokenEstimator.estimate(text).tokens) tokens (heuristic) to the clipboard. Prepared, not confirmed as read by any agent."
+    }
+
+    /// Writes `<project>/.c2d/context.md`, replacing the previous hand-off file C2D wrote there. The folder gets
+    /// its own `.gitignore` (`*`) so the hand-off never shows up as a change in the user's repository.
+    func writeHandOffFile() {
+        let dir = URL(fileURLWithPath: projectPath).appendingPathComponent(".c2d")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let ignore = dir.appendingPathComponent(".gitignore")
+            if !FileManager.default.fileExists(atPath: ignore.path) { try "*\n".write(to: ignore, atomically: true, encoding: .utf8) }
+            let text = handOffMarkdown
+            try text.write(to: dir.appendingPathComponent("context.md"), atomically: true, encoding: .utf8)
+            handOffNote = "Wrote .c2d/context.md (~\(TokenEstimator.estimate(text).tokens) tokens, heuristic). Ask the agent to read it; C2D cannot confirm that it did."
+        } catch { lastError = "Could not write .c2d/context.md: \(error.localizedDescription)" }
     }
 
     func recordResult() async {

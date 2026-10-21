@@ -113,6 +113,7 @@ public enum DiagnosticClassifier {
             case .notARepository: return (.invalidConfiguration, "GitError", "notARepository", nil, .failure)
             case .identityNotConfigured: return (.invalidConfiguration, "GitError", "identityNotConfigured", nil, .failure)
             case .dirtyWorkingTree: return (.userInput, "GitError", "dirtyWorkingTree", nil, .failure)
+            case .checkoutWouldOverwrite: return (.userInput, "GitError", "checkoutWouldOverwrite", nil, .failure)
             case .nothingToCommit: return (.userInput, "GitError", "nothingToCommit", nil, .failure)
             case .emptyMessage: return (.userInput, "GitError", "emptyMessage", nil, .failure)
             case .invalidPath: return (.userInput, "GitError", "invalidPath", nil, .failure)

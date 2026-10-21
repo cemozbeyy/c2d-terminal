@@ -177,6 +177,7 @@ import Testing
         #expect(s.messageCount == 2)
         #expect(s.usage == ProviderUsage(inputTokens: 15, outputTokens: 107, cacheReadInputTokens: 1000, cacheCreationInputTokens: 50))
         #expect(s.usage.total == 1172)
+        #expect(s.peakContextTokens == 1060 && s.lastContextTokens == 5)   // m1 = 10 + 1000 + 50; newest (m2) = 5
         #expect(s.cliVersion == "2.1.303" && s.models == ["claude-fable-5-1"] && s.gitBranch == "main" && s.id == "S1")
         #expect(l.skippedRecords == 3)   // user + attachment skipped without decoding; the blob line was decoded (mentions "assistant") and skipped as non-assistant
         #expect(l.source == .providerConfirmed && l.formatLabel == "CLI v2.1.303 format (verified)")
@@ -200,12 +201,38 @@ import Testing
         #expect(l.total.outputTokens == 4)   // unavailable sessions never leak into totals
     }
 
-    @Test func unknownCLIVersionWithholdsNumbers() throws {
+    @Test func shapeCheckedVersionsAreAccepted() throws {
         let (home, folder) = try makeHome()
-        try write([assistant(id: "m1", input: 1, output: 2, version: "9.9.9")], to: folder)
+        try write([assistant(id: "m1", input: 1, output: 2, version: "2.1.305")], to: folder)
         let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
-        #expect(l.sessions.isEmpty)
-        #expect(l.unavailable.first?.reason.contains("CLI version 9.9.9 not yet verified") == true)
+        #expect(l.sessions.count == 1 && l.unavailable.isEmpty && l.sessions.first?.formatCheck == .handVerified)
+    }
+
+    // TSD-06: an unknown version is counted only when its records pass the shape check, and labelled as such.
+    @Test func unknownCLIVersionIsCountedOnlyWhenShapeCheckPasses() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2, version: "9.9.9"), assistant(id: "m1", input: 1, output: 5, version: "9.9.9")], to: folder, name: "ok.jsonl")
+        try write([assistant(id: "m1", input: 3, output: 4)], to: folder, name: "pinned.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.unavailable.isEmpty && l.sessions.count == 2)
+        #expect(l.sessions.first { $0.cliVersion == "9.9.9" }?.formatCheck == .shapeChecked)
+        #expect(l.sessions.first { $0.cliVersion == "9.9.9" }?.usage.outputTokens == 5)
+        #expect(l.formatLabel == "CLI v2.1.303 format (verified) · CLI v9.9.9 format (shape-checked, not hand-verified)")
+    }
+
+    @Test func shapeCheckFailsClosed() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 5, version: "9.9.9"), assistant(id: "m1", input: 2, output: 5, version: "9.9.9")], to: folder, name: "input.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 5), assistant(id: "m1", input: 1, output: 4)], to: folder, name: "shrink.jsonl")
+        for (name, value) in [("bool", "true"), ("fraction", "1.5"), ("negative", "-3")] {
+            try write([#"{"type":"assistant","cwd":"\#(project)","version":"9.9.9","message":{"id":"m1","usage":{"input_tokens":\#(value),"output_tokens":1}}}"#], to: folder, name: "\(name).jsonl")
+        }
+        try write([#"{"type":"assistant","cwd":"\#(project)","message":{"id":"m1","usage":{"input_tokens":1,"output_tokens":1}}}"#], to: folder, name: "noversion.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.isEmpty && l.unavailable.count == 6)
+        #expect(l.unavailable.filter { $0.reason.contains("disagree") }.count == 2)
+        #expect(l.unavailable.filter { $0.reason.contains("unrecognised usage shape") }.count == 3)
+        #expect(l.unavailable.contains { $0.reason.contains("no CLI version") })
     }
 
     @Test func unrecognisedUsageShapeAndForeignCwdAreUnavailable() throws {
@@ -309,5 +336,34 @@ import Testing
         try (rec("m2", 999) + "\n").write(to: sub.appendingPathComponent("agent-x.jsonl"), atomically: true, encoding: .utf8)
         guard case .available(let l) = ClaudeTranscriptReader.read(projectPath: project, claudeHome: home) else { Issue.record("expected ledger"); return }
         #expect(l.sessions.count == 1 && l.total.outputTokens == 10, "sub-agent usage must not be folded into the parent (overlap unknown)")
+    }
+}
+
+// MARK: - TSD-02: read-only RTK hook detection
+
+@Suite struct RTKHookDetectorTests {
+    private func settings(_ command: String) -> Data {
+        Data(#"{"model":"x","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"\#(command)"}]}]}}"#.utf8)
+    }
+
+    @Test func detectsRTKHookAndIgnoresOthers() {
+        #expect(RTKHookDetector.isConfigured(settings: settings("rtk hook claude")))
+        #expect(RTKHookDetector.isConfigured(settings: settings("/opt/homebrew/bin/rtk hook claude")))
+        #expect(!RTKHookDetector.isConfigured(settings: settings("./scripts/lint.sh")))
+        #expect(!RTKHookDetector.isConfigured(settings: settings("artk-check")))
+        #expect(!RTKHookDetector.isConfigured(settings: Data(#"{"hooks":{"PostToolUse":[{"hooks":[{"command":"rtk hook claude"}]}]}}"#.utf8)))
+        #expect(!RTKHookDetector.isConfigured(settings: Data("{ broken".utf8)))
+    }
+
+    @Test func readsFileWithoutChangingIt() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("rtk-\(UUID().uuidString)")
+        #expect(!RTKHookDetector.isConfigured(claudeHome: home))   // no folder, no file
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let file = home.appendingPathComponent("settings.json")
+        try settings("rtk hook claude").write(to: file)
+        let before = try Data(contentsOf: file), stamp = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        #expect(RTKHookDetector.isConfigured(claudeHome: home))
+        #expect(try Data(contentsOf: file) == before)
+        #expect(try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == stamp)
     }
 }

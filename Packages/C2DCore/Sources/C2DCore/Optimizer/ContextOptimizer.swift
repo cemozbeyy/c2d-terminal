@@ -30,7 +30,7 @@ public struct ContextPayload: Hashable, Sendable {
 
 /// One change the optimizer made. `originalContent` keeps it reversible (Part 10 §18).
 public struct OptimizationAction: Hashable, Sendable {
-    public enum Kind: String, Sendable { case removedExactDuplicate, normalizedWhitespace }
+    public enum Kind: String, Sendable { case removedExactDuplicate, normalizedWhitespace, condensedOutput }
     public let itemID: String
     public let kind: Kind
     public let reason: String
@@ -87,6 +87,40 @@ public enum ContextOptimizer {
         }
         let result = ContextPayload(items: kept)
         return OptimizationResult(before: before, after: result.estimate, payload: result, actions: actions, preservedMandatory: preservedMandatory)
+    }
+
+    /// Full deterministic pass: terminal-output items are condensed (TS-4, `OutputCondenser`), then exact
+    /// duplicates and whitespace are handled as in `deduplicate`. Every change keeps its original. Lossless by
+    /// default; lossy folding only when the caller passes options that allow it.
+    public static func optimize(_ payload: ContextPayload, output: OutputCondenser.Options = .lossless) -> OptimizationResult {
+        var condensed = payload
+        var actions: [OptimizationAction] = []
+        for i in condensed.items.indices where condensed.items[i].kind == .terminalOutput && !condensed.items[i].mandatory {
+            let item = condensed.items[i]
+            let c = OutputCondenser.condense(item.content, options: output)
+            guard c.text != item.content, c.text.utf8.count < item.content.utf8.count else { continue }
+            actions.append(OptimizationAction(itemID: item.id, kind: .condensedOutput,
+                                              reason: "\(c.steps.map(\.rawValue).joined(separator: ", ")); \(c.linesBefore)→\(c.linesAfter) lines, all \(c.diagnosticLines) diagnostic line(s) kept",
+                                              originalContent: item.content, tokensBefore: TokenEstimator.estimate(item.content).tokens,
+                                              tokensAfter: TokenEstimator.estimate(c.text).tokens))
+            condensed.items[i].content = c.text
+        }
+        let d = deduplicate(condensed)
+        return OptimizationResult(before: payload.estimate, after: d.after, payload: d.payload, actions: actions + d.actions, preservedMandatory: d.preservedMandatory)
+    }
+
+    /// Markdown for a hand-off (TS-3): one section per item, each body in a fence longer than any backtick
+    /// run inside it so pasted code can't break out.
+    public static func handOffMarkdown(_ payload: ContextPayload, title: String) -> String {
+        var out = "# \(title)\n"
+        for item in payload.items {
+            out += "\n## \(item.kind.rawValue)\(item.path.map { ": \($0)" } ?? "")\(item.mandatory ? " (mandatory)" : "")\n\n"
+            var longest = 0, run = 0
+            for ch in item.content { if ch == "`" { run += 1; longest = max(longest, run) } else { run = 0 } }
+            let fence = String(repeating: "`", count: max(3, longest + 1))
+            out += "\(fence)\n\(item.content)\n\(fence)\n"
+        }
+        return out
     }
 
     /// Reports only; the user decides what to drop (Part 10 §6).

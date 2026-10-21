@@ -56,10 +56,36 @@ final class AppModel {
     private(set) var providerStatuses: [String: AgentProviderStatus] = [:]
     private(set) var providerPaths: [String: String] = [:]
     private(set) var providersRefreshedAt: Date?
-    private(set) var workspace: WorkspaceController?
+    private(set) var workspace: WorkspaceController? { didSet { persistPages() } }
     /// Open "pages": one workspace per project, kept alive (sessions keep running) while another page
     /// is shown, so switching projects is a tab click — not a close/reopen through the Projects list.
-    private(set) var openWorkspaces: [WorkspaceController] = []
+    private(set) var openWorkspaces: [WorkspaceController] = [] { didSet { persistPages() } }
+
+    /// Open pages (in tab order) and the visible one, restored on the next launch. Only the folders are
+    /// remembered; shells don't survive a quit. A `-c2dOpenProject` launch neither restores nor overwrites them.
+    private static let pagesKey = "openPagePaths", activePageKey = "activePagePath"
+    private let persistsPages = UserDefaults.standard.string(forKey: "c2dOpenProject") == nil
+
+    private func persistPages() {
+        guard persistsPages else { return }
+        UserDefaults.standard.set(openWorkspaces.map(\.projectPath), forKey: Self.pagesKey)
+        UserDefaults.standard.set(workspace?.projectPath, forKey: Self.activePageKey)
+    }
+
+    /// Reopens last session's pages; missing folders are skipped and reported once. False when none were saved.
+    private func restorePages() -> Bool {
+        guard let paths = UserDefaults.standard.stringArray(forKey: Self.pagesKey), !paths.isEmpty else { return false }
+        let active = UserDefaults.standard.string(forKey: Self.activePageKey)
+        var missing: [String] = []
+        for path in paths {
+            if let project = registry.projects.first(where: { $0.path == path }), project.isAvailable { openWorkspace(for: project) }
+            else { missing.append(path) }
+        }
+        if !missing.isEmpty { report("Some pages were not reopened", "Folder not found: \(missing.joined(separator: ", "))") }
+        if let page = openWorkspaces.first(where: { $0.projectPath == active }) ?? openWorkspaces.last { showPage(page) }
+        debugTrace("pages restored: \(openWorkspaces.map(\.projectPath)) visible=\(workspace?.projectPath ?? "none") missing=\(missing.count)")
+        return !openWorkspaces.isEmpty
+    }
     var destination: Destination = .projects
     var paletteVisible = false
     /// Pre-filled palette text for ⌘L (":") and ⇧⌘F ("/"); consumed when the palette appears.
@@ -112,7 +138,7 @@ final class AppModel {
         // automated runtime checks and handy for development. Only directories are accepted.
         if let launchPath = UserDefaults.standard.string(forKey: "c2dOpenProject") {
             openProject(at: URL(fileURLWithPath: launchPath))
-        } else if let active = registry.activeProject, active.isAvailable {
+        } else if !restorePages(), let active = registry.activeProject, active.isAvailable {
             openWorkspace(for: active)
         }
         #if DEBUG
@@ -159,7 +185,7 @@ final class AppModel {
             }
         }
         // `-c2dOptimizerDemo YES` builds a payload from the open editor files twice (to create an exact
-        // duplicate), optimizes, and records — exercising the premium path under the developer override.
+        // duplicate), optimizes, and records.
         if UserDefaults.standard.bool(forKey: "c2dOptimizerDemo") {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -645,6 +671,36 @@ final class AppModel {
         // `-c2dGitSync YES` exercises fetch/pull/push through the controller against a LOCAL remote
         // (prepared by the caller): fetch should surface behind>0, pull clear it, commit make ahead>0,
         // push clear it. Makes a local commit + pushes to a local bare remote only.
+        // `-c2dTokenSaverCheck YES`: types a noisy command into the first live terminal,
+        // adds that terminal's output to the optimizer, optimizes, and writes the hand-off file — the path the
+        // panel's buttons take. Writes only `<project>/.c2d/` (git-ignored by its own .gitignore).
+        if UserDefaults.standard.bool(forKey: "c2dTokenSaverCheck") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                guard let ws = self?.workspace else { return }
+                if !ws.terminals.values.contains(where: \.isRunning) { ws.newTerminal(); try? await Task.sleep(for: .seconds(3)) }
+                guard let t = ws.terminals.values.first(where: \.isRunning) else { debugTrace("tokenSaverCheck: no live terminal"); return }
+                t.write(Data("clear; for i in $(seq 1 120); do echo \"Compiling module $i/120\"; done; for i in 1 2 3 4 5; do echo 'retrying connection to build server'; done; echo 'Sources/App/main.swift:3:1: error: boom'; echo done\n".utf8))
+                try? await Task.sleep(for: .seconds(2))
+                let o = ws.optimizer
+                o.clear(); o.addTerminalOutput(t); o.lossyOutputFolding = true
+                let raw = o.items.first?.content ?? ""
+                o.optimize(); o.writeHandOffFile()
+                let file = (try? String(contentsOfFile: (ws.projectPath as NSString).appendingPathComponent(".c2d/context.md"), encoding: .utf8)) ?? ""
+                debugTrace("tokenSaverCheck: rawLines=\(raw.split(separator: "\n").count) actions=\(o.result?.actions.map(\.kind.rawValue) ?? []) before=\(o.result?.before.tokens ?? -1) after=\(o.result?.after.tokens ?? -1) errorKept=\(file.contains("main.swift:3:1: error: boom")) folded=\(file.contains("similar lines omitted")) repeat=\(file.contains("repeated")) note=\(o.handOffNote ?? o.lastError ?? "nil")")
+            }
+        }
+        // `-c2dGitFetchOnly YES` — fetch through the controller against whatever origin the project has
+        // (the real remote included). Read-only on purpose: no pull, commit or push.
+        if UserDefaults.standard.bool(forKey: "c2dGitFetchOnly") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let git = self?.workspace?.git, git.isAvailable else { debugTrace("gitFetchOnly: no git"); return }
+                await git.refresh(); let b0 = git.behindCount, a0 = git.aheadCount
+                await git.fetch(); await git.refresh()
+                debugTrace("gitFetchOnly: hasUpstream=\(git.hasUpstream) before=\(b0)↓\(a0)↑ after=\(git.behindCount)↓\(git.aheadCount)↑ err=\(git.lastError ?? "none")")
+            }
+        }
         if UserDefaults.standard.bool(forKey: "c2dGitSync") {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -1018,31 +1074,43 @@ final class AppModel {
         await t.terminateAndClose()
     }
 
-    /// Panes of each terminal window, left to right: iTerm-style side-by-side splits. Native macOS
+    /// Split layout of each terminal window (iTerm-style: right ⌘D, down ⌘⇧D, nestable). Native macOS
     /// tabs are the window's tabs; this is the split inside one tab.
-    // ponytail: one horizontal row per window; a nested split tree would reuse WorkspaceLayout if ever needed.
-    private(set) var standaloneWindowPanes: [UUID: [PanelID]] = [:]
+    private(set) var standaloneWindowLayouts: [UUID: PaneTree] = [:]
+    /// Panes of each window in reading order.
+    var standaloneWindowPanes: [UUID: [PanelID]] { standaloneWindowLayouts.mapValues(\.panes) }
 
     /// First pane of a window, created when the window appears (idempotent).
     func openStandaloneWindow(_ window: UUID, directory: String) {
-        guard standaloneWindowPanes[window] == nil else { return }
-        standaloneWindowPanes[window] = [makeStandaloneTerminal(projectPath: directory).panelID]
+        guard standaloneWindowLayouts[window] == nil else { return }
+        standaloneWindowLayouts[window] = .pane(makeStandaloneTerminal(projectPath: directory).panelID)
     }
 
-    /// Adds a shell to the right of `pane`, starting in that pane's current directory.
-    func splitStandalone(window: UUID, after pane: PanelID) {
-        guard var panes = standaloneWindowPanes[window], let i = panes.firstIndex(of: pane) else { return }
+    /// Adds a shell right of (or below) `pane`, starting in that pane's current directory, and focuses it.
+    func splitStandalone(window: UUID, after pane: PanelID, down: Bool = false) {
+        guard let tree = standaloneWindowLayouts[window], tree.panes.contains(pane) else { return }
         let dir = standaloneTerminals[pane]?.resolutionDirectory ?? terminalWindowDirectory
-        panes.insert(makeStandaloneTerminal(projectPath: dir).panelID, at: i + 1)
-        standaloneWindowPanes[window] = panes
+        let new = makeStandaloneTerminal(projectPath: dir)
+        standaloneWindowLayouts[window] = tree.inserting(new.panelID, beside: pane, down: down)
+        Task { @MainActor in   // once SwiftUI has hosted the new surface
+            try? await Task.sleep(for: .milliseconds(150))
+            if let v = new.hostedView { v.window?.makeFirstResponder(v) }
+        }
+    }
+
+    /// The key terminal window and its focused pane (the one holding keyboard focus, else its first pane).
+    var focusedStandalonePane: (window: UUID, pane: PanelID)? {
+        guard let key = NSApp.keyWindow, let (window, tree) = standaloneWindowLayouts.first(where: { key.identifier == Self.terminalWindowIdentifier($0.key) }) else { return nil }
+        let focused = tree.panes.first { standaloneTerminals[$0]?.hostedView.map { key.firstResponder === $0 } == true }
+        return (focused ?? tree.panes.first).map { (window, $0) }
     }
 
     /// Ends one pane's shell; returns whether the window still has panes.
     @discardableResult
     func closeStandalonePane(window: UUID, _ pane: PanelID) async -> Bool {
-        standaloneWindowPanes[window]?.removeAll { $0 == pane }
+        standaloneWindowLayouts[window] = standaloneWindowLayouts[window]?.removing(pane)
         await closeStandaloneTerminal(pane)
-        return !(standaloneWindowPanes[window]?.isEmpty ?? true)
+        return standaloneWindowLayouts[window] != nil
     }
 
     /// Open terminal windows for menus, sorted by title: (window id, "folder · 2 panes").
@@ -1065,7 +1133,7 @@ final class AppModel {
 
     /// Window closed: every pane's shell ends with it.
     func closeStandaloneWindow(_ window: UUID) async {
-        for pane in standaloneWindowPanes.removeValue(forKey: window) ?? [] { await closeStandaloneTerminal(pane) }
+        for pane in standaloneWindowLayouts.removeValue(forKey: window)?.panes ?? [] { await closeStandaloneTerminal(pane) }
     }
 }
 

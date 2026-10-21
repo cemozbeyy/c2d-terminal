@@ -310,3 +310,19 @@ private func twoGroups() -> (WorkspaceLayout, Panel, Panel, NodeID, NodeID) {
         #expect(registry.projects.map(\.name) == [a.name, b.name])
     }
 }
+
+@Suite struct PaneTreeTests {
+    @Test func splitsNestAndCollapse() {
+        let a = PanelID(), b = PanelID(), c = PanelID(), d = PanelID()
+        var t = PaneTree.pane(a).inserting(b, beside: a, down: false)            // a | b
+        #expect(t == .split(down: false, [.pane(a), .pane(b)]))
+        t = t.inserting(c, beside: a, down: false)                               // same direction joins the row
+        #expect(t == .split(down: false, [.pane(a), .pane(c), .pane(b)]))
+        t = t.inserting(d, beside: b, down: true)                                // b splits down → nested column
+        #expect(t == .split(down: false, [.pane(a), .pane(c), .split(down: true, [.pane(b), .pane(d)])]))
+        #expect(t.panes == [a, c, b, d])
+        t = t.removing(b)!                                                       // one-child split collapses
+        #expect(t == .split(down: false, [.pane(a), .pane(c), .pane(d)]))
+        #expect(PaneTree.pane(a).removing(a) == nil)
+    }
+}

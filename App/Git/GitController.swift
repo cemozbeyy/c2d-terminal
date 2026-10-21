@@ -372,10 +372,31 @@ final class GitController {
         return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func checkout(_ branch: String) async {
-        await perform("Checkout \(branch)") { try await $0.checkout(branch: branch) }
+    /// Set when git refused a checkout to protect uncommitted files; the branch picker then offers Stash & Checkout.
+    private(set) var checkoutBlocked: (ref: String, detached: Bool, paths: [String])?
+
+    func checkout(_ ref: String, detached: Bool = false) async {
+        checkoutBlocked = nil
+        await perform("Checkout \(ref)") { repo in
+            do { if detached { try await repo.checkoutDetached(ref) } else { try await repo.checkout(branch: ref) } }
+            catch GitError.checkoutWouldOverwrite(let paths) {
+                self.checkoutBlocked = (ref, detached, paths)
+                throw GitError.checkoutWouldOverwrite(paths: paths)
+            }
+        }
         await loadBranchesAndHistory()
     }
+
+    /// VS Code's "Stash & Checkout": stash everything (untracked included), then retry the blocked checkout.
+    /// The stash is left for the user (`git stash pop`); nothing is popped automatically.
+    func stashAndCheckout() async {
+        guard let b = checkoutBlocked else { return }
+        await perform("Stash") { try await $0.stash(message: "C2D: before checkout \(b.ref)") }
+        guard lastError == nil else { return }
+        await checkout(b.ref, detached: b.detached)
+    }
+
+    func cancelBlockedCheckout() { checkoutBlocked = nil; lastError = nil }
 
     func createBranch(_ name: String, from: String? = nil) async {
         await perform("Create branch") { try await $0.createBranch(name, checkout: true, from: from) }
@@ -401,6 +422,7 @@ final class GitController {
         case .notARepository: "not a Git repository"
         case .commandFailed(let code, let stderr): "git exited \(code): \(stderr.isEmpty ? "no details" : SecretRedactor.redact(stderr))"
         case .dirtyWorkingTree: "working tree has uncommitted changes; commit, stash or discard them first (nothing was changed)"
+        case .checkoutWouldOverwrite(let paths): "your changes to \(paths.prefix(3).joined(separator: ", "))\(paths.count > 3 ? " and \(paths.count - 3) more" : "") would be overwritten (nothing was changed)"
         case .nothingToCommit: "nothing is staged"
         case .emptyMessage: "commit message is empty"
         case .identityNotConfigured: "git user.name / user.email are not configured"

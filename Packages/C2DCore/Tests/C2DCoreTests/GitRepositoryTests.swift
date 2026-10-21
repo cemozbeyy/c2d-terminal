@@ -148,15 +148,28 @@ import Testing
         var b = try await r.repo.branches()
         #expect(b.map(\.name).sorted() == ["feature", "main"] && b.first { $0.isCurrent }?.name == "feature")
         #expect(b[0].lastCommitSubject == "c1" && b[0].lastCommitDate != nil)
+        // A change that doesn't collide travels with the checkout (VS Code / plain git).
         try r.write("a", "2")
-        await #expect(throws: GitError.dirtyWorkingTree) { try await r.repo.checkout(branch: "main") }
-        #expect(try r.read("a") == "2", "refusal left the change alone")
+        try await r.repo.checkout(branch: "main")
+        let branchAfter = try await r.repo.status().branch
+        #expect(try r.read("a") == "2" && branchAfter == "main")
+        try await r.repo.checkout(branch: "feature")
         try await r.repo.discardChanges(paths: ["a"])
-        #expect(try r.read("a") == "1")
+        // A change that would be overwritten: git refuses, names the file, changes nothing.
+        try r.write("a", "f"); try await r.repo.stageAll(); _ = try await r.repo.commit(message: "feature edit")
+        try r.write("a", "dirty")
+        await #expect(throws: GitError.checkoutWouldOverwrite(paths: ["a"])) { try await r.repo.checkout(branch: "main") }
+        #expect(try r.read("a") == "dirty", "refusal left the change alone")
+        // Stash & Checkout.
+        try await r.repo.stash(message: "test")
+        #expect(try await r.repo.run(["stash", "list"]).stdout.split(separator: "\n").count == 1)
         try await r.repo.checkout(branch: "main")
         b = try await r.repo.branches()
         #expect(b.first { $0.isCurrent }?.name == "main")
         #expect(try await r.repo.status().branch == "main")
+        try await r.repo.checkoutDetached("feature")
+        #expect(try await r.repo.status().isDetached)
+        try await r.repo.checkout(branch: "main")
         try await r.repo.createBranch("from-feature", checkout: false, from: "feature")
         #expect(try await r.repo.branches().contains { $0.name == "from-feature" && !$0.isCurrent })
     }

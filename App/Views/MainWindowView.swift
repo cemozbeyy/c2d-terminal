@@ -51,8 +51,7 @@ struct MainWindowView: View {
         case .workspace, .sourceControl:   // Git is a docked left panel, not a full-screen view (see the rail)
             if let ws = model.workspace { WorkspaceCanvas(workspace: ws) } else { ProjectsView() }
         case .agents: AgentsDestinationView()
-        case .tasks:
-            if let ws = model.workspace { TasksPanelView(tasks: ws.tasks, workspace: ws).padding(Theme.space3) } else { Text("Open a project to see its tasks.").foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
+        case .tasks: IncomingPlaceholderView(title: "Tasks", symbol: "checklist")   // being redesigned; TasksController and its data stay
         case .marketplace: MarketplaceView()
         case .settings: SettingsPlaceholderView()
         }
@@ -240,7 +239,11 @@ struct TopBar: View {
                     OptimizerPopover(workspace: ws)
                 }
                 #if DEBUG
-                .onAppear { if UserDefaults.standard.bool(forKey: "c2dOptimizerPopoverCheck") { NSApp.activate(ignoringOtherApps: true) } }   // direct launches (env inherited) start behind other windows
+                .onAppear {   // direct launches (env inherited) start behind other windows; a popover set before the window is key never shows
+                    guard UserDefaults.standard.bool(forKey: "c2dOptimizerPopoverCheck") else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showOptimizerPopover = false; showOptimizerPopover = true }
+                }
                 #endif
                 Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
             }
@@ -318,6 +321,22 @@ struct MessageBanner: View {
     }
 }
 
+/// A destination that is being redesigned: says so plainly instead of showing a half-finished screen.
+struct IncomingPlaceholderView: View {
+    let title: String
+    let symbol: String
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Theme.accent)
+            Text(title).font(.title2).fontWeight(.semibold)
+            Text("Incoming").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+                .padding(.horizontal, 8).padding(.vertical, 3).background(Theme.accentSoft, in: Capsule())
+            Text("This screen is being redesigned and will be back soon.").font(.callout).foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 struct SettingsPlaceholderView: View {
     @Environment(AppModel.self) private var model
     var body: some View {
@@ -337,6 +356,7 @@ struct SettingsPlaceholderView: View {
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
+    @State private var rtkHook = false
 
     var body: some View {
         @Bindable var model = model
@@ -356,15 +376,26 @@ struct OptimizerPopover: View {
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 row("chart.bar.doc.horizontal", "Measures the context you hand to an agent and flags what is oversized.")
-                row("lock.shield", "Estimates only — nothing is billed or sent anywhere.")
-                row("sparkles", "Premium trimming comes later; the switch is ready for it.", muted: true)
+                row("lock.shield", "Prepared-context sizes are estimates; usage is read from Claude Code's own transcripts. Nothing is billed or sent anywhere.")
+                row("wand.and.stars", "Optimize condenses terminal output you hand over — lossless unless you opt in; lines recognised as errors or warnings are always kept. Free, no AI.")
+                if rtkHook {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "line.3.horizontal.decrease.circle").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted).frame(width: 14)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("RTK hook found in Claude Code settings: the agent's own Bash output is already filtered by RTK, a separate tool.")
+                                .foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                            Link("About RTK", destination: RTKHookDetector.docsURL).clickCursor()
+                        }
+                        .font(Theme.Typography.detail)
+                    }
+                }
             }
-            if model.developerMode {
+            if model.optimizerEnabled || model.developerMode {
                 Divider()
                 Button {
                     workspace.toggleOptimizerPanel()
                 } label: {
-                    Label(workspace.isOptimizerVisible ? "Hide optimizer panel" : "Show optimizer panel", systemImage: "rectangle.bottomhalf.inset.filled")
+                    Label(workspace.isOptimizerVisible ? "Hide Token Saver" : "Open Token Saver", systemImage: "rectangle.bottomhalf.inset.filled")
                         .font(Theme.Typography.detail)
                 }
                 .buttonStyle(.plain).foregroundStyle(Theme.textSecondary).clickCursor()
@@ -373,7 +404,10 @@ struct OptimizerPopover: View {
         .padding(Theme.space4)
         .frame(width: 300)
         .background(Theme.panel)
-        .task(id: model.optimizerEnabled) { await workspace.optimizer.loadLedger() }
+        .task(id: model.optimizerEnabled) {
+            rtkHook = model.optimizerEnabled && RTKHookDetector.isConfigured()   // TSD-02: read-only, never writes the settings file
+            await workspace.optimizer.loadLedger()
+        }
     }
 
     /// TS-1: this project's provider-reported usage, read from Claude Code's local transcripts.
@@ -389,6 +423,10 @@ struct OptimizerPopover: View {
                     let linked = o.attribution.values.filter(\.isLinked).count
                     Text("provider-reported · \(l.formatLabel) · \(linked) linked to C2D launches, \(l.sessions.count - linked) not linked\(l.unavailable.isEmpty ? "" : " · \(l.unavailable.count) unavailable")")
                         .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+                    if let newest = l.sessions.first, newest.lastContextTokens > 0 {
+                        Text("Newest session re-reads ~\(newest.lastContextTokens.formatted()) tokens per reply (peak \(newest.peakContextTokens.formatted())); a fresh session starts near the fixed overhead.")
+                            .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    }
                 case .unavailable(let reason):
                     Text("Usage unavailable").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
                     Text(reason).font(Theme.Typography.micro).foregroundStyle(Theme.textMuted).lineLimit(2)

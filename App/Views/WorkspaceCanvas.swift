@@ -382,7 +382,7 @@ struct TerminalPanelView: View {
     let controller: TerminalPanelController
     /// Terminal-window panes only: split this pane to the right / close this pane. Workspace panels
     /// split by drag-and-drop and close from their group tab, so they pass nothing.
-    var onSplit: (() -> Void)? = nil
+    var onSplit: ((_ down: Bool) -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
     var body: some View {
@@ -408,8 +408,10 @@ struct TerminalPanelView: View {
                     Button("New Session") { controller.startNewSession() }.help("Starts a fresh shell here; the exit output above is replaced.")
                 }
                 if let onSplit {
-                    Button(action: onSplit) { Image(systemName: "rectangle.split.2x1").font(Theme.Typography.detail).fontWeight(.semibold) }
-                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split right: a new shell beside this one")
+                    Button { onSplit(false) } label: { Image(systemName: "rectangle.split.2x1").font(Theme.Typography.detail).fontWeight(.semibold) }
+                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split right (⌘D): a new shell beside this one")
+                    Button { onSplit(true) } label: { Image(systemName: "rectangle.split.1x2").font(Theme.Typography.detail).fontWeight(.semibold) }
+                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split down (⌘⇧D): a new shell below this one")
                 }
                 if let onClose {
                     Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
