@@ -33,13 +33,36 @@ import Testing
         }
         let plan = try AgentLaunchPlan.make(provider: .claudeCode, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
         // TS-2: Claude Code gets a fresh, valid `--session-id` before the prompt; the same id is kept on the plan.
-        #expect(plan.arguments.count == 3 && plan.arguments[0] == "--session-id" && plan.arguments[2] == "do it" && plan.environmentAdditions.isEmpty)
-        #expect(UUID(uuidString: plan.arguments[1]) != nil && plan.providerSessionID == plan.arguments[1])
+        // Activity hooks come first (`--settings <json>`), pointing at this session's state file.
+        #expect(plan.arguments.count == 5 && plan.arguments[0] == "--settings" && plan.arguments[2] == "--session-id" && plan.arguments[4] == "do it" && plan.environmentAdditions.isEmpty)
+        #expect(UUID(uuidString: plan.arguments[3]) != nil && plan.providerSessionID == plan.arguments[3])
+        #expect(plan.arguments[1].contains(AgentActivity.stateFile(sessionID: plan.arguments[3]).lastPathComponent))
         let again = try AgentLaunchPlan.make(provider: .claudeCode, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
         #expect(again.providerSessionID != plan.providerSessionID, "every launch gets its own id (the CLI refuses a reused one)")
         let codexPlan = try AgentLaunchPlan.make(provider: .codex, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "do it")
         #expect(codexPlan.arguments.isEmpty && codexPlan.providerSessionID == nil, "unverified provider: no session id, no argv change")
         #expect(plan.displaySummary.contains("Task: do it") && plan.displaySummary.contains("Claude Code"))
+    }
+
+    @Test func activityHookSettingsAreValidAndQuoteThePath() throws {
+        let path = "/tmp/a dir/it's"
+        let json = AgentActivity.hookSettings(stateFile: path)
+        let obj = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let hooks = try #require(obj["hooks"] as? [String: Any])
+        #expect(Set(hooks.keys) == ["SessionStart", "UserPromptSubmit", "PostToolUse", "Notification", "Stop"])
+        let stop = try #require(((hooks["Stop"] as? [[String: Any]])?.first?["hooks"] as? [[String: Any]])?.first?["command"] as? String)
+        #expect(stop == #"printf done > '/tmp/a dir/it'\''s'"#)
+        // The command really writes where it says, through a shell, with spaces and a quote in the path.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("act \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("it's")
+        let cmd = try #require(((((try JSONSerialization.jsonObject(with: Data(AgentActivity.hookSettings(stateFile: file.path).utf8)) as? [String: Any])?["hooks"] as? [String: Any])?["Notification"] as? [[String: Any]])?.first?["hooks"] as? [[String: Any]])?.first?["command"] as? String)
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", cmd]
+        try p.run(); p.waitUntilExit()
+        #expect(AgentActivity.read(file) == .waiting)
+        try Data("garbage".utf8).write(to: file)
+        #expect(AgentActivity.read(file) == nil, "unknown content is not guessed")
     }
 
     @Test func registryRoundTripRestartAndPanelLookup() throws {

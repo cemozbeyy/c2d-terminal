@@ -179,6 +179,9 @@ final class TerminalPanelController: NSObject {
                         if case .signaled(let g) = status { $0.signal = g }
                     }
                     self.record = self.app.sessions.record(id)
+                    if let sid = self.agentPlan?.providerSessionID {   // the pet stops tracking an agent that ended
+                        try? FileManager.default.removeItem(at: AgentActivity.stateFile(sessionID: sid))
+                    }
                     if let agentID {
                         self.app.updateAgentSession(agentID) { $0.lifecycle = .exited; $0.endedAt = Date(); if case .exited(let c) = status { $0.exitCode = c } }
                         self.agentRecord = self.app.agentSessions.record(agentID)

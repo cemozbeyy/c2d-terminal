@@ -15,10 +15,16 @@ struct BuddyMascotView: View {
     var asleep = false
     /// Bump to play one hop.
     var hop = 0
+    /// An agent is working: the antenna glows amber and pulses.
+    var working = false
+    /// An agent finished (or needs you): the right arm waves until this goes false.
+    var waving = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var floating = false
     @State private var blinking = false
+    @State private var pulse = false
+    @State private var waveUp = false
 
     private static let blueLight = Color(red: 0.66, green: 0.85, blue: 1.0)
     private static let blue = Color(red: 0.36, green: 0.64, blue: 0.98)
@@ -26,6 +32,7 @@ struct BuddyMascotView: View {
     private static let navy = Color(red: 0.08, green: 0.12, blue: 0.24)
     private static let navyDeep = Color(red: 0.04, green: 0.07, blue: 0.16)
     private static let glow = Color(red: 0.58, green: 0.91, blue: 1.0)
+    private static let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
     private static let blush = Color(red: 1.0, green: 0.6, blue: 0.72)
 
     private var shell: LinearGradient {
@@ -64,6 +71,15 @@ struct BuddyMascotView: View {
             guard motion else { return }
             withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) { floating = true }
         }
+        .onChange(of: working, initial: true) { _, on in
+            if on && !reduceMotion { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true } }
+            else { withAnimation(.easeOut(duration: 0.2)) { pulse = false } }
+        }
+        .onChange(of: waving, initial: true) { _, on in
+            if on && !reduceMotion { withAnimation(.easeInOut(duration: 0.28).repeatForever(autoreverses: true)) { waveUp = true } }
+            else { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { waveUp = false } }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: waving)
         .task(id: animated) {
             // Blink every few seconds; the task is cancelled when the view leaves the screen.
             guard animated else { return }
@@ -95,9 +111,10 @@ struct BuddyMascotView: View {
                 Capsule().fill(Self.blueDeep).frame(width: s * 0.13, height: s * 0.075).offset(x: side * s * 0.09, y: s * 0.4)
             }
             // Arms, tucked at the sides
-            ForEach([-1.0, 1.0], id: \.self) { side in
+            ForEach(waving ? [-1.0] : [-1.0, 1.0], id: \.self) { side in
                 Capsule().fill(shell).frame(width: s * 0.085, height: s * 0.19)
-                    .rotationEffect(.degrees(side * -22), anchor: .top).offset(x: side * s * 0.235, y: s * 0.22)
+                    .rotationEffect(.degrees(side * -22), anchor: .top)
+                    .offset(x: side * s * 0.235, y: s * 0.22)
             }
             // Body with a little chest screen
             RoundedRectangle(cornerRadius: s * 0.13, style: .continuous).fill(shell)
@@ -108,14 +125,25 @@ struct BuddyMascotView: View {
                 .frame(width: s * 0.15, height: s * 0.08).offset(y: s * 0.235)
             // Antenna
             Capsule().fill(Self.blueDeep).frame(width: s * 0.025, height: s * 0.08).offset(y: -s * 0.41)
-            Circle().fill(RadialGradient(colors: [.white, Self.glow], center: .topLeading, startRadius: 0, endRadius: s * 0.05))
-                .frame(width: s * 0.065).shadow(color: Self.glow.opacity(0.8), radius: s * 0.02).offset(y: -s * 0.45)
+            let light = working ? Self.amber : Self.glow
+            Circle().fill(RadialGradient(colors: [.white, light], center: .topLeading, startRadius: 0, endRadius: s * 0.05))
+                .frame(width: s * 0.065)
+                .shadow(color: light.opacity(working ? 1 : 0.8), radius: s * (working && pulse ? 0.06 : 0.02))
+                .scaleEffect(working && pulse ? 1.25 : 1)
+                .offset(y: -s * 0.45)
             // Ear bumps
             ForEach([-1.0, 1.0], id: \.self) { side in
                 Circle().fill(LinearGradient(colors: [Self.blue, Self.blueDeep], startPoint: .top, endPoint: .bottom))
                     .frame(width: s * 0.12).offset(x: side * s * 0.425, y: -s * 0.1)
             }
             head(s).offset(y: -s * 0.1)
+            if waving {
+                // Raised right arm, drawn over the head so the hand shows beside it; swings while waving.
+                Capsule().fill(shell).frame(width: s * 0.085, height: s * 0.19)
+                    .rotationEffect(.degrees(waveUp && !reduceMotion ? -150 : -118), anchor: .top)
+                    .offset(x: s * 0.39, y: s * 0.17)
+                    .transition(.opacity)
+            }
         }
     }
 
