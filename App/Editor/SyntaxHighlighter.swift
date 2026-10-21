@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 
 /// Small regex highlighter for the languages the MVP claims (Bible Part 5 §4.3). It is honest
-/// about scope: keywords, strings, comments, numbers. No LSP, no semantic coloring.
+/// about scope: keywords, strings, comments, numbers, type and function names, markup tags and
+/// attributes. No LSP, no semantic coloring. Colours come from the active theme (`Palette`).
 struct SyntaxHighlighter {
     struct Language {
         let name: String
@@ -16,11 +17,17 @@ struct SyntaxHighlighter {
         /// Markdown uses its own set of passes (headings, emphasis, code, links, lists) instead of the
         /// keyword/string/comment model.
         var isMarkdown: Bool = false
+        /// HTML/XML-like: tags, attributes and their values instead of keywords.
+        var isMarkup: Bool = false
+        /// JavaScript/TypeScript: JSX tags and attributes are coloured like markup.
+        var hasJSX: Bool = false
     }
 
     static let languages: [String: Language] = {
         let swift = Language(name: "Swift", keywords: ["import", "let", "var", "func", "struct", "class", "enum", "protocol", "extension", "if", "else", "guard", "return", "for", "in", "while", "switch", "case", "default", "break", "continue", "throw", "throws", "try", "catch", "async", "await", "actor", "public", "private", "internal", "fileprivate", "static", "self", "Self", "nil", "true", "false", "init", "deinit", "where", "some", "any", "mutating", "override", "final", "defer", "do", "typealias", "associatedtype", "inout", "is", "as", "super", "open"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\""])
-        let js = Language(name: "JavaScript", keywords: ["const", "let", "var", "function", "return", "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "new", "this", "class", "extends", "import", "export", "from", "async", "await", "try", "catch", "finally", "throw", "typeof", "instanceof", "in", "of", "null", "undefined", "true", "false", "interface", "type", "enum", "implements", "readonly", "public", "private", "protected", "static", "as", "yield", "delete", "void"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\"", "'", "`"])
+        var js = Language(name: "JavaScript", keywords: ["const", "let", "var", "function", "return", "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "new", "this", "class", "extends", "import", "export", "from", "async", "await", "try", "catch", "finally", "throw", "typeof", "instanceof", "in", "of", "null", "undefined", "true", "false", "interface", "type", "enum", "implements", "readonly", "public", "private", "protected", "static", "as", "yield", "delete", "void"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\"", "'", "`"])
+        js.hasJSX = true
+        let html = Language(name: "HTML", keywords: [], lineComment: nil, blockComment: ("<!--", "-->"), stringDelimiters: [], isMarkup: true)
         let py = Language(name: "Python", keywords: ["def", "class", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or", "import", "from", "as", "try", "except", "finally", "raise", "with", "lambda", "yield", "pass", "break", "continue", "None", "True", "False", "async", "await", "global", "nonlocal", "del", "is", "assert"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"])
         let sh = Language(name: "Shell", keywords: ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "in", "function", "return", "export", "local", "echo", "exit", "source", "set", "unset", "readonly"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"])
         let json = Language(name: "JSON", keywords: ["true", "false", "null"], lineComment: nil, blockComment: nil, stringDelimiters: ["\""], highlightsKeys: true)
@@ -32,6 +39,7 @@ struct SyntaxHighlighter {
         return ["swift": swift, "js": js, "jsx": js, "ts": js, "tsx": js, "mjs": js, "cjs": js, "py": py, "sh": sh, "zsh": sh, "bash": sh,
                 "json": json, "jsonc": json, "json5": json, "storekit": json, "geojson": json, "webmanifest": json,
                 "md": md, "markdown": md, "mdown": md, "markdn": md, "mkd": md, "txt": md, "text": md, "log": md,
+                "html": html, "htm": html, "xml": html, "svg": html, "plist": html, "xib": html, "storyboard": html, "vue": html,
                 "yml": yaml, "yaml": yaml, "c": c, "h": c, "m": c, "cpp": c, "hpp": c, "rs": rust, "go": go]
     }()
 
@@ -40,18 +48,43 @@ struct SyntaxHighlighter {
     /// Files above this size are shown without highlighting (Bible Part 5 §4.5).
     static let maximumHighlightedLength = 300_000
 
-    struct Palette {
-        var keyword = NSColor.systemPurple
-        var string = NSColor.systemRed
-        var comment = NSColor.systemGreen
-        var number = NSColor.systemOrange
-        var propertyKey = NSColor.systemTeal
-        var link = NSColor.systemBlue
-        var plain = NSColor.textColor
+    /// One colour per token kind. Each Marketplace theme carries its own (`ThemeDescriptor.syntax`).
+    struct Palette: @unchecked Sendable {
+        var keyword: NSColor
+        var string: NSColor
+        var comment: NSColor
+        var number: NSColor
+        var propertyKey: NSColor
+        var link: NSColor
+        var plain: NSColor
+        var type: NSColor
+        var function: NSColor
+        var tag: NSColor
+        var attribute: NSColor
+        var punctuation: NSColor
+
+        private static func c(_ hex: UInt32) -> NSColor { NSColor(hex: hex) }
+
+        /// VS Code "Dark+" with violet keywords, for Midnight Violet.
+        static let midnight = Palette(keyword: c(0xC586C0), string: c(0xCE9178), comment: c(0x6A9955), number: c(0xB5CEA8),
+                                      propertyKey: c(0x9CDCFE), link: c(0x4FC1FF), plain: c(0xE2E4EC), type: c(0x4EC9B0),
+                                      function: c(0xDCDCAA), tag: c(0x569CD6), attribute: c(0x9CDCFE), punctuation: c(0x8B90A3))
+        /// Night Owl–style cool tones, for Ocean.
+        static let ocean = Palette(keyword: c(0xC792EA), string: c(0xECC48D), comment: c(0x6C8B91), number: c(0xF78C6C),
+                                   propertyKey: c(0x7FDBCA), link: c(0x82AAFF), plain: c(0xD6DEEB), type: c(0xFFCB8B),
+                                   function: c(0x82AAFF), tag: c(0x7FDBCA), attribute: c(0xADDB67), punctuation: c(0x7E95A0))
+        /// Gruvbox-style warm tones, for Ember.
+        static let ember = Palette(keyword: c(0xFB4934), string: c(0xB8BB26), comment: c(0x928374), number: c(0xD3869B),
+                                   propertyKey: c(0x83A598), link: c(0x83A598), plain: c(0xEBDBB2), type: c(0xFABD2F),
+                                   function: c(0x8EC07C), tag: c(0xFE8019), attribute: c(0xFABD2F), punctuation: c(0xA89984))
+        /// VS Code "Light+", for Daylight.
+        static let daylight = Palette(keyword: c(0x0000FF), string: c(0xA31515), comment: c(0x008000), number: c(0x098658),
+                                      propertyKey: c(0x0451A5), link: c(0x0070C1), plain: c(0x1F1F1F), type: c(0x267F99),
+                                      function: c(0x795E26), tag: c(0x800000), attribute: c(0xE50000), punctuation: c(0x6B6F7A))
     }
 
     let language: Language
-    var palette = Palette()
+    var palette = Palette.midnight
 
     /// Applies foreground colors to the whole storage. Cheap enough for the size limit above.
     func highlight(_ storage: NSTextStorage) {
@@ -63,7 +96,18 @@ struct SyntaxHighlighter {
         guard text.length <= Self.maximumHighlightedLength else { storage.endEditing(); return }
 
         if language.isMarkdown { highlightMarkdown(storage, full: full); storage.endEditing(); return }
+        if language.isMarkup { highlightMarkup(storage, full: full); storage.endEditing(); return }
 
+        // Names first, so keywords (`if (`, `return`) and strings override them below.
+        color(storage, "\\b[A-Z][A-Za-z0-9_]*\\b", palette.type, in: full)                       // Types, Constants
+        color(storage, "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()", palette.function, group: 1, in: full)  // calls(
+        if language.hasJSX {
+            color(storage, "\\b(string|number|boolean|any|unknown|never|object|symbol|bigint)\\b", palette.type, in: full)  // TS primitives
+            // `<Tag` / `</tag` where `<` follows no word, `)` or `]` (so `a < b` and `Array<T>` stay plain),
+            // and attribute names directly followed by `={`, `="` or `='`.
+            color(storage, "(?<![\\w)\\]])</?([A-Za-z][\\w.]*)(?=[\\s>/])", palette.tag, group: 1, in: full)
+            color(storage, "(?<=\\s)([A-Za-z_][\\w-]*)(?==[{\"'])", palette.attribute, group: 1, in: full)
+        }
         if !language.keywords.isEmpty {
             let pattern = "\\b(" + language.keywords.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|") + ")\\b"
             if let re = try? NSRegularExpression(pattern: pattern) {
@@ -100,6 +144,27 @@ struct SyntaxHighlighter {
         storage.endEditing()
     }
 
+    private func color(_ storage: NSTextStorage, _ pattern: String, _ color: NSColor, group: Int = 0,
+                       options: NSRegularExpression.Options = [], in range: NSRange) {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+        for m in re.matches(in: storage.string, range: range) where m.range(at: group).location != NSNotFound {
+            storage.addAttribute(.foregroundColor, value: color, range: m.range(at: group))
+        }
+    }
+
+    /// HTML/XML (also the HTML inside Markdown): every `<…>` region gets its brackets, tag name,
+    /// attribute names and quoted values coloured; text between tags stays plain. Comments last.
+    private func highlightMarkup(_ storage: NSTextStorage, full: NSRange) {
+        guard let region = try? NSRegularExpression(pattern: "</?[A-Za-z!?][^<>]*>") else { return }
+        for r in region.matches(in: storage.string, range: full).map(\.range) {
+            color(storage, "</?|/?>|\\?>|=", palette.punctuation, in: r)
+            color(storage, "^</?[!?]?([A-Za-z][\\w:.-]*)", palette.tag, group: 1, in: r)
+            color(storage, "\\s([A-Za-z_:@][\\w:.-]*)", palette.attribute, group: 1, in: r)
+            color(storage, "\"[^\"]*\"|'[^']*'", palette.string, in: r)
+        }
+        color(storage, "<!--[\\s\\S]*?-->", palette.comment, in: full)
+    }
+
     /// Markdown passes, applied in an order where later overrides win where they should (code beats
     /// emphasis; headings/lists set the line, inline spans refine it). Only syntax that is present gets
     /// colour, so prose and plain `.txt`/`.log` files stay readable.
@@ -119,7 +184,8 @@ struct SyntaxHighlighter {
         pass("\\*\\*[^*\\n]+\\*\\*|__[^_\\n]+__", palette.number)                        // **bold**
         pass("(?<![\\*\\w])\\*[^*\\n]+\\*(?![\\*\\w])|(?<![_\\w])_[^_\\n]+_(?![_\\w])", palette.string)  // *italic*
         pass("\\[[^\\]\\n]+\\]\\([^)\\n]+\\)", palette.link)                             // [text](url)
-        pass("https?://[^\\s)\\]]+", palette.link)                                       // bare URL
+        highlightMarkup(storage, full: full)                                              // inline HTML (<p>, <img …>)
+        pass("https?://[^\\s)\\]\"']+", palette.link)                                      // bare URL
         // Code last so it wins over emphasis inside it.
         pass("```[\\s\\S]*?```", palette.propertyKey)                                    // ``` fenced block
         pass("`[^`\\n]+`", palette.propertyKey)                                          // `inline code`
