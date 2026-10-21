@@ -15,7 +15,8 @@ public struct AgentLaunchPlan: Hashable, Sendable {
     /// one. It is the only evidence the Token Saver uses to link a transcript to this launch.
     public let providerSessionID: String?
 
-    public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?) throws -> AgentLaunchPlan {
+    public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?,
+                            tokenRunner: String? = TokenSaverEngine.launchRunner()) throws -> AgentLaunchPlan {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workingDirectory, isDirectory: &isDir), isDir.boolValue, access(workingDirectory, X_OK) == 0 else {
             throw AgentError.invalidWorkingDirectory(workingDirectory)
@@ -27,9 +28,9 @@ public struct AgentLaunchPlan: Hashable, Sendable {
         let sessionID = provider.capabilities.explicitSessionID ? UUID().uuidString.lowercased() : nil   // fresh per launch: the CLI refuses a reused id
         var arguments = (sessionID.map { ["--session-id", $0] } ?? []) + provider.launchArguments(task: task)
         if provider.id == AgentProvider.claudeCode.id, let sessionID {
-            // Activity hooks (working / waiting / done) for the desktop pet; see AgentActivity.
+            // Activity hooks (working / waiting / done) for the desktop pet; see AgentActivity. Plus the Token Saver engine's hook.
             try? FileManager.default.createDirectory(at: AgentActivity.directory(), withIntermediateDirectories: true)
-            arguments = ["--settings", AgentActivity.hookSettings(stateFile: AgentActivity.stateFile(sessionID: sessionID).path)] + arguments
+            arguments = ["--settings", AgentActivity.hookSettings(stateFile: AgentActivity.stateFile(sessionID: sessionID).path, tokenRunner: tokenRunner)] + arguments
         }
         return AgentLaunchPlan(provider: provider, executable: executablePath, arguments: arguments,
                                projectPath: projectPath, workingDirectory: workingDirectory, task: task, environmentAdditions: [:],

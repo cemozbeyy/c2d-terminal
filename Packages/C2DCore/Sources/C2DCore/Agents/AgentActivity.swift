@@ -21,14 +21,22 @@ public enum AgentActivity: String, Sendable, Equatable {
         ("Notification", .waiting), ("Stop", .done),
     ]
 
-    /// The `--settings` JSON that makes the CLI report into `stateFile`.
-    public static func hookSettings(stateFile: String) -> String {
+    /// The `--settings` JSON that makes the CLI report into `stateFile`, plus the Token Saver engine's
+    /// `PreToolUse` hook and runner allow rule when `tokenRunner` is given (ADR-033).
+    public static func hookSettings(stateFile: String, tokenRunner: String? = nil) -> String {
         let quoted = "'" + stateFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
         var hooks: [String: Any] = [:]
         for (event, activity) in events {
             hooks[event] = [["hooks": [["type": "command", "command": "printf \(activity.rawValue) > \(quoted)"]]]]
         }
-        let data = try! JSONSerialization.data(withJSONObject: ["hooks": hooks], options: [.sortedKeys])
+        var root: [String: Any] = [:]
+        if let tokenRunner {
+            let engine = TokenSaverEngine.settings(runner: tokenRunner)
+            hooks["PreToolUse"] = [engine.hook]
+            root["permissions"] = ["allow": [engine.allow]]
+        }
+        root["hooks"] = hooks
+        let data = try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
         return String(decoding: data, as: UTF8.self)
     }
 

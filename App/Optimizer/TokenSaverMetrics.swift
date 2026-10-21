@@ -49,7 +49,7 @@ struct TokenSaverMetricsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
-            MetricRow(label: "Tokens saved", value: "Not measured yet",
+            MetricRow(label: "Verified savings", value: "Not measured yet",
                       detail: "Verified only by a controlled comparison of provider-reported usage.", valueMuted: true)
             estimate
             usage

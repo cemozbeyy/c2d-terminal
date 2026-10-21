@@ -75,7 +75,7 @@ public enum OutputCondenser {
         if grouped != final, grouped.joined(separator: "\n").utf8.count < final.joined(separator: "\n").utf8.count { final = grouped; steps.append(.groupedByFile) }
         let cleanedText = lines.joined(separator: "\n")
         if !steps.isEmpty && steps != [.strippedEscapes] {
-            final.insert("[c2d: condensed \(linesBefore)→\(final.count) lines; every error/warning/file:line kept; original in C2D]", at: 0)
+            final.insert("[c2d: condensed \(linesBefore)→\(final.count) lines; every error/warning/file:line kept]", at: 0)
             // Never worse (RTK's guard): if the markers cost more than they saved, hand over the cleaned text.
             if final.joined(separator: "\n").utf8.count >= cleanedText.utf8.count {
                 final = lines; steps = steps.contains(.strippedEscapes) ? [.strippedEscapes] : []

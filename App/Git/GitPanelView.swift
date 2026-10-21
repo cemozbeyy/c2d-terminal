@@ -100,12 +100,11 @@ struct GitPanelView: View {
                     if s.isClean { Text("No changes").font(.caption).foregroundStyle(Theme.textSecondary).padding(10) }
                     let conflicted = s.entries.filter(\.isConflicted)
                     let staged = s.entries.filter(\.hasStagedChange)
-                    let unstaged = s.entries.filter(\.hasUnstagedChange)
-                    let untracked = s.entries.filter(\.isUntracked)
+                    // VS Code's default (`git.untrackedChanges: mixed`): untracked files sit in Changes with a U, sorted by path.
+                    let unstaged = s.entries.filter { $0.hasUnstagedChange || $0.isUntracked }.sorted { $0.path < $1.path }
                     if !conflicted.isEmpty { group("Merge Changes", conflicted, kind: .conflicted) }
                     if !staged.isEmpty { group("Staged Changes", staged, kind: .staged) }
                     if !unstaged.isEmpty { group("Changes", unstaged, kind: .unstaged) }
-                    if !untracked.isEmpty { group("Untracked", untracked, kind: .untracked) }
                 } else {
                     Text("Reading status…").font(.caption).foregroundStyle(Theme.textSecondary).padding(10)
                 }
@@ -117,12 +116,13 @@ struct GitPanelView: View {
 
     @ViewBuilder private func group(_ title: String, _ entries: [GitStatusEntry], kind: GitChangeGroup) -> some View {
         let open = !collapsed.contains(title)
-        GitGroupHeader(title: title, count: entries.count, open: open, kind: kind, paths: entries.map(\.path), git: git, workspace: workspace) {
+        GitGroupHeader(title: title, count: entries.count, open: open, kind: kind, paths: entries.map(\.path),
+                       discardable: entries.filter { !$0.isUntracked }.map(\.path), git: git, workspace: workspace) {
             if open { collapsed.insert(title) } else { collapsed.remove(title) }
         }
         if open {
             ForEach(entries, id: \.self) { e in
-                GitChangeRow(entry: e, kind: kind, git: git, workspace: workspace, onHistory: { showHistory(for: e.path) })
+                GitChangeRow(entry: e, kind: e.isUntracked && kind == .unstaged ? .untracked : kind, git: git, workspace: workspace, onHistory: { showHistory(for: e.path) })
             }
         }
     }
@@ -275,6 +275,8 @@ private struct GitGroupHeader: View {
     let open: Bool
     let kind: GitChangeGroup
     let paths: [String]
+    /// Discard targets: tracked files only (`git checkout` cannot restore an untracked file, and C2D never deletes one).
+    let discardable: [String]
     @Bindable var git: GitController
     let workspace: WorkspaceController
     let toggle: () -> Void
@@ -290,7 +292,7 @@ private struct GitGroupHeader: View {
                 switch kind {
                 case .staged: GitIconButton(symbol: "minus", help: "Unstage All Changes") { Task { await git.unstage(paths) } }
                 case .unstaged:
-                    GitIconButton(symbol: "arrow.uturn.backward", help: "Discard All Changes") { git.discardRequest = paths }
+                    if !discardable.isEmpty { GitIconButton(symbol: "arrow.uturn.backward", help: "Discard All Changes") { git.discardRequest = discardable } }
                     GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
                 case .untracked: GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
                 case .conflicted: EmptyView()
@@ -308,7 +310,7 @@ private struct GitGroupHeader: View {
             switch kind {
             case .staged: Button("Unstage All Changes") { Task { await git.unstage(paths) } }
             case .unstaged:
-                Button("Discard All Changes") { git.discardRequest = paths }
+                Button("Discard All Changes") { git.discardRequest = discardable }.disabled(discardable.isEmpty)
                 Button("Stage All Changes") { Task { await git.stage(paths) } }
             case .untracked: Button("Stage All Changes") { Task { await git.stage(paths) } }
             case .conflicted: EmptyView()

@@ -385,6 +385,7 @@ struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
     @State private var rtkHook = false
+    @State private var engine = TokenSaverEngine.Totals()
 
     var body: some View {
         @Bindable var model = model
@@ -401,6 +402,11 @@ struct OptimizerPopover: View {
                 Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent)
             }
             if model.optimizerEnabled {
+                MetricRow(label: "Saved by C2D engine", value: engine.commands == 0 ? "—" : "~\(engine.savedTokens.formatted()) tokens",
+                          detail: rtkHook ? "Idle while RTK's hook is set: both would rewrite the same Bash calls."
+                            : engine.commands == 0 ? "Counts Claude Code sessions started from C2D; no command has run through it yet."
+                            : "Estimated · \(TokenSaverFormat.sizes(engine.rawBytes, engine.shownBytes)) measured · \(engine.commands) command\(engine.commands == 1 ? "" : "s") · lossless",
+                          valueMuted: engine.commands == 0)
                 TokenSaverMetricsView(summary: workspace.optimizer.summary, usageNote: workspace.optimizer.usageNote, compact: true)
                 if rtkHook {
                     HStack(spacing: 4) {
@@ -427,6 +433,7 @@ struct OptimizerPopover: View {
         .background(Theme.panel)
         .task(id: model.optimizerEnabled) {
             rtkHook = model.optimizerEnabled && RTKHookDetector.isConfigured()   // TSD-02: read-only, never writes the settings file
+            engine = TokenSaverEngine.totals()
             await workspace.optimizer.loadLedger()
         }
     }
