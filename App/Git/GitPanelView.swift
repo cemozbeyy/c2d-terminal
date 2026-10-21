@@ -439,37 +439,59 @@ struct DiffView: View {
         }
     }
 
+    /// One row per hunk header / diff line, flattened with ids unique across files and hunks. Nested ForEach
+    /// keyed by `\.offset` gave every file, hunk and line the same ids (0, 1, 2…), and the LazyVStack then
+    /// recycled rows into the wrong places: lines out of order, gaps, rows missing.
+    private struct Row: Identifiable {
+        enum Kind { case binary, header(Int, DiffHunk), line(DiffLine) }
+        let id: String
+        let kind: Kind
+    }
+
+    private var rows: [Row] {
+        var out: [Row] = []
+        for (f, file) in files.enumerated() {
+            if file.isBinary { out.append(Row(id: "\(f)", kind: .binary)) }
+            for (h, hunk) in file.hunks.enumerated() {
+                out.append(Row(id: "\(f).\(h)", kind: .header(h, hunk)))
+                for (l, line) in hunk.lines.enumerated() { out.append(Row(id: "\(f).\(h).\(l)", kind: .line(line))) }
+            }
+        }
+        return out
+    }
+
     private var diffBody: some View {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                        if file.isBinary { Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
-                        ForEach(Array(file.hunks.enumerated()), id: \.offset) { hunkIndex, hunk in
-                            HStack(spacing: 6) {
-                                Text(hunk.header).font(Theme.Typography.monoDetail).foregroundStyle(Theme.info)
-                                Spacer()
-                                if let title = hunkActionTitle, let action = onHunkAction {
-                                    Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
-                                }
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                                HStack(spacing: 0) {
-                                    Text(line.oldLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing)
-                                    Text(line.newLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing)
-                                    Text(prefix(line)).frame(width: 14)
-                                    Text(line.text).lineLimit(1)
-                                }
-                                .font(Theme.Typography.monoDetail)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(line.kind == .context ? Theme.textPrimary : line.kind == .added ? Theme.success : Theme.error)
-                                .background(line.kind == .context ? Color.clear : (line.kind == .added ? Theme.success : Theme.error).opacity(0.12))
-                                .padding(.horizontal, 8)
-                            }
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(rows) { row in
+                switch row.kind {
+                case .binary:
+                    Text("Binary file; no textual diff.").font(.caption).foregroundStyle(Theme.textSecondary).padding(8)
+                case .header(let hunkIndex, let hunk):
+                    HStack(spacing: 6) {
+                        Text(hunk.header).font(Theme.Typography.monoDetail).foregroundStyle(Theme.info).lineLimit(1).fixedSize()
+                        Spacer(minLength: 12)
+                        if let title = hunkActionTitle, let action = onHunkAction {
+                            Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
                         }
                     }
-                    if files.isEmpty { Text("No diff").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                case .line(let line):
+                    HStack(spacing: 0) {
+                        Text(line.oldLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing)
+                        Text(line.newLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing)
+                        Text(prefix(line)).frame(width: 14)
+                        Text(line.text).lineLimit(1)
+                    }
+                    .font(Theme.Typography.monoDetail)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(line.kind == .context ? Theme.textPrimary : line.kind == .added ? Theme.success : Theme.error)
+                    .background(line.kind == .context ? Color.clear : (line.kind == .added ? Theme.success : Theme.error).opacity(0.12))
+                    .padding(.horizontal, 8)
                 }
-                .textSelection(.enabled)
+            }
+            if files.isEmpty { Text("No diff").font(.caption).foregroundStyle(Theme.textSecondary).padding(8) }
+        }
+        .textSelection(.enabled)
     }
 
     private func prefix(_ line: DiffLine) -> String {
