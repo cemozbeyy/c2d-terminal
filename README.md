@@ -1,60 +1,117 @@
 # C2D Terminal
 
-macOS-first, AI-native terminal workspace. Product owner: C2D Works.
+A native macOS workspace for working with AI coding agents: real terminals, an editor, Git and
+Claude Code sessions side by side in one window.
 
-Internal product and design documents (`docs/`) are kept private and are not part of this repository.
+![C2D Terminal workspace](Website/shots/shot1.jpg)
 
-## Status
+[Watch the demo (45 s)](Website/demo.mp4)
 
-Usable for personal development (not publicly distributed). Implemented: real terminals (SwiftTerm over
-the C2D PTY core), projects, persisted dockable layouts, explorer + NSTextView editor, Git panel
-(status/diff/stage/hunk/commit/branches/worktrees/conflicts) with explicit Fetch / Pull / Push,
-managed Claude Code sessions in C2D-owned PTYs, tasks with dependencies, ⌘K palette, diagnostics
-export with redaction, runtime themes, and a measurement-only Token Optimizer (no provider usage
-ingestion, no hand-off to agents yet — the **Token Saver** initiative that adds those is planned). Verification layers: `swift test` on the core package
-(176 tests on 2026-10-19 night after Token Saver TS-2; 167 after TS-1; 160 earlier that day, 159 after the 2026-10-18 batch, 154 before it; real shells and real git), Debug-only runtime hooks (below), and CI
-(green on `872917f`, the last pushed commit; later local commits are not CI-verified until pushed).
-Not done: signing/notarization/updater/billing (owner-gated), macOS 15 runtime check, VoiceOver
-audit.
+> **Status: early.** C2D Terminal is usable day to day, but there are no signed or notarized builds
+> yet. Build it from source (below).
 
-**Terminal editing keys** (in a shell panel): Option+←/→ jump a word (zsh `backward-word`/`forward-word`),
-Cmd+Delete clears the input line (`kill-whole-line`), and Ctrl-C aborts the current line — pressed twice
-at an idle prompt it ends the shell, Claude-Code style. A ^C on a *running* command is passed through but
-does not yet interrupt it: the PTY core does not give the shell a controlling terminal, so the kernel has
-no foreground process group to signal. That controlling-tty fix is tracked separately.
+## Features
+
+- **Real terminals.** Every shell and agent runs in a genuine PTY (SwiftTerm on top of C2D's own PTY
+  core) with your login shell, config and `PATH`. 10 000-line scrollback; the panel shows the
+  kernel-reported working directory and foreground command.
+- **Claude Code sessions.** Launch Claude Code into a C2D-owned terminal for the current project,
+  optionally with a task as the first prompt. Each launch gets its own session id.
+- **Editor and explorer.** File tree with file operations, a native text editor with syntax
+  highlighting, go-to-line, project-wide search, and clickable `file:line` paths in terminal output.
+- **Git.** Status, diff, stage/unstage per file or per hunk, commit (optionally with an AI-written
+  message), branches, worktrees, merge-conflict resolution, file history, and explicit Fetch / Pull /
+  Push. Nothing is committed or pushed unless you press the button.
+- **Layouts.** Dockable, splittable panels saved per project, layout presets, several projects open
+  as pages, and terminal windows with native tabs and split panes.
+- **Tasks.** A per-project task list with dependencies that can hand a task to an agent.
+- **Command palette** (⌘K / ⌘P), runtime themes (including a light theme), and a diagnostics export
+  that redacts secrets and your username.
+- **Token Saver** (free, optional, see below).
+
+## Token Saver
+
+Token Saver helps you see and reduce the context you hand to agents. It uses no AI and makes no
+model calls of its own.
+
+- **Usage:** reads the token usage fields from Claude Code's own local transcripts
+  (`~/.claude/projects`) and shows them per project and session. Read-only; nothing is stored,
+  copied or uploaded.
+- **Condensing:** context you pick explicitly (terminal output, diffs, files, notes) is cleaned up
+  deterministically before you hand it to an agent (copy as Markdown or write `.c2d/context.md`):
+  terminal output is condensed, exact duplicates and whitespace are removed. Lossless by default. Lossy folding is opt-in and never removes lines that
+  look like errors, warnings or `file:line` references. The original is always kept.
+- **Honest numbers:** usage, estimated reduction and verified savings are kept as three separate
+  numbers. Byte sizes are measured; token reductions are labelled as estimates; "tokens saved"
+  reads *Not measured yet* until a controlled comparison exists.
+
+An optional paired experiment (`Tools/experiment`) compares hand-off variants with real Claude Code
+runs. It makes model calls on your own account only after you type `SPEND` at its prompt.
+
+## Privacy
+
+- There is no C2D server or account. The app makes no network requests of its own.
+- Agents run with your own provider accounts and settings. C2D never injects credentials and
+  does not change Claude Code's configuration.
+- Token Saver reads only usage metadata from local transcripts, on demand.
 
 ## Requirements
 
-- macOS 15+. Verified on Xcode 27 / Swift 6.4 locally and on Xcode 16.4 / Swift 6.1.2 in CI.
+- macOS 15 or later, Apple Silicon.
+- Xcode with Swift 6.1 or later. CI builds with Xcode 16.4.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) installed, if you want agent sessions.
 
-The `.xcodeproj` is generated and gitignored. Edit `project.yml`, not the project file.
-
-## Commands
+## Build and run
 
 ```sh
-xcodegen generate                                   # (re)create C2DTerminal.xcodeproj
-swift test --package-path Packages/C2DCore          # unit tests (Swift Testing)
-xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configuration Debug -destination 'platform=macOS' -skipPackagePluginValidation
-open ~/Library/Developer/Xcode/DerivedData/C2DTerminal-*/Build/Products/Debug/C2DTerminal.app   # launch dev build
+./Scripts/run-debug.sh                    # generate the project, build Debug and launch
+./Scripts/run-debug.sh /path/to/project   # ...and open that folder
 ```
 
-Or open `C2DTerminal.xcodeproj` in Xcode and press Run.
+Or manually:
 
-Formatting/linting: none configured yet (swiftformat/swiftlint are not installed on the dev machine).
+```sh
+xcodegen generate                                   # C2DTerminal.xcodeproj is generated, not committed
+xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configuration Debug \
+  -destination 'platform=macOS' -skipPackagePluginValidation
+```
 
-Release build (ad-hoc signed, Gatekeeper will reject until a Developer ID exists): `./Scripts/build-release.sh` → `build/C2DTerminal-<version>-unsigned.zip`.
+Then open `C2DTerminal.xcodeproj` in Xcode and press Run, or launch the built app from DerivedData.
 
-Launch argument available in every build: `-c2dOpenProject <dir>` (or pass a folder to `open -a`). Debug-only hooks for runtime checks (compiled out of Release): `-c2dOpenFile <file>`, `-c2dRunCommand "<line>"`, `-c2dApplyPreset <name>`, `-c2dLaunchAgent <provider>`, `-c2dCreateTask "<title>"`, `-c2dGitSelect <path>`, `-c2dPaletteQuery "<q>"`, `-c2dOptimizerDemo YES`, `-c2dPremium YES`, `-c2dSnapshot <png>`, `-c2dAutoConfirmQuit YES`, `-c2dQuitAfter <s>`, `-c2dScrollbackCheck <n>` (+ `-c2dScrollbackLines <cap>`), `-c2dGitSync YES` / `-c2dGitSyncRejected YES` (both refuse unless `origin` is a local filesystem path), `-c2dCtrlCCheck YES` (double Ctrl-C ends an idle shell but never one with a running command), `-c2dFocusCheck YES` (a freshly shown terminal takes keyboard focus), `-c2dThemeID <midnight|ocean|ember|daylight>` (start in a given theme; `daylight` is light mode), `-c2dAddPanelCheck YES` (the group "+" menu adds a panel of any kind as a tab), `-c2dGitPanelCheck YES` (the Source-Control rail entry docks the changes panel on the left of the workspace), `-c2dTabReuseCheck YES` (a terminal keeps its surface across tab switches), `-c2dExplorerToggleCheck YES` (the sidebar toggle docks/hides the file explorer), `-c2dGenCommitCheck <stub>` (the ✨ generate-commit-message pipeline runs `<stub>` instead of the real Claude CLI and reports the resulting message), `-c2dPagesCheck <dir>` (opening a second project adds a page; switching back returns the same live workspace; add `-c2dPagesKeep YES` to quit with both pages open so shutdown must cover the hidden one), `-c2dTerminalWindowCheck YES` (two terminal windows group as native tabs with live shells, each tab splits into two side-by-side panes; closing one ends its shells), `-c2dOptimizerPopoverCheck YES` (starts with the Token Optimizer card open), `-c2dResizeCheck YES` (shrinks the window; each terminal/agent panel grid follows, proving resize reaches the PTY), `-c2dLedgerCheck YES` (reads the project's Claude Code transcripts and traces per-session provider-reported usage plus its attribution: linked to a C2D launch / unmatched / ambiguous, and launches still without a transcript). Run checks by executing the binary inside the `.app` directly, never through `open` — `open` does not pass environment variables, so `C2D_SUPPORT_DIR` would be silently ignored and the run would write to the real stores. Debug builds also honour the environment variable `C2D_SUPPORT_DIR=<dir>`, which points every store (JSON documents, SQLite, layouts) at that directory instead of `~/Library/Application Support/C2D Terminal` so runtime checks never touch real data (the variable is inherited by shells the app spawns; harmless). The full list with comments is in `App/Model/AppModel.swift`.
+`./Scripts/build-release.sh` produces an ad-hoc-signed Release zip in `build/`. Gatekeeper will
+refuse it until the app is signed with a Developer ID.
 
-## Layout
+## Development
+
+```sh
+swift test --package-path Packages/C2DCore          # core tests (Swift Testing; spawns real shells and git)
+```
+
+Edit `project.yml`, not the generated project file. Debug builds accept `-c2d…` launch arguments
+for scripted runtime checks; they are listed with comments in `App/Model/AppModel.swift` and are
+compiled out of Release builds. In Debug, `C2D_SUPPORT_DIR=<dir>` points all app data at a
+throwaway folder.
 
 ```
-App/                 SwiftUI/AppKit app: Model, Views (workspace canvas), Terminal, Explorer, Editor, Git, Agents, Tasks, Palette, Optimizer
-Packages/C2DCore/    Engine-free core: PTY, Workspace layout, Persistence (JSON docs + SQLite), Projects, Terminal/Agent registries, Files, Git, Tasks, Optimizer
-Spikes/              SwiftTermSpike evaluation harness (not part of the app)
-Scripts/             build-release.sh
-Tools/experiment/    Token Saver paired-experiment runner (bundled into the app; makes model calls only after typed consent)
-.github/workflows/   CI (core tests on macos-15, app build on macos-26) and a manual unsigned release build
-project.yml          XcodeGen spec
+App/                 SwiftUI/AppKit app: workspace canvas, terminal, explorer, editor, Git, agents, tasks, palette, Token Saver
+Packages/C2DCore/    Engine-free core: PTY, layouts, persistence (JSON + SQLite), projects, agents, files, Git, tasks, optimizer
+Tools/experiment/    Token Saver paired-experiment runner (bundled into the app)
+Scripts/             run-debug.sh, build-release.sh
+Spikes/              SwiftTerm evaluation harness (not part of the app)
+Website/             Landing page
 ```
+
+## Known limitations
+
+- No signed, notarized or auto-updating builds yet.
+- Claude Code is the only verified agent. A Codex launcher exists but is unverified.
+- No VoiceOver audit yet.
+
+## Contributing
+
+Issues and pull requests are welcome. Please run the core tests before opening a pull request.
+
+## License
+
+MIT. See [LICENSE](LICENSE). Uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT).
