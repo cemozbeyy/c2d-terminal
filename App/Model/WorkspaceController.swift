@@ -97,18 +97,6 @@ final class WorkspaceController {
         return target
     }
 
-    /// Opens (or reveals) the single optimizer panel for this workspace.
-    var isOptimizerVisible: Bool { layout.visiblePanelIDs.contains { layout.panels[$0]?.kind == .tokenOptimizer } }
-    /// Top-bar toggle: hides the optimizer panel when it is showing, otherwise shows/restores/adds it.
-    func toggleOptimizerPanel() {
-        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { hide(visible) } else { showOptimizerPanel() }
-    }
-    func showOptimizerPanel() {
-        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
-        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }
-        addPanel(.tokenOptimizer, title: "Token Saver", besideGroup: layout.groupIDs.last)
-    }
-
     /// Shows or hides the file-tree sidebar (VS-Code ⌘B): hides a visible explorer, restores a hidden
     /// one, or docks a fresh one on the far left when the project's layout has none.
     func toggleExplorer() { toggleDockedPanel(.projectExplorer, title: "Explorer") }

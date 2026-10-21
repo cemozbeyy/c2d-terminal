@@ -3,16 +3,16 @@ import Foundation
 /// C2D's own Token Saver engine (ADR-033). For Claude Code sessions launched from C2D, a `PreToolUse` hook
 /// rewrites a few read-only, output-heavy Bash commands to run through C2D's own binary, which hands the agent
 /// the losslessly condensed output (`OutputCondenser.Options.lossless`) and appends the measured sizes to a
-/// ledger. Anything else is left untouched. Not injected when Token Saver is off or RTK's hook is configured.
+/// ledger. Anything else is left untouched. Not injected when Token Saver is off.
 public enum TokenSaverEngine {
     public static let hookFlag = "--c2d-token-hook"
     public static let runFlag = "--c2d-token-run"
 
-    /// The runner to inject into a Claude launch, or nil: Token Saver off (same UserDefaults key as
-    /// `AppModel.optimizerEnabled`, default on), RTK's hook configured (two rewrites of one call would race),
-    /// or no executable path.
+    /// The runner to inject into a Claude launch, or nil when Token Saver is off (same UserDefaults key as
+    /// `AppModel.optimizerEnabled`, default on). Injected even when RTK's own hook is set: either rewrite of a
+    /// call is a valid command, so whichever Claude Code applies, the call still runs (owner: no setup needed).
     public static func launchRunner() -> String? {
-        guard (UserDefaults.standard.object(forKey: "optimizerEnabled") as? Bool) ?? true, !RTKHookDetector.isConfigured() else { return nil }
+        guard (UserDefaults.standard.object(forKey: "optimizerEnabled") as? Bool) ?? true else { return nil }
         return Bundle.main.executablePath
     }
 

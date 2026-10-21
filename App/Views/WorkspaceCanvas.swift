@@ -222,7 +222,6 @@ struct PanelGroupView: View {
                 Button { workspace.newPanel(.projectExplorer, in: groupID) } label: { Label("Explorer", systemImage: "folder") }
                 Button { workspace.newPanel(.gitChanges, in: groupID) } label: { Label("Git Changes", systemImage: "arrow.triangle.branch") }
                 Button { workspace.newPanel(.tasks, in: groupID) } label: { Label("Tasks", systemImage: "checklist") }
-                Button { workspace.newPanel(.tokenOptimizer, in: groupID) } label: { Label("Token Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
             } label: {
                 Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold)
             }
@@ -364,8 +363,6 @@ struct PanelContentView: View {
             AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:
             TasksPanelView(tasks: workspace.tasks, workspace: workspace)
-        case .tokenOptimizer:
-            OptimizerPanelView(optimizer: workspace.optimizer, workspace: workspace)
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }

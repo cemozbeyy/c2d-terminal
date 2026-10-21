@@ -259,18 +259,6 @@ struct TopBar: View {
                         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                         debugTrace("popover snapshot written: \(path) \(Int(host.bounds.width))x\(Int(host.bounds.height))")
                     }
-                    // The whole panel at 900 pt wide, next to the popover (the docked tile is too small to show it all).
-                    let panel = NSHostingView(rootView: OptimizerPanelView(optimizer: ws.optimizer, workspace: ws).environment(model)
-                        .frame(width: 900, height: 1400).background(Theme.panel))
-                    panel.frame.size = CGSize(width: 900, height: 1400)
-                    let panelWindow = NSWindow(contentRect: panel.frame, styleMask: .borderless, backing: .buffered, defer: false)
-                    panelWindow.contentView = panel
-                    try? await Task.sleep(for: .seconds(2))
-                    panel.layoutSubtreeIfNeeded()
-                    if let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
-                        panel.cacheDisplay(in: panel.bounds, to: rep)
-                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-panel.png")))
-                    }
                 }
                 #endif
                 Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
@@ -380,11 +368,10 @@ struct SettingsPlaceholderView: View {
     }
 }
 
-/// Token Saver card behind the top-bar gauge: on/off, then the three kinds of number, kept apart.
+/// Token Saver card behind the top-bar gauge: on/off, then input, output and what the C2D engine saved.
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
-    @State private var rtkHook = false
     @State private var engine = TokenSaverEngine.Totals()
 
     var body: some View {
@@ -402,37 +389,24 @@ struct OptimizerPopover: View {
                 Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent)
             }
             if model.optimizerEnabled {
-                MetricRow(label: "Saved by C2D engine", value: engine.commands == 0 ? "—" : "~\(engine.savedTokens.formatted()) tokens",
-                          detail: rtkHook ? "Idle while RTK's hook is set: both would rewrite the same Bash calls."
-                            : engine.commands == 0 ? "Counts Claude Code sessions started from C2D; no command has run through it yet."
-                            : "Estimated · \(TokenSaverFormat.sizes(engine.rawBytes, engine.shownBytes)) measured · \(engine.commands) command\(engine.commands == 1 ? "" : "s") · lossless",
+                // Input/output: provider-reported (Claude Code transcripts of this project). Saved: the C2D engine's ledger.
+                let u = workspace.optimizer.summary.usage
+                MetricRow(label: "Input", value: u.map { ($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens).formatted() } ?? "—",
+                          detail: u.map { "\($0.cacheReadInputTokens.formatted()) of it cache reads · Claude Code, this project" } ?? workspace.optimizer.usageNote,
+                          valueMuted: u == nil)
+                MetricRow(label: "Output", value: u?.outputTokens.formatted() ?? "—", valueMuted: u == nil)
+                MetricRow(label: "Saved", value: engine.commands == 0 ? "—" : "~\(engine.savedTokens.formatted())",
+                          detail: engine.commands == 0 ? "Automatic for agents started in C2D; nothing has run through it yet."
+                            : "Estimated · \(TokenSaverFormat.sizes(engine.rawBytes, engine.shownBytes)) · \(engine.commands) command\(engine.commands == 1 ? "" : "s")",
                           valueMuted: engine.commands == 0)
-                TokenSaverMetricsView(summary: workspace.optimizer.summary, usageNote: workspace.optimizer.usageNote, compact: true)
-                if rtkHook {
-                    HStack(spacing: 4) {
-                        Text("RTK hook active in Claude Code (separate tool).").foregroundStyle(Theme.textMuted)
-                        Link("About", destination: RTKHookDetector.docsURL).clickCursor()
-                    }
-                    .font(Theme.Typography.metadata)
-                }
             } else {
                 Text("Off: nothing is measured, recorded or read.").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
-            }
-            if model.optimizerEnabled || model.developerMode {
-                Button {
-                    workspace.toggleOptimizerPanel()
-                } label: {
-                    Text(workspace.isOptimizerVisible ? "Hide Token Saver" : "Open Token Saver").font(Theme.Typography.detail).fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered).controlSize(.small).clickCursor()
             }
         }
         .padding(Theme.space4)
         .frame(width: 300)
         .background(Theme.panel)
         .task(id: model.optimizerEnabled) {
-            rtkHook = model.optimizerEnabled && RTKHookDetector.isConfigured()   // TSD-02: read-only, never writes the settings file
             engine = TokenSaverEngine.totals()
             await workspace.optimizer.loadLedger()
         }

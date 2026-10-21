@@ -191,7 +191,6 @@ final class AppModel {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
                 guard let ws = self?.workspace else { return }
-                ws.showOptimizerPanel()
                 let o = ws.optimizer
                 o.addOpenEditorFiles(ws); o.addOpenEditorFiles(ws)
                 o.add(ContextItem(kind: .instructions, content: "Keep the public API unchanged.", mandatory: true))
