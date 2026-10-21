@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="Website/demo.mp4"><img src=".github/readme/btn-demo.png" alt="Watch the demo (45 s)" height="52"></a>&nbsp;
+  <a href="#see-it-in-action"><img src=".github/readme/btn-demo.png" alt="Watch the demo (45 s)" height="52"></a>&nbsp;
   <a href="#build-and-run"><img src=".github/readme/btn-build.png" alt="Build from source" height="52"></a>&nbsp;
   <a href="#make-it-yours"><img src=".github/readme/btn-contribute.png" alt="Contribute" height="52"></a>
 </p>
@@ -16,9 +16,12 @@
   <img src=".github/readme/features.png" alt="Real terminals, Claude Code sessions, editor and explorer, Git, tasks and Token Saver" width="100%">
 </p>
 
-<p align="center">
-  <a href="Website/demo.mp4"><img src=".github/readme/demo.png" alt="See it in action: a 45-second tour of C2D Terminal. Click to watch the demo." width="100%"></a>
-</p>
+## See it in action
+
+A quick 45-second tour: open a project, work beside Claude Code, run the tests and review the
+changes in Git.
+
+https://github.com/user-attachments/assets/faf51b06-3f14-49f6-a3ef-1ebacfdd79eb
 
 <table>
   <tr>

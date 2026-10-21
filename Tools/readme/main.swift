@@ -1,6 +1,6 @@
 // Renders the README artwork into .github/readme/ with SwiftUI's ImageRenderer.
 // Buddy is the app's own BuddyMascotView (copied out of App/Views/BuddyView.swift at build time), the
-// screenshot and demo frame are real captures from Website/shots. Colours follow the landing page.
+// screenshot is a real capture from Website/shots. Colours follow the landing page.
 //
 //   ./Tools/readme/render.sh
 import AppKit
@@ -152,42 +152,6 @@ let features = Panel {
     .padding(.horizontal, 36).padding(.vertical, 30).frame(width: 1100)
 }
 save(features, "features.png")
-
-// MARK: Demo card (the whole image links to the video)
-
-let poster = image("demo-poster.jpg")
-let demo = Panel(tint: Color(hex: 0xf3effd)) {
-    HStack(spacing: 44) {
-        ZStack(alignment: .bottomTrailing) {
-            Image(nsImage: poster).resizable().aspectRatio(contentMode: .fit).frame(width: 470)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay {
-                    Circle().fill(.black.opacity(0.55)).frame(width: 84)
-                        .overlay(Image(systemName: "play.fill").font(.system(size: 34)).foregroundStyle(.white).offset(x: 3))
-                        .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 3))
-                }
-            Text("0:45").font(rounded(15, .bold)).foregroundStyle(.white)
-                .padding(.horizontal, 10).padding(.vertical, 5).background(Capsule().fill(.black.opacity(0.7))).padding(12)
-        }
-        .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-        VStack(alignment: .leading, spacing: 14) {
-            Text("See it in action").font(rounded(40, .heavy)).foregroundStyle(Color.ink)
-            Text("A quick 45-second tour: open a project, work beside Claude Code, run the tests and review the changes in Git.")
-                .font(rounded(19, .regular)).foregroundStyle(Color.inkSoft).fixedSize(horizontal: false, vertical: true).lineSpacing(3)
-            HStack(spacing: 10) {
-                Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
-                Text("Watch the demo (45 s)").font(rounded(19, .semibold))
-            }
-            .foregroundStyle(.white).padding(.horizontal, 26).frame(height: 54)
-            .background(Capsule().fill(Color.lavD)).padding(.top, 6)
-            Text("Real workflow. Not just a terminal.").font(hand(22)).foregroundStyle(Color.lavD)
-                .rotationEffect(.degrees(-4)).padding(.top, 8)
-        }
-        .frame(width: 440, alignment: .leading)
-    }
-    .padding(.horizontal, 48).padding(.vertical, 44).frame(width: 1100)
-}
-save(demo, "demo.png")
 
 // MARK: Small icons for the text sections
 
