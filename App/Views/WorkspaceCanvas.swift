@@ -71,6 +71,10 @@ struct SplitView: View {
     let workspace: WorkspaceController
     @State private var dragStart: [Double]?
     @State private var hoveredDivider: Int?
+    /// Set by the first divider drag: from then on the per-kind floors (which protect an agent/terminal
+    /// from a shrinking window) give way to the plain `minimumSize`, so the user can make any column narrower.
+    // ponytail: view state, so after relaunch the kind floors apply again until the next drag; persist it in the layout if that bites.
+    @State private var userSized = false
 
     private let dividerThickness: CGFloat = 6
     private let minimumSize: CGFloat = 220   // a docked sidebar (Git / Explorer) stays usable; below this its content breaks
@@ -87,7 +91,7 @@ struct SplitView: View {
                                height: orientation == .vertical ? sizes[index] : nil)
                         .clipped()   // a panel whose content wants more room must not spill over its neighbours
                     if index < children.count - 1 {
-                        divider(at: index, total: total)
+                        divider(at: index, total: total, sizes: sizes)
                     }
                 }
             }
@@ -102,7 +106,7 @@ struct SplitView: View {
     private func distribute(total: CGFloat) -> [CGFloat] {
         let sum = weights.reduce(0, +)
         guard total > 0, sum > 0 else { return weights.map { _ in 0 } }
-        let mins = children.map(minSize)
+        let mins = children.map { userSized ? min(minSize($0), minimumSize) : minSize($0) }
         let minTotal = mins.reduce(0, +)
         if total <= minTotal { return minTotal > 0 ? mins.map { total * ($0 / minTotal) } : weights.map { _ in total / CGFloat(weights.count) } }
         var sizes = weights.map { total * CGFloat($0 / sum) }
@@ -137,7 +141,7 @@ struct SplitView: View {
         return floors.max() ?? 200
     }
 
-    private func divider(at index: Int, total: CGFloat) -> some View {
+    private func divider(at index: Int, total: CGFloat, sizes: [CGFloat]) -> some View {
         // A visible, subtle line normally; it brightens to the accent on hover so it's clearly a
         // draggable boundary, and the pointer becomes a column/row-resize cursor.
         Rectangle()
@@ -152,7 +156,13 @@ struct SplitView: View {
                 // every weight update, so the translation oscillated and the divider trembled.
                 DragGesture(minimumDistance: 1, coordinateSpace: .named("split"))
                     .onChanged { value in
-                        if dragStart == nil { dragStart = weights }
+                        // Start from what is on screen, not the stored weights: a floor-pinned column is wider
+                        // than its weight says, and starting from the weight made it jump on first touch.
+                        if dragStart == nil {
+                            let sum = weights.reduce(0, +)
+                            dragStart = total > 0 ? sizes.map { Double($0 / total) * sum } : weights
+                            userSized = true
+                        }
                         guard let start = dragStart, total > 0 else { return }
                         let delta = Double((orientation == .horizontal ? value.translation.width : value.translation.height) / total) * start.reduce(0, +)
                         var next = start
