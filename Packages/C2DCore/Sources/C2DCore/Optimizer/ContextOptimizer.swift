@@ -22,6 +22,9 @@ public struct ContextPayload: Hashable, Sendable {
     public var items: [ContextItem]
     public init(items: [ContextItem]) { self.items = items }
 
+    /// Measured: UTF-8 bytes of every item's content.
+    public var byteCount: Int { items.reduce(0) { $0 + $1.content.utf8.count } }
+
     public var estimate: TokenEstimate {
         let total = items.reduce(0) { $0 + TokenEstimator.estimate($1.content).tokens }
         return TokenEstimate(tokens: total, source: .heuristicEstimate, confidence: "sum of per-item heuristic estimates")
@@ -45,6 +48,8 @@ public struct OptimizationResult: Hashable, Sendable {
     public let payload: ContextPayload
     public let actions: [OptimizationAction]
     public let preservedMandatory: Int
+    /// True only when a lossy condensing step actually ran (the opt-in alone does not make a result lossy).
+    public internal(set) var lossyStepsApplied = false
     public var removedItemIDs: [String] { actions.filter { $0.kind == .removedExactDuplicate }.map(\.itemID) }
 }
 
@@ -95,6 +100,7 @@ public enum ContextOptimizer {
     public static func optimize(_ payload: ContextPayload, output: OutputCondenser.Options = .lossless) -> OptimizationResult {
         var condensed = payload
         var actions: [OptimizationAction] = []
+        var lossy = false
         for i in condensed.items.indices where condensed.items[i].kind == .terminalOutput && !condensed.items[i].mandatory {
             let item = condensed.items[i]
             let c = OutputCondenser.condense(item.content, options: output)
@@ -104,9 +110,12 @@ public enum ContextOptimizer {
                                               originalContent: item.content, tokensBefore: TokenEstimator.estimate(item.content).tokens,
                                               tokensAfter: TokenEstimator.estimate(c.text).tokens))
             condensed.items[i].content = c.text
+            lossy = lossy || c.steps.contains(where: \.isLossy)
         }
         let d = deduplicate(condensed)
-        return OptimizationResult(before: payload.estimate, after: d.after, payload: d.payload, actions: actions + d.actions, preservedMandatory: d.preservedMandatory)
+        var r = OptimizationResult(before: payload.estimate, after: d.after, payload: d.payload, actions: actions + d.actions, preservedMandatory: d.preservedMandatory)
+        r.lossyStepsApplied = lossy
+        return r
     }
 
     /// Markdown for a hand-off (TS-3): one section per item, each body in a fence longer than any backtick

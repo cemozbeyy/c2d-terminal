@@ -1,0 +1,639 @@
+[c2d: condensed 596→638 lines; every error/warning/file:line kept; original in C2D]
+App/C2DTerminalApp.swift:
+  242:        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); TerminalWindowConfigurator.configure(window, id: id) }
+  244:    func makeNSView(context: Context) -> NSView { let v = HookView(); v.id = window; return v }
+  245:    func updateNSView(_ nsView: NSView, context: Context) {}
+  246:    static func configure(_ w: NSWindow?, id: UUID) {
+  269:    @objc func newWindowForTab(_ sender: Any?) { openTerminalWindow?() }
+  273:    func application(_ application: NSApplication, open urls: [URL]) {
+  284:    func applicationDidFinishLaunching(_ notification: Notification) {
+  288:    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+  290:    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+  331:func debugTrace(_ message: String) {
+App/Design/ThemeManager.swift:
+  24:private func c(_ hex: UInt32) -> Color { Color(nsColor: NSColor(hex: hex)) }
+  91:    func apply(_ id: String) {
+  99:    func toggleLightDark() {
+App/Design/Theme.swift:
+  70:    static func dynamic(dark: UInt32, light: UInt32) -> Color {
+  80:    func clickCursor() -> some View { pointerStyle(.link) }
+  84:    func tapTarget(_ size: CGFloat = 28) -> some View {
+  90:    func tooltip(_ text: String) -> some View {
+  95:    func tooltipLayer() -> some View {
+  112:    static func reduce(value: inout TooltipData?, nextValue: () -> TooltipData?) { if let n = nextValue() { value = n } }
+  119:    func body(content: Content) -> some View {
+  181:    func body(content: Content) -> some View {
+  190:    func panelCard() -> some View { modifier(PanelCard()) }
+  194:    static func style(for kind: String) -> PanelKindStyle {
+App/Tasks/TasksPanelView.swift:
+  123:    private func transitions(_ t: TaskRecord) -> some View {
+  135:    @ViewBuilder private func agentSection(_ t: TaskRecord) -> some View {
+  152:    @ViewBuilder private func planSection(_ t: TaskRecord) -> some View {
+  182:    private func commitNewPlan(for t: TaskRecord) {
+  187:    @ViewBuilder private func dependencySection(_ t: TaskRecord) -> some View {
+  221:    private func labeled<V: View>(_ title: String, @ViewBuilder _ content: () -> V) -> some View {
+  225:    private func priorityDot(_ p: TaskPriority) -> some View {
+  231:    private func statusLabel(_ s: TaskStatus) -> String {
+  238:    private func eventText(_ e: TaskEvent) -> String {
+App/Tasks/TaskController.swift:
+  39:    func reload() async {
+  53:    func select(_ task: TaskRecord?) async {
+  58:    private func loadEvents() async {
+  64:    func create(title: String, details: String = "", priority: TaskPriority = .normal) async -> TaskRecord? {
+  76:    func update(_ record: TaskRecord) async {
+  81:    func transition(_ task: TaskRecord, to status: TaskStatus, note: String? = nil, override: Bool = false) async {
+  89:    func dependencies(of t: TaskRecord) -> [TaskRecord] { t.dependsOn.compactMap { byID[$0] } }
+  91:    func dependents(of t: TaskRecord) -> [TaskRecord] { byID.values.filter { $0.dependsOn.contains(t.id) }.sorted { $0.title < $1.title } }
+  92:    func unmetDependencies(of t: TaskRecord) -> [TaskRecord] { t.unmetDependencies { byID[$0]?.status }.compactMap { byID[$0] } }
+  93:    func isEligible(_ t: TaskRecord) -> Bool { t.unmetDependencies { byID[$0]?.status }.isEmpty }
+  96:    func dependencyCandidates(for t: TaskRecord) -> [TaskRecord] {
+  100:    func addDependency(_ task: TaskRecord, on upstream: TaskRecord) async {
+  105:    func removeDependency(_ task: TaskRecord, on upstreamID: String) async {
+  112:    func plan(for t: TaskRecord) -> TaskPlan? { t.planID.flatMap { id in plans.first { $0.id == id } } }
+  113:    func tasks(inPlan id: String) -> [TaskRecord] { byID.values.filter { $0.planID == id }.sorted { $0.title < $1.title } }
+  114:    func eligibleCount(inPlan id: String) -> Int { tasks(inPlan: id).filter { !$0.status.isTerminal && isEligible($0) }.count }
+  117:    func createPlan(goal: String) async -> TaskPlan? {
+  125:    func updatePlan(_ plan: TaskPlan) async {
+  130:    func deletePlan(_ plan: TaskPlan) async {
+  135:    func assign(_ task: TaskRecord, toPlan planID: String?) async {
+  140:    func block(_ task: TaskRecord, reason: String) async {
+  145:    func unblock(_ task: TaskRecord) async {
+  150:    func addNote(_ task: TaskRecord, _ text: String) async {
+  155:    func assign(_ task: TaskRecord, agentSessionID: String?) async {
+  161:    func delete(_ task: TaskRecord) async {
+  167:    private func describe(_ error: Error) -> String {
+  179:    private func names(_ ids: [String]) -> String {
+App/Optimizer/OptimizerController.swift:
+  52:    func loadLedger() async {
+  72:    func clear() { items = []; result = nil; report = nil; budgetVerdict = nil }
+  74:    func add(_ item: ContextItem) { items.append(item); result = nil; report = nil; budgetVerdict = nil }
+  76:    func remove(_ id: String) { items.removeAll { $0.id == id }; result = nil; report = nil; budgetVerdict = nil }
+  78:    func addOpenEditorFiles(_ workspace: WorkspaceController) {
+  82:    func addTask(_ task: TaskRecord) {
+  89:    func addGitDiff(_ git: GitController) async {
+  100:    func measureOnly() {
+  105:    func optimize() {
+  114:    func recordResult() async {
+  123:    func loadHistory() async {
+App/Optimizer/OptimizerPanelView.swift:
+  150:    @ViewBuilder private func attributionChip(_ a: SessionAttribution) -> some View {
+  166:    @ViewBuilder private func budget(_ v: BudgetVerdict) -> some View {
+  182:    private func resultView(_ r: OptimizationResult, _ rep: SavingsReport) -> some View {
+App/Terminal/TerminalSurfaceView.swift:
+  13:private func handleEditingKey(_ event: NSEvent, view: TerminalView, controller: TerminalPanelController) -> Bool {
+  31:    override func mouseDown(with event: NSEvent) {
+  59:    func makeNSView(context: Context) -> NSView {
+  74:    private func makeTerminal() -> FocusableTerminalView {
+  97:    func updateNSView(_ nsView: NSView, context: Context) {}
+  99:    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+App/Terminal/TerminalPanelController.swift:
+  52:    func adoptRestoredPlan(_ plan: AgentLaunchPlan) {
+  91:    func startNewSession() {
+  149:    private func observe(_ session: PTYSession) {
+  187:    private func pollContext(_ session: PTYSession) {
+  204:        func real(_ p: String) -> String { guard let r = realpath(p, nil) else { return p }; defer { free(r) }; return String(cString: r) }
+  224:    func handleOpenLink(_ link: String) -> String {
+  238:    func attach(_ view: TerminalView) {
+  245:    func detach() {
+  254:    private func startFeeding() {
+  265:    func write(_ data: Data) {
+  283:    func interrupt() -> Bool {
+  300:    func disarmInterrupt() { interruptArmedUntil = nil }
+  302:    func gridChanged(cols: Int, rows: Int) {
+  309:    func terminate() async {
+  314:    func terminateAndClose() async {
+  321:    func rename(_ title: String) {
+  327:    func describe(_ error: PTYError) -> String {
+  341:    func screenText() -> String {
+  348:    func scrollbackProbe(marker: String) -> (lines: Int, retainsMarker: Bool, topPositionAfterScroll: Double)? {
+  358:    nonisolated func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+  361:    nonisolated func setTerminalTitle(source: TerminalView, title: String) {}
+  362:    nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+  363:    nonisolated func send(source: TerminalView, data: ArraySlice<UInt8>) {
+  367:    nonisolated func scrolled(source: TerminalView, position: Double) {}
+  368:    nonisolated func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+  371:    nonisolated func bell(source: TerminalView) { Task { @MainActor in NSSound.beep() } }
+  372:    nonisolated func clipboardCopy(source: TerminalView, content: Data) {
+  378:    nonisolated func clipboardRead(source: TerminalView) -> Data? { nil }
+  379:    nonisolated func kittyClipboardCapabilities(source: TerminalView) -> KittyClipboardCapabilities { [] }
+  380:    nonisolated func kittyClipboardAvailableMimeTypes(source: TerminalView, location: KittyClipboardLocation) -> [String]? { nil }
+  381:    nonisolated func kittyClipboardRead(source: TerminalView, location: KittyClipboardLocation, mimeType: String) -> KittyClipboardReadResult? { nil }
+  382:    nonisolated func kittyClipboardWrite(source: TerminalView, location: KittyClipboardLocation, content: KittyClipboardWriteContent) -> KittyClipboardWriteResult { .unsupported }
+  383:    nonisolated func kittyClipboardRequestPermission(source: TerminalView, request: KittyClipboardPermissionRequest) -> KittyClipboardPermissionResult { .deny }
+  384:    nonisolated func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+  385:    nonisolated func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+App/Agents/AgentViews.swift:224:    @ViewBuilder private func providerStatus(_ p: AgentProvider) -> some View {
+App/Explorer/ExplorerPanelView.swift:
+  50:    private func flattened() -> [Item] {
+  52:        func walk(_ directory: String, _ depth: Int) {
+  62:    private func row(_ entry: FileEntry, depth: Int) -> some View {
+  113:    private func commitNaming() {
+  127:    static func style(for name: String) -> (String, Color) {
+App/Explorer/ExplorerController.swift:
+  28:    static func canonical(_ path: String) -> String {
+  32:    func entries(in directory: String) -> [FileEntry] {
+  36:    func toggle(_ entry: FileEntry) {
+  46:    func reload(_ directory: String) {
+  57:    func reloadAll() {
+  62:    func filesChanged(_ paths: [String]) {
+  72:    private func isDirectory(_ p: String) -> Bool {
+  79:    func createFile(in directory: String, name: String) -> String? {
+  88:    func createFolder(in directory: String, name: String) {
+  96:    func rename(_ entry: FileEntry, to name: String) -> String? {
+  108:    func trash(_ entry: FileEntry) {
+  115:    private func validName(_ name: String) -> Bool {
+App/Model/AppModel.swift:
+  69:    private func persistPages() {
+  76:    private func restorePages() -> Bool {
+  94:    func showPalette(prefill: String? = nil) { paletteInitialQuery = prefill; paletteVisible = true }
+  277:                @MainActor func describe(_ tag: String) {
+  424:                @MainActor func idOf(_ panel: PanelID) -> String { ws.terminals[panel]?.hostedView.map { "\(ObjectIdentifier($0))" } ?? "nil" }
+  440:                @MainActor func visExplorers() -> Int { ws.layout.visiblePanelIDs.filter { ws.layout.panels[$0]?.kind == .projectExplorer }.count }
+  489:                @MainActor func b0() -> TaskRecord { tc.byID[b.id] ?? b }
+  490:                @MainActor func a0() -> TaskRecord { tc.byID[a.id] ?? a }
+  626:            func srgb(_ c: Color) -> (Double, Double, Double) {
+  634:            func lum(_ c: Color) -> Double {
+  636:                func f(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+  639:            func contrast(_ a: Color, _ b: Color) -> Double {
+  781:                func exists(_ rel: String) -> Bool { fm.fileExists(atPath: root + "/" + rel) }
+  846:    func prepareDiagnosticsExport() {
+  853:    func saveDiagnostics(_ text: String, to url: URL) {
+  858:    func report(_ title: String, _ detail: String) {
+  867:    func dismiss(_ message: UserMessage) {
+  876:    func promptOpenProject() {
+  886:    func promptRelocate(_ project: Project) {
+  895:    func openProject(at url: URL) {
+  904:    func openProject(_ project: Project) {
+  912:    func relocateProject(_ project: Project, to url: URL) {
+  922:    func removeProject(_ project: Project) {
+  931:    func setPinned(_ pinned: Bool, _ project: Project) {
+  937:    private func openWorkspace(for project: Project) {
+  972:    func showPage(_ page: WorkspaceController) {
+  978:    func cyclePage(by step: Int) {
+  984:    func closePage(_ page: WorkspaceController) {
+  994:    func closeWorkspace() { if let ws = workspace { closePage(ws) } }
+  998:    func registerSession(_ record: TerminalSessionRecord) {
+  1002:    func updateSession(_ id: String, _ change: (inout TerminalSessionRecord) -> Void) {
+  1008:    func registerAgentSession(_ record: AgentSessionRecord) {
+  1012:    func updateAgentSession(_ id: String, _ change: (inout AgentSessionRecord) -> Void) {
+  1017:    func refreshProviders() async {
+  1031:    func shutdown() async {
+  1045:    func makeStandaloneTerminal(projectPath: String) -> TerminalPanelController {
+  1053:    func closeStandaloneTerminal(_ id: PanelID) async {
+  1065:    func openStandaloneWindow(_ window: UUID, directory: String) {
+  1071:    func splitStandalone(window: UUID, after pane: PanelID, down: Bool = false) {
+  1091:    func closeStandalonePane(window: UUID, _ pane: PanelID) async -> Bool {
+  1106:    static func terminalWindowIdentifier(_ window: UUID) -> NSUserInterfaceItemIdentifier { .init("c2d.terminal.\(window.uuidString)") }
+  1109:    func revealStandaloneWindow(_ window: UUID) {
+  1116:    func closeStandaloneWindow(_ window: UUID) async {
+  1123:private func perfMS(_ d: Duration) -> String {
+  1128:private func maxRSSMB() -> Int {
+  1135:private func forkAgeSeconds() -> Double {
+  1147:private func firstTextView(_ v: NSView) -> NSTextView? {
+  1154:private func currentResidentMB() -> Int {
+  1166:private func childProcessCount() -> Int {
+App/Model/WorkspaceController.swift:
+  53:    private func filesChanged(_ paths: [String]) {
+  61:    func editor(for panel: PanelID) -> EditorPanelController {
+  69:    func openFile(path: String, line: Int? = nil, column: Int? = nil) {
+  87:    func toggleOptimizerPanel() {
+  90:    func showOptimizerPanel() {
+  98:    func toggleExplorer() { toggleDockedPanel(.projectExplorer, title: "Explorer") }
+  101:    func revealInExplorer(_ path: String) {
+  115:    func ensureProvidersLoaded() async { if app.providersRefreshedAt == nil { await app.refreshProviders() } }
+  119:    func toggleGitPanel() {
+  126:    private func toggleDockedPanel(_ kind: PanelKind, title: String) {
+  142:    func addPanel(_ kind: PanelKind, title: String, besideGroup: NodeID? = nil) -> PanelID {
+  152:    func fileRenamed(from old: String, to new: String) {
+  158:    func saveActiveEditor() {
+  168:    private func mutate(_ what: String, _ body: (inout WorkspaceLayout) throws -> Void) {
+  177:    func newTerminal(in group: NodeID? = nil, beside: NodeID? = nil, edge: DockEdge = .right) {
+  195:    func newPanel(_ kind: PanelKind, in group: NodeID) {
+  201:    static func defaultTitle(for kind: PanelKind) -> String {
+  214:    func activate(_ panel: PanelID) { mutate("activate") { try $0.activate(panel) } }
+  215:    func hide(_ panel: PanelID) { mutate("hide") { try $0.hide(panel) } }
+  216:    func restore(_ panel: PanelID) { mutate("restore") { try $0.restore(panel) } }
+  217:    func maximize(_ group: NodeID) { mutate("focus mode") { try $0.maximize(group) } }
+  218:    func exitFocusMode() { mutate("exit focus mode") { $0.exitFocusMode() } }
+  219:    func setWeights(_ weights: [Double], of split: NodeID) { mutate("resize") { try $0.setWeights(weights, of: split) } }
+  221:    func move(_ panel: PanelID, toGroup group: NodeID, index: Int? = nil) {
+  225:    func move(_ panel: PanelID, beside group: NodeID, edge: DockEdge) {
+  230:    func requestClose(_ panel: PanelID) {
+  240:    func close(_ panel: PanelID) {
+  251:    func apply(_ preset: LayoutPreset) {
+  269:    private func hasState(_ id: PanelID, _ panel: Panel) -> Bool {
+  282:    func cleanUpHiddenPanels() {
+  300:    func terminal(for panel: PanelID, autoStart: Bool = false) -> TerminalPanelController {
+  311:    func agent(for panel: PanelID) -> TerminalPanelController {
+  338:    func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil, task: TaskRecord? = nil, intoPanel: PanelID? = nil) {
+  371:    private func restoredPlan(from record: AgentSessionRecord) -> AgentLaunchPlan? {
+  378:    func liveAgents(in directory: String) -> [TerminalPanelController] {
+  382:    func terminateAllSessions() async {
+  392:    private func scheduleSave() {
+  401:    func flushSave() {
+  406:    private func saveNow() {
+  418:    func saveAsGlobalDefault() {
+App/Diagnostics/DiagnosticsExportSheet.swift:32:    private func save() {
+App/Views/MainWindowView.swift:254:    private func barButton(_ symbol: String, _ help: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+App/Views/MainWindowView.swift:419:    private func row(_ symbol: String, _ text: String, muted: Bool = false) -> some View {
+App/Views/WorkspaceCanvas.swift:
+  38:    func install(workspace: WorkspaceController) {
+  102:    private func distribute(total: CGFloat) -> [CGFloat] {
+  127:    private func minSize(_ node: LayoutNode) -> CGFloat {
+  139:    private func divider(at index: Int, total: CGFloat) -> some View {
+  239:    private func tabTitle(_ panel: Panel) -> String {
+  265:    private func zone(edge: DockEdge) -> some View {
+  289:    static func panelID(from items: [String]) -> PanelID? {
+App/Editor/CodeEditorView.swift:
+  11:    func makeCoordinator() -> Coordinator { Coordinator(tab: tab) }
+  13:    func makeNSView(context: Context) -> EditorContainerView {
+  55:    func sizeThatFits(_ proposal: ProposedViewSize, nsView: EditorContainerView, context: Context) -> CGSize? {
+  59:    func updateNSView(_ container: EditorContainerView, context: Context) {
+  103:        func textDidChange(_ notification: Notification) {
+  115:        func textViewDidChangeSelection(_ notification: Notification) {
+  126:        func applyHighlighting() {
+  158:    @objc private func scrolled() { gutter.needsDisplay = true }
+  160:    override func layout() {
+  180:    @objc private func redraw() { needsDisplay = true }
+  182:    override func draw(_ dirtyRect: NSRect) {
+  192:        func draw(_ line: Int, in fragment: NSRect) {
+App/Editor/EditorPanelView.swift:63:    private func conflictBanner(_ tab: EditorTab) -> some View {
+App/Editor/EditorPanelView.swift:85:    private func statusBar(_ tab: EditorTab) -> some View {
+App/Editor/EditorPanelController.swift:
+  29:    func update(text: String) { document.update(text: text) }
+  31:    func checkDisk() {
+  36:    func save() -> Bool {
+  54:    func reloadFromDisk() {
+  100:    func goTo(line: Int, column: Int? = nil) {
+  112:    func open(path: String) -> EditorTab? {
+  132:    func requestClose(_ tab: EditorTab) {
+  136:    func close(_ tab: EditorTab) {
+  145:    func saveAndClose(_ tab: EditorTab) {
+  149:    func activate(_ tab: EditorTab) {
+  155:    func saveActive() {
+  160:    func saveAll() {
+  166:    func filesChanged(_ paths: [String]) {
+  176:    private func persistSoon() {
+  186:    private func restore() {
+  194:    func describe(_ error: Error, path: String) -> String {
+App/Editor/SyntaxHighlighter.swift:
+  38:    static func language(for ext: String) -> Language? { languages[ext] }
+  57:    func highlight(_ storage: NSTextStorage) {
+  106:    private func highlightMarkdown(_ storage: NSTextStorage, full: NSRange) {
+  108:        func pass(_ pattern: String, _ color: NSColor, group: Int = 0, options: NSRegularExpression.Options = []) {
+App/Git/GitPanelView.swift:
+  131:    @ViewBuilder private func group(_ title: String, _ entries: [GitStatusEntry], kind: GitChangeGroup) -> some View {
+  143:    private func showHistory(for path: String) {
+  402:    private func openChanges() { Task { await git.select(path: entry.path, staged: staged) } }
+  403:    private func openFile() { workspace.openFile(path: git.absolutePath(entry.path)) }
+  405:    private func color(_ letter: String) -> Color {
+  483:    private func prefix(_ line: DiffLine) -> String {
+  530:    @ViewBuilder private func stage(_ title: String, _ content: MergeStageContent?, empty: String) -> some View {
+  562:    private func label(_ k: ConflictKind) -> String {
+  683:    private func action(_ symbol: String, _ title: String, _ run: @escaping () -> Void) -> some View {
+  691:    private func choose(_ b: GitBranch) {
+  699:    private func submit() {
+  741:    func makeBody(configuration: Configuration) -> some View {
+App/Git/GitController.swift:
+  60:    func absolutePath(_ path: String) -> String { ((repository?.root ?? projectPath) as NSString).appendingPathComponent(path) }
+  91:    func discover() async {
+  103:    func scheduleRefresh() {
+  112:    func refresh() async {
+  127:    private func reloadSelection() async {
+  144:    func loadBranchesAndHistory() async {
+  152:    func loadWorktrees() async {
+  159:    func select(path: String, staged: Bool) async {
+  167:    func resolveConflict(_ path: String, using side: ConflictSide) async {
+  171:    func markResolved(_ path: String) async {
+  175:    func abort(_ op: MergeOperation) async {
+  181:    private func loadDiff(path: String, staged: Bool) async {
+  203:    private func perform(_ what: String, remote: Bool = false, _ body: (GitRepository) async throws -> Void) async {
+  232:    func stageHunk(index: Int, hunk: DiffHunk) async {
+  243:    func fetch() async { await perform("Fetch", remote: true) { try await $0.fetch() } }
+  244:    func pull() async {
+  248:    func push() async { await perform("Push", remote: true) { try await $0.push() } }
+  249:    func publish() async { await perform("Publish branch", remote: true) { try await $0.publish() } }
+  252:    func sync() async {
+  263:    func stage(_ paths: [String]) async { await perform("Stage") { try await $0.stage(paths: paths) } }
+  264:    func unstage(_ paths: [String]) async { await perform("Unstage") { try await $0.unstage(paths: paths) } }
+  265:    func stageAll() async { await perform("Stage all") { try await $0.stageAll() } }
+  267:    func discard(_ paths: [String]) async {
+  273:    func headCopy(of path: String) async -> String? {
+  286:    func addToGitignore(_ path: String) async {
+  302:    func commit() async {
+  320:    func generateCommitMessage(claudePath: String) async {
+  343:    private nonisolated static func runGen(_ cmd: String) -> GenOutcome {
+  364:    private static func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+  366:    private static func cleanGeneratedMessage(_ raw: String) -> String {
+  378:    func checkout(_ ref: String, detached: Bool = false) async {
+  392:    func stashAndCheckout() async {
+  399:    func cancelBlockedCheckout() { checkoutBlocked = nil; lastError = nil }
+  401:    func createBranch(_ name: String, from: String? = nil) async {
+  406:    func addWorktree(path: String, branch: String, createBranch: Bool) async {
+  411:    func removeWorktree(_ wt: GitWorktree) async {
+  419:    func describe(_ error: Error) -> String {
+App/Palette/CommandPalette.swift:
+  23:    static func isPrefixed(_ query: String) -> Bool { query.hasPrefix("/") || query.hasPrefix(":") }
+  25:    static func commands(model: AppModel, query: String) -> [PaletteCommand] {
+  37:    static func matchCommands(_ hits: [ContentHit], model: AppModel) -> [PaletteCommand] {
+  47:    private static func plainCommands(model: AppModel, query: String) -> [PaletteCommand] {
+  94:    nonisolated static func relativePath(_ path: String, root: String) -> String {
+  104:    nonisolated static func searchContent(root: String, query: String) -> [ContentHit] {
+  133:    static func scanFiles(root: String, matching query: String) -> [String] {
+  224:    private func run(_ cmd: PaletteCommand?) {
+Packages/C2DCore/Sources/C2DCore/Tasks/TaskModel.swift:16:    public func canTransition(to next: TaskStatus) -> Bool {
+Packages/C2DCore/Sources/C2DCore/Tasks/TaskModel.swift:64:    public func unmetDependencies(statusOf: (String) -> TaskStatus?) -> [String] {
+Packages/C2DCore/Sources/C2DCore/Tasks/TaskStore.swift:
+  15:    public static func inMemory() throws -> TaskStore { try TaskStore(db: SQLiteDatabase(path: ":memory:")) }
+  22:    public static func standardPath() throws -> String {
+  26:    private static func migrate(_ db: SQLiteDatabase) throws {
+  68:    private static func now() -> Date { Date(timeIntervalSince1970: (Date().timeIntervalSince1970 * 1000).rounded() / 1000) }
+  71:    public func create(_ task: TaskRecord) throws -> TaskRecord {
+  86:    public func update(_ record: TaskRecord) throws -> TaskRecord {
+  114:    public func transition(id: String, to next: TaskStatus, note: String? = nil, override: Bool = false) throws -> TaskRecord {
+  137:    public func setBlocked(id: String, reason: String) throws -> TaskRecord {
+  153:    public func clearBlocked(id: String) throws -> TaskRecord {
+  165:    public func addNote(id: String, _ text: String) throws {
+  173:    public func delete(id: String) throws {
+  184:    private func projectGraph(_ projectPath: String) throws -> [String: TaskRecord] {
+  190:    static func reaches(from start: String, to target: String, in graph: [String: TaskRecord]) -> Bool {
+  202:    public func addDependency(id: String, dependsOn upstreamID: String) throws -> TaskRecord {
+  219:    public func removeDependency(id: String, dependsOn upstreamID: String) throws -> TaskRecord {
+  233:    public func createPlan(_ plan: TaskPlan) throws -> TaskPlan {
+  241:    public func updatePlan(_ plan: TaskPlan) throws -> TaskPlan {
+  250:    public func deletePlan(id: String) throws {
+  258:    public func plan(id: String) throws -> TaskPlan? {
+  262:    public func plans(projectPath: String) throws -> [TaskPlan] {
+  268:    public func assign(taskID: String, toPlan planID: String?) throws -> TaskRecord {
+  279:    private static func planRow(_ r: SQLiteDatabase.Row) -> TaskPlan {
+  286:    public func task(id: String) throws -> TaskRecord? {
+  290:    public func tasks(projectPath: String, includeTerminal: Bool = false) throws -> [TaskRecord] {
+  295:    public func search(text: String, projectPath: String? = nil) throws -> [TaskRecord] {
+  303:    public func events(taskID: String) throws -> [TaskEvent] {
+  313:    public func activeCount(projectPath: String) throws -> Int {
+  321:    private static func row(_ r: SQLiteDatabase.Row) -> TaskRecord {
+  322:        func json(_ s: String?) -> [String] { (try? JSONDecoder().decode([String].self, from: Data((s ?? "[]").utf8))) ?? [] }
+  332:    private func params(_ t: TaskRecord) -> [SQLiteValue] {
+  333:        func json(_ a: [String]) -> String { String(decoding: (try? JSONEncoder().encode(a)) ?? Data("[]".utf8), as: UTF8.self) }
+  340:    private func insert(_ t: TaskRecord) throws {
+  344:    private func write(_ t: TaskRecord) throws {
+  348:    private func append(_ e: TaskEvent) throws {
+  355:    private func wrap<T>(_ body: () throws -> T) throws -> T {
+Packages/C2DCore/Sources/C2DCore/DiagnosticsExport.swift:
+  12:    private static func sub(_ pattern: String, _ options: NSRegularExpression.Options = [.caseInsensitive]) -> NSRegularExpression? {
+  38:    public static func redact(_ input: String) -> String {
+  51:    private static func redactHighEntropy(_ s: String) -> String {
+  67:    private static func isHexSHA(_ t: String) -> Bool {
+  72:    private static func collapseHomePaths(_ s: String) -> String {
+  109:    public static func classify(_ error: Error) -> (category: DiagnosticCategory, errorType: String, reason: String?, exitCode: Int32?, outcome: DiagnosticOutcome) {
+  162:    public func setVerbosity(_ v: DiagnosticVerbosity) { verbosity = v }
+  164:    private static func clean(_ s: String?, limit: Int = 200) -> String? {
+  171:    public func record(module: String, operation: String, error: Error, durationMS: Int? = nil) {
+  180:    public func record(module: String, operation: String, category: DiagnosticCategory = .unknown,
+  187:    private func append(_ e: DiagnosticEvent) {
+  192:    public func snapshot() -> [DiagnosticEvent] { events }
+  193:    public func clear() { events.removeAll() }
+  195:    public func makeBundle(report: DiagnosticsReport) -> DiagnosticsBundle {
+  207:    public func serialized() throws -> String {
+Packages/C2DCore/Sources/C2DCore/Optimizer/OptimizationStore.swift:
+  45:    public static func inMemory() throws -> OptimizationStore { try OptimizationStore(db: SQLiteDatabase(path: ":memory:")) }
+  52:    public static func standardPath() throws -> String {
+  56:    private static func migrate(_ db: SQLiteDatabase) throws {
+  71:    public func record(_ r: OptimizationRecord) throws {
+  80:    public func records(projectPath: String, limit: Int = 100) throws -> [OptimizationRecord] {
+  93:    public func aggregate(projectPath: String) throws -> [MeasurementSource: SourceTotals] {
+Packages/C2DCore/Sources/C2DCore/Optimizer/SessionAttribution.swift:
+  21:    public static func attribute(sessions: [TranscriptSession], agentRecords: [AgentSessionRecord]) -> [String: SessionAttribution] {
+  41:    public static func launchesWithoutTranscript(sessions: [TranscriptSession], agentRecords: [AgentSessionRecord]) -> [AgentSessionRecord] {
+  50:    static func normalized(_ raw: String?) -> String? {
+Packages/C2DCore/Sources/C2DCore/Optimizer/ContextOptimizer.swift:
+  60:    public static func deduplicate(_ payload: ContextPayload) -> OptimizationResult {
+  93:    public static func budgetCheck(_ payload: ContextPayload, budgetTokens: Int) -> BudgetVerdict {
+  102:    static func normalizeWhitespace(_ text: String) -> String {
+Packages/C2DCore/Sources/C2DCore/Optimizer/ClaudeTranscriptReader.swift:
+  26:    public static func + (a: ProviderUsage, b: ProviderUsage) -> ProviderUsage {
+  88:    public static func defaultClaudeHome() -> URL {
+  95:    public static func projectFolderName(for cwd: String) -> String {
+  99:    public static func projectFolder(for projectPath: String, claudeHome: URL = defaultClaudeHome()) -> URL {
+  105:    public static func read(projectPath: String, claudeHome: URL = defaultClaudeHome()) -> TranscriptLedgerResult {
+  141:    static func readSession(fileURL: URL, projectPath: String) -> Result<SessionRead, Failure> {
+  171:            func count(_ key: String, required: Bool) -> Int? {
+  212:    private static func parseTimestamp(_ s: String) -> Date? {
+Packages/C2DCore/Sources/C2DCore/Optimizer/TokenEstimator.swift:40:    public static func estimate(_ text: String) -> TokenEstimate {
+Packages/C2DCore/Sources/C2DCore/Optimizer/OutputCondenser.swift:
+  37:    public static func condense(_ raw: String, options: Options = Options()) -> CondensedOutput {
+  68:    static func stripEscapes(_ s: String) -> String {
+  99:    static func collapseRepeats(_ lines: [String]) -> [String] {
+  117:    static func collapseSimilar(_ lines: [String], minimum: Int) -> [String] {
+  140:    static func truncateMiddle(_ lines: [String], head: Int, tail: Int) -> [String] {
+  165:    public static func isDiagnostic(_ line: String) -> Bool {
+  170:    static func maskDigits(_ s: String) -> String {
+Packages/C2DCore/Sources/C2DCore/Optimizer/SavingsReport.swift:15:    public static func make(baseline: TokenEstimate, optimized: TokenEstimate, optimizerCost: Int = 0) -> SavingsReport {
+Packages/C2DCore/Sources/C2DCore/PTY/ProcessContext.swift:
+  21:    static func currentDirectory(of pid: pid_t) -> String? {
+  31:    static func children(of pid: pid_t) -> [pid_t] {
+  40:    static func descendants(of pid: pid_t, limit: Int = 4096) -> [pid_t] {
+  56:    static func processes(onTTY device: dev_t) -> [pid_t] {
+  68:    static func startTime(of pid: pid_t) -> (seconds: UInt64, microseconds: UInt64)? {
+  75:    static func name(of pid: pid_t) -> String? {
+Packages/C2DCore/Sources/C2DCore/PTY/PTYSession.swift:
+  94:    public func start() throws(PTYError) {
+  105:        func fail(_ error: PTYError) -> PTYError {
+  170:    public func write(_ data: Data) throws(PTYError) {
+  190:    public func resize(_ size: TerminalSize) throws(PTYError) {
+  202:    public func terminate(gracePeriod: Duration = .seconds(2)) async -> PTYExitStatus? {
+  235:    public func waitForExit() async throws -> PTYExitStatus {
+  255:    private func cancelExitWaiter(_ id: UUID) {
+  261:    public func processContext() -> PTYProcessContext? {
+  278:    public func close() {
+  289:    private func sessionProcesses(leader: pid_t) -> [TrackedProcess] {
+  303:    private func finishDescendants(_ descendants: [TrackedProcess], deadline: ContinuousClock.Instant) async {
+  315:    private func transition(to new: PTYSessionState) {
+  320:    private func armExitWatcher(pid: pid_t) {
+  334:    private func reapIfExited() {
+  352:    private func waitForExit(timeout: Duration) async -> PTYExitStatus? {
+  380:    func adopt(_ fd: Int32) {
+  385:    func close() {
+  396:    func read() async -> Data? {
+  409:    private func blockingRead(cancelled: CancelFlag) -> Data? {
+  446:    func set() { flag.withLock { $0 = true } }
+Packages/C2DCore/Sources/C2DCore/PTY/PTYSessionConfiguration.swift:
+  65:    public static func loginShell() throws(PTYError) -> String {
+  86:    public static func inheritedEnvironment(term: String = "xterm-256color") -> [String: String] {
+  93:    public func validate() throws(PTYError) {
+Packages/C2DCore/Sources/C2DCore/Projects/ProjectRegistry.swift:
+  13:    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+  64:    public static func standard() throws -> ProjectRegistry {
+  78:    public mutating func open(path: String) throws -> Project {
+  95:    public mutating func relocate(_ project: Project, to newPath: String) throws -> Project {
+  106:    public mutating func remove(_ project: Project) throws {
+  112:    public mutating func setPinned(_ pinned: Bool, _ project: Project) throws {
+  118:    private func persist() throws {
+Packages/C2DCore/Sources/C2DCore/Workspace/LayoutStore.swift:
+  10:    public static func standard() throws -> LayoutStore {
+  14:    public static func documentName(forProjectPath path: String) -> String {
+  18:    public func loadGlobalDefault() throws -> WorkspaceLayout? {
+  22:    public func saveGlobalDefault(_ layout: WorkspaceLayout) throws {
+  26:    public func load(forProjectPath path: String) throws -> WorkspaceLayout? {
+  30:    public func save(_ layout: WorkspaceLayout, forProjectPath path: String) throws {
+  35:    func migrate(_ layout: WorkspaceLayout?) throws -> WorkspaceLayout? {
+Packages/C2DCore/Sources/C2DCore/Workspace/LayoutPresets.swift:
+  27:    public func makeLayout(available: Set<PanelKind>) -> WorkspaceLayout {
+  28:        func panel(_ kind: PanelKind, _ title: String) -> Panel? {
+  31:        func group(_ ps: [Panel?]) -> LayoutNode? {
+  35:        func split(_ o: SplitOrientation, _ nodes: [(LayoutNode?, Double)]) -> LayoutNode? {
+  43:        func keep(_ p: Panel?) -> Panel? { if let p { all.append(p) }; return p }
+Packages/C2DCore/Sources/C2DCore/Workspace/PaneTree.swift:17:    public func inserting(_ new: PanelID, beside target: PanelID, down: Bool) -> PaneTree {
+Packages/C2DCore/Sources/C2DCore/Workspace/PaneTree.swift:31:    public func removing(_ target: PanelID) -> PaneTree? {
+Packages/C2DCore/Sources/C2DCore/Workspace/WorkspaceLayout.swift:
+  9:    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+  27:    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+  141:    public func group(containing panel: PanelID) -> NodeID? {
+  142:        func find(_ node: LayoutNode) -> NodeID? {
+  151:    public func activePanel(in group: NodeID) -> PanelID? {
+  152:        func find(_ node: LayoutNode) -> PanelID?? {
+  164:    public mutating func recover(availableKinds: Set<PanelKind>) -> [PanelID] {
+  183:    public mutating func add(_ panel: Panel, to group: NodeID, activate: Bool = true) throws(LayoutError) {
+  191:    public mutating func add(_ panel: Panel, beside group: NodeID, edge: DockEdge) throws(LayoutError) {
+  200:    public mutating func move(_ panel: PanelID, toGroup group: NodeID, index: Int? = nil) throws(LayoutError) {
+  217:    public mutating func move(_ panel: PanelID, beside group: NodeID, edge: DockEdge) throws(LayoutError) {
+  232:    public mutating func hide(_ panel: PanelID) throws(LayoutError) {
+  240:    public mutating func restore(_ panel: PanelID, into group: NodeID? = nil) throws(LayoutError) {
+  255:    public mutating func close(_ panel: PanelID) throws(LayoutError) {
+  262:    public mutating func activate(_ panel: PanelID) throws(LayoutError) {
+  268:    public mutating func setWeights(_ weights: [Double], of split: NodeID) throws(LayoutError) {
+  278:    public mutating func maximize(_ group: NodeID) throws(LayoutError) {
+  283:    public mutating func exitFocusMode() {
+  289:    private mutating func detach(_ panel: PanelID) {
+  295:    public static func node(_ id: NodeID, in node: LayoutNode) -> LayoutNode? {
+  301:    static func mapGroup(_ node: LayoutNode, _ target: NodeID, _ f: ([PanelID], PanelID?) -> ([PanelID], PanelID?)) -> LayoutNode {
+  312:    static func mapSplit(_ node: LayoutNode, _ target: NodeID, _ f: (SplitOrientation, [LayoutNode], [Double]) -> (SplitOrientation, [LayoutNode], [Double]?)) -> LayoutNode {
+  324:    static func removing(_ panel: PanelID, from node: LayoutNode) -> LayoutNode? {
+  346:    static func pruned(_ node: LayoutNode, keeping known: Set<PanelID>) -> LayoutNode {
+  355:    static func insert(_ newNode: LayoutNode, beside target: NodeID, edge: DockEdge, in node: LayoutNode) -> LayoutNode {
+Packages/C2DCore/Sources/C2DCore/Terminal/TerminalSessionRegistry.swift:
+  68:    public func record(_ id: String) -> TerminalSessionRecord? { document.records.first { $0.id == id } }
+  69:    public func record(forPanel panel: PanelID) -> TerminalSessionRecord? {
+  73:    public mutating func register(_ record: TerminalSessionRecord) throws {
+  80:    public mutating func update(_ id: String, _ change: (inout TerminalSessionRecord) -> Void) throws {
+  86:    public mutating func forget(_ id: String) throws {
+  91:    private mutating func trim() {
+  99:    private func persist() throws { try store?.save(document, as: Self.name) }
+Packages/C2DCore/Sources/C2DCore/Agents/AgentProvider.swift:50:    public func launchArguments(task: String?) -> [String] {
+Packages/C2DCore/Sources/C2DCore/Agents/AgentDiscovery.swift:
+  13:    public static func locate(_ provider: AgentProvider, extraSearchPaths: [String] = defaultExtraSearchPaths) -> String? {
+  32:    public static func status(of provider: AgentProvider, extraSearchPaths: [String] = defaultExtraSearchPaths) async -> AgentProviderStatus {
+  52:    public static func loginShellPath() -> String {
+  64:    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval) async -> RunResult {
+  73:    static func runSync(_ executable: String, _ arguments: [String], timeout: TimeInterval) -> RunResult {
+  108:    func value(_ compute: () -> String) -> String {
+  124:        func wait() -> Data { group.wait(); return data }
+  126:    func readToEndInBackground() -> Drain { Drain(self) }
+Packages/C2DCore/Sources/C2DCore/Agents/AgentSessionRegistry.swift:
+  76:    public func record(_ id: String) -> AgentSessionRecord? { document.records.first { $0.id == id } }
+  77:    public func records(forProject path: String) -> [AgentSessionRecord] { document.records.filter { $0.projectPath == path } }
+  78:    public func record(forPanel panel: PanelID) -> AgentSessionRecord? {
+  82:    public mutating func register(_ record: AgentSessionRecord) throws {
+  89:    public mutating func update(_ id: String, _ change: (inout AgentSessionRecord) -> Void) throws {
+  95:    public mutating func forget(_ id: String) throws {
+  100:    private mutating func trim() {
+  108:    private func persist() throws { try store?.save(document, as: Self.name) }
+Packages/C2DCore/Sources/C2DCore/Agents/AgentLaunchPlan.swift:18:    public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?) throws -> AgentLaunchPlan {
+Packages/C2DCore/Sources/C2DCore/Persistence/JSONDocumentStore.swift:
+  13:    public static func applicationSupport(subdirectory: String = "") throws -> JSONDocumentStore {
+  24:    public func url(for name: String) -> URL {
+  28:    public func exists(_ name: String) -> Bool {
+  34:    public func save<T: Encodable>(_ value: T, as name: String) throws {
+  47:    public func load<T: Decodable>(_ type: T.Type, named name: String) throws -> T? {
+  54:    public func delete(_ name: String) throws {
+  61:    public func list() -> [String] {
+  75:    public func cleanupOrphanedTemporaries(olderThan grace: TimeInterval = 60, now: Date = Date()) -> [String] {
+Packages/C2DCore/Sources/C2DCore/Persistence/SQLiteDatabase.swift:
+  33:    public func close() {
+  39:    public func exec(_ sql: String) throws {
+  61:    public func inTransaction<T>(_ body: () throws -> T) throws -> T {
+  73:    public func run(_ sql: String, _ params: [SQLiteValue] = []) throws {
+  82:    public func query<T>(_ sql: String, _ params: [SQLiteValue] = [], _ row: (Row) throws -> T) throws -> [T] {
+  97:    public func scalarInt(_ sql: String, _ params: [SQLiteValue] = []) throws -> Int {
+  101:    private func withLock<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+  107:    private func prepare(_ db: OpaquePointer, _ sql: String, _ params: [SQLiteValue]) throws -> OpaquePointer {
+  127:        public func isNull(_ i: Int) -> Bool { sqlite3_column_type(stmt, Int32(i)) == SQLITE_NULL }
+  128:        public func int(_ i: Int) -> Int { Int(sqlite3_column_int64(stmt, Int32(i))) }
+  129:        public func double(_ i: Int) -> Double { sqlite3_column_double(stmt, Int32(i)) }
+  130:        public func string(_ i: Int) -> String? {
+  134:        public func data(_ i: Int) -> Data? {
+  143:    public static func optText(_ s: String?) -> SQLiteValue { s.map { .text($0) } ?? .null }
+  144:    public static func optDate(_ d: Date?) -> SQLiteValue { d.map { .double($0.timeIntervalSince1970) } ?? .null }
+Packages/C2DCore/Sources/C2DCore/Files/FileReference.swift:
+  27:    public static func parse(_ raw: String) -> FileReference? {
+  53:    public func resolve(relativeTo workingDirectory: String, fileManager: FileManager = .default) -> Resolved? {
+  68:    public static func resolve(_ raw: String, relativeTo workingDirectory: String, fileManager: FileManager = .default) -> Resolved? {
+Packages/C2DCore/Sources/C2DCore/Files/DirectoryListing.swift:18:    public static func list(_ directory: URL, includeHidden: Bool = false) throws -> [FileEntry] {
+Packages/C2DCore/Sources/C2DCore/Files/TextDocument.swift:
+  37:    public static func load(path: String) throws -> TextDocument {
+  55:    public mutating func update(text: String) { self.text = text }
+  59:    public mutating func save() throws {
+  73:    public func externalChange() -> ExternalChange {
+  83:    public mutating func reload() throws {
+  88:    static func looksBinary(_ data: Data) -> Bool {
+  92:    static func detectLineEnding(_ s: String) -> LineEnding {
+Packages/C2DCore/Sources/C2DCore/Files/FileWatcher.swift:44:    public func stop() {
+Packages/C2DCore/Sources/C2DCore/Diagnostics.swift:32:    public static func current() -> DiagnosticsReport {
+Packages/C2DCore/Sources/C2DCore/Git/GitRepository.swift:
+  42:    static func from(xy: String) -> ConflictKind {
+  169:    func setExtraEnvironment(_ env: [String: String]) { extraEnvironment = env }
+  174:    static func canonical(_ path: String) -> String {
+  178:    static func locateGit() -> String? {
+  184:    public static func discover(path: String) async throws -> GitRepository? {
+  205:    public func status() async throws -> GitStatus {
+  210:    static func parseStatus(_ data: Data) -> GitStatus {
+  215:        func change(_ c: Character) -> GitStatusEntry.Change { GitStatusEntry.Change(rawValue: c) ?? .unmodified }
+  255:    public func diff(path: String, staged: Bool) async throws -> String {
+  265:    public static func parseUnifiedDiff(_ text: String) -> [FileDiff] {
+  271:        func flushHunk() {
+  275:        func flushFile() {
+  280:        func strip(_ p: Substring) -> String? {
+  294:                func parse(_ s: Substring) -> (Int, Int) {
+  323:    static func extractHunkPatch(from diffText: String, at index: Int) -> String? {
+  335:    public func stageHunk(path: String, index: Int, expected: DiffHunk) async throws {
+  340:    public func unstageHunk(path: String, index: Int, expected: DiffHunk) async throws {
+  344:    private func applyHunk(path: String, index: Int, expected: DiffHunk, staged: Bool, reverse: Bool) async throws {
+  370:    public func conflictStages(path: String) async throws -> ConflictStages {
+  371:        func stage(_ n: Int) async throws -> MergeStageContent {
+  382:    public static func resolutionCommands(kind: ConflictKind, side: ConflictSide, path: String) -> [[String]] {
+  397:    public func resolveConflict(path: String, using side: ConflictSide) async throws {
+  405:    public func markResolved(path: String) async throws {
+  419:    private func conflictKind(of path: String) async throws -> ConflictKind? {
+  424:    public func operationInProgress() async throws -> MergeOperation? {
+  434:    public func abortOperation(_ op: MergeOperation) async throws {
+  445:    private func gitPathExists(_ name: String) async throws -> Bool {
+  453:    public func stage(paths: [String]) async throws { guard !paths.isEmpty else { return }; _ = try await run(["add", "--"] + paths) }
+  454:    public func stageAll() async throws { _ = try await run(["add", "--all"]) }
+  455:    public func unstage(paths: [String]) async throws { guard !paths.isEmpty else { return }; _ = try await run(["restore", "--staged", "--"] + paths) }
+  458:    public func discardChanges(paths: [String]) async throws {
+  463:    public func commit(message: String) async throws -> String {
+  486:    public static func remoteFailureTitle(_ error: GitError, operation: String) -> String {
+  500:    static func classifyRemoteFailure(code: Int32, stderr: String) -> GitError {
+  526:    public func fetch(remote: String = "origin") async throws {
+  534:    public func pull() async throws {
+  548:    public func publish(remote: String = "origin") async throws {
+  553:    public func push(force: Bool = false) async throws {
+  563:    public func remoteURL(_ name: String = "origin") async throws -> String? {
+  571:    public func hasUpstream() async throws -> Bool {
+  578:    public func branches() async throws -> [GitBranch] {
+  590:    public func createBranch(_ name: String, checkout: Bool, from: String? = nil) async throws {
+  597:    public func checkout(branch: String, force: Bool = false) async throws {
+  602:    public func checkoutDetached(_ ref: String) async throws {
+  606:    private func checkout(_ args: [String]) async throws {
+  614:    static func overwrittenPaths(_ stderr: String) -> [String]? {
+  620:    public func stash(message: String) async throws {
+  625:    public func log(limit: Int = 50, path: String? = nil) async throws -> [GitCommit] {
+  639:    public func contentAtHEAD(path: String) async throws -> Data {
+  647:    public func worktrees() async throws -> [GitWorktree] {
+  651:        func flush() {
+  665:    public func addWorktree(path: String, branch: String, createBranch: Bool) async throws {
+  671:    public func removeWorktree(path: String, force: Bool = false) async throws {
+  685:    func run(_ args: [String], allowFailure: Bool = false, input: Data? = nil) async throws -> Result {
+  694:    func executeRaw(_ args: [String]) async throws -> (stdout: Data, code: Int32) {
+  699:    func runData(_ args: [String]) async throws -> Data {
+  705:    private func execute(_ args: [String], input: Data? = nil) async throws -> (stdout: Data, stderr: Data, code: Int32) {

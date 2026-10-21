@@ -160,6 +160,8 @@ struct C2DTerminalApp: App {
                 Button("Export Diagnostics…") { model.prepareDiagnosticsExport() }
             }
             CommandGroup(after: .windowArrangement) {
+                Button(BuddyPet.shared.isVisible ? "Hide Buddy" : "Show Buddy") { BuddyPet.shared.toggle() }
+                Divider()
                 // ⌘1…⌘9 pick a tab of the key window's native tab group (terminal windows), like other terminals.
                 ForEach(1...9, id: \.self) { n in
                     Button("Tab \(n)") {
@@ -283,6 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.windows.forEach { $0.isRestorable = false }
+        BuddyPet.shared.restore()   // back on the desktop if it was out at quit
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

@@ -90,7 +90,7 @@ final class WorkspaceController {
     func showOptimizerPanel() {
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
         if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }
-        addPanel(.tokenOptimizer, title: "Token Optimizer", besideGroup: layout.groupIDs.last)
+        addPanel(.tokenOptimizer, title: "Token Saver", besideGroup: layout.groupIDs.last)
     }
 
     /// Shows or hides the file-tree sidebar (VS-Code ⌘B): hides a visible explorer, restores a hidden
@@ -300,7 +300,8 @@ final class WorkspaceController {
     func terminal(for panel: PanelID, autoStart: Bool = false) -> TerminalPanelController {
         if let existing = terminals[panel] { return existing }
         let previous = app.sessions.record(forPanel: panel)
-        let controller = TerminalPanelController(panelID: panel, projectPath: projectPath, app: app, previousRecord: previous)
+        let controller = TerminalPanelController(panelID: panel, projectPath: projectPath, app: app, previousRecord: previous,
+                                                 oneShotCommand: pendingCommands.removeValue(forKey: panel))
         terminals[panel] = controller
         if autoStart || previous == nil { controller.startNewSession() }
         return controller
@@ -333,6 +334,14 @@ final class WorkspaceController {
     }
 
     @ObservationIgnored private var pendingAgentPlans: [PanelID: AgentLaunchPlan] = [:]
+    @ObservationIgnored private var pendingCommands: [PanelID: (argv: [String], title: String)] = [:]
+
+    /// Runs one argv (no shell string) in a new terminal pane in the project folder; the user sees and answers it there.
+    func runInNewTerminal(_ argv: [String], title: String) {
+        let id = addPanel(.terminal, title: title)
+        pendingCommands[id] = (argv, title)
+        _ = terminal(for: id, autoStart: true)
+    }
 
     /// Creates the panel and starts the agent. The caller has already shown the pre-launch summary.
     func launchAgent(_ plan: AgentLaunchPlan, in group: NodeID? = nil, task: TaskRecord? = nil, intoPanel: PanelID? = nil) {

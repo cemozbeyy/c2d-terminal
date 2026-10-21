@@ -100,11 +100,15 @@ import Testing
 }
 
 /// Real command outputs in `docs/token-saver/fixtures` (regenerate with `docs/token-saver/make_fixtures.sh`).
+/// `docs/` is kept out of the public repository, so the suite is skipped where the fixtures are absent.
 /// Always: no diagnostic line may be lost. With `C2D_BENCH_OUT=<file.md>`: writes the benchmark table;
 /// with `C2D_CONDENSED_OUT=<dir>`: writes each condensed fixture as `<name>.<mode>.txt`.
-@Suite struct OutputCondenserFixtureTests {
-    static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("../../../../docs/token-saver/fixtures").standardizedFileURL
+private let condenserFixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent("../../../../docs/token-saver/fixtures").standardizedFileURL
+
+@Suite(.enabled(if: FileManager.default.fileExists(atPath: condenserFixtures.path), "fixtures are local-only"))
+struct OutputCondenserFixtureTests {
+    static let fixtures = condenserFixtures
 
     @Test(arguments: [("default", OutputCondenser.Options()), ("lossless", OutputCondenser.Options.lossless)])
     func everyDiagnosticLineSurvivesOnRealOutputs(_ mode: String, _ options: OutputCondenser.Options) throws {

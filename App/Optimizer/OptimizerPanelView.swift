@@ -5,12 +5,15 @@ struct OptimizerPanelView: View {
     @Bindable var optimizer: OptimizerController
     let workspace: WorkspaceController
     @State private var noteText = ""
+    @State private var consentDirectory: URL?   // set only by "Run experiment…"; the sheet asks again every time
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 header
-                usageLedger
+                TokenSaverMetricsView(summary: optimizer.summary, usageNote: optimizer.usageNote)
+                    .padding(Theme.space3)
+                    .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
                 sources
                 if let est = optimizer.payloadEstimate {
                     GroupBox("Prepared context") {
@@ -46,7 +49,9 @@ struct OptimizerPanelView: View {
                     }
                 }
                 if let r = optimizer.result, let rep = optimizer.report { resultView(r, rep) }
-                history
+                activity
+                usageLedger
+                experiment
                 if let err = optimizer.lastError {
                     HStack { Text(err).font(.caption).foregroundStyle(Theme.warning); Spacer(); Button("Dismiss") { optimizer.lastError = nil }.font(.caption) }
                 }
@@ -59,24 +64,14 @@ struct OptimizerPanelView: View {
     // MARK: Token Saver TS-1 — provider-reported usage
 
     private var usageLedger: some View {
-        GroupBox("Provider-reported usage · Claude Code") {
+        DisclosureGroup {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Read from Claude Code's local transcripts on this Mac. Only usage and metadata fields are read; nothing is stored, copied or uploaded.")
-                        .font(.caption).foregroundStyle(Theme.textSecondary)
-                    Spacer()
-                    if optimizer.ledgerLoading { ProgressView().controlSize(.small) }
-                    Button("Rescan") { Task { await optimizer.loadLedger() } }.font(.caption).disabled(optimizer.ledgerLoading)
-                }
                 switch optimizer.ledger {
                 case .none:
-                    Text(optimizer.entitlementNoteForLedger).font(.caption).foregroundStyle(Theme.textSecondary)
+                    Text(optimizer.usageNote).font(.caption).foregroundStyle(Theme.textSecondary)
                 case .unavailable(let reason):
                     Label(reason, systemImage: "questionmark.circle").font(.caption).foregroundStyle(Theme.textSecondary)
                 case .available(let l):
-                    let t = l.total
-                    Text("\(l.sessions.count) session(s) · \(t.total.formatted()) tokens — input \(t.inputTokens.formatted()) · output \(t.outputTokens.formatted()) · cache read \(t.cacheReadInputTokens.formatted()) · cache write \(t.cacheCreationInputTokens.formatted())")
-                        .font(.caption).bold()
                     Text("\(l.source.label) · \(l.formatLabel)").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                     ForEach(l.sessions) { s in
                         HStack(spacing: 8) {
@@ -100,29 +95,173 @@ struct OptimizerPanelView: View {
                         Label("\(optimizer.launchesWithoutTranscript.count) C2D agent launch(es) have no transcript yet (never replied, or the file is not visible yet) — rescan later.", systemImage: "clock")
                             .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                     }
-                    Text("Cache reads are usually most of the total: each reply re-sends the whole conversation so far. A session's “context” is what its newest reply re-read; shorter sessions (or a fresh session with a written hand-off) re-read less. This is a measurement, not a saving.")
-                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
-                    Text("Attribution uses only the session id C2D passed at launch; sessions started outside C2D stay listed as unmatched and are never attributed to a task. Linking a session to a task does not reduce usage.")
-                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
-                    Text("Top-level session files only; sub-agent transcripts in subfolders are not counted yet. \(l.skippedRecords) non-assistant record(s) skipped unread\(l.inProgressLines > 0 ? ", \(l.inProgressLines) line(s) still being written" : "").")
-                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+                    Text("Usage, not savings. Only usage and metadata fields of Claude Code's local transcripts are read; nothing is stored or uploaded. Sessions link to C2D launches only by the session id C2D passed. Top-level session files only (sub-agents not counted); \(l.skippedRecords) non-assistant record(s) skipped unread\(l.inProgressLines > 0 ? ", \(l.inProgressLines) line(s) still being written" : "").")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+        } label: {
+            HStack {
+                Text("Usage by session · provider-reported").font(.caption).fontWeight(.semibold)
+                Spacer()
+                if optimizer.ledgerLoading { ProgressView().controlSize(.small) }
+                Button("Rescan") { Task { await optimizer.loadLedger() } }.font(.caption).disabled(optimizer.ledgerLoading)
+            }
+        }
+    }
+
+    // MARK: Paired experiment (TSD-03)
+
+    private var experiment: some View {
+        GroupBox("Paired experiment · exploratory") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Same fixture task, once per hand-off condition (raw / condensed lossless / condensed lossy), each a new `claude -p` session. The tasks are small single-answer fixtures: results are exploratory and say nothing about long-session productivity.")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+                if !optimizer.experimentAvailable {
+                    Label("The experiment runner is not bundled in this build.", systemImage: "questionmark.circle").font(.caption).foregroundStyle(Theme.textSecondary)
+                } else {
+                    experimentModelRow
+                    HStack {
+                        Stepper("Repetitions \(optimizer.experimentReps)", value: $optimizer.experimentReps, in: 3...9, step: 3).font(.caption).fixedSize() .help("Multiples of the 3 conditions, so every condition runs first, second and third equally often per task.")
+                        Button("Preview plan (no model calls)") { Task { await optimizer.previewExperiment() } }.font(.caption)
+                            .disabled(optimizer.experimentModel == nil || optimizer.experimentPreviewing)
+                        if optimizer.experimentPreviewing { ProgressView().controlSize(.small) }
+                        Spacer()
+                        Button("Run experiment…") { consentDirectory = optimizer.nextExperimentDirectory() }.font(.caption)
+                            .disabled(optimizer.experimentPlan == nil || optimizer.experimentModel == nil)
+                            .help("Asks for confirmation, then opens the runner in a terminal pane. It calls the model only after you type SPEND there.")
+                    }
+                    if let plan = optimizer.experimentPlan {
+                        Text("Plan: \(plan.runs) runs = \(plan.tasks.count) tasks × \(plan.arms.count) conditions × \(plan.reps) repetitions, up to \(plan.max_retries) retry each, order seed \(plan.seed). Conditions: \(plan.arms.joined(separator: ", ")).")
+                            .font(.caption).bold()
+                        if plan.controlRows > 0 {
+                            Text("\(plan.controlRows) run(s) hand over a context identical to another condition of the same task: A/A controls, not treatments.")
+                                .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
+                        }
+                        Text("Preview only: no model was called.").font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+                    }
+                    if optimizer.experimentRunDirectory != nil { experimentResults }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(isPresented: Binding(get: { consentDirectory != nil }, set: { if !$0 { consentDirectory = nil } })) {
+            if let dir = consentDirectory, let plan = optimizer.experimentPlan, let model = optimizer.experimentModel {
+                experimentConsent(plan: plan, model: model, directory: dir)
+            }
+        }
+    }
+
+    @ViewBuilder private var experimentModelRow: some View {
+        switch optimizer.experimentModelSource {
+        case .verified(let model, _, let sid, let cli):
+            Label("Model: \(model) · Claude Code \(cli) · verified from the running session's transcript (\(sid.prefix(8))…)", systemImage: "checkmark.seal")
+                .font(.caption).help(ExperimentModelSource.sourceLabel)
+            experimentModelNote(model)
+        case .needsChoice(let observed, _, let sid, _):
+            VStack(alignment: .leading, spacing: 2) {
+                Picker("Model", selection: $optimizer.experimentChosenModel) {
+                    Text("Choose…").tag(String?.none)
+                    ForEach(observed, id: \.self) { Text($0).tag(Optional($0)) }
+                }
+                .font(.caption).fixedSize()
+                Text("The running session's transcript (\(sid.prefix(8))…) shows \(observed.count) models. C2D cannot tell which one is the session's main model, so it does not pick; choose the one to request.")
+                    .font(Theme.Typography.micro).foregroundStyle(Theme.warning)
+                if let m = optimizer.experimentModel { experimentModelNote(m) }
+            }
+        case .unknown(let reason):
+            Label("Model unknown: \(reason) The experiment needs a model read from a running C2D Claude Code session; it is not guessed. Launch one (it shows its model after the first reply), then Rescan.", systemImage: "questionmark.circle")
+                .font(.caption).foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    private func experimentModelNote(_ model: String) -> some View {
+        Text("Every run requests `--model \(model)`; the running session itself is not touched. Whether a run used that model is read back from its own transcript afterwards — mismatches are shown, never hidden.")
+            .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+    }
+
+    private func experimentConsent(plan: ExperimentPlan, model: String, directory: URL) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Run a real experiment?", systemImage: "exclamationmark.triangle").font(.headline).foregroundStyle(Theme.warning)
+            Text("This makes real model calls through Claude Code with your own account. It may use your subscription quota or incur API charges.")
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Provider: Claude Code (\(workspace.claudePath ?? "claude"))")
+                Text("Model: \(model) (requested for every run)")
+                Text("Runs: \(plan.runs) (\(plan.tasks.count) tasks × \(plan.arms.count) conditions × \(plan.reps) repetitions), each with up to \(plan.max_retries) retry — up to \(plan.runs * (plan.max_retries + 1)) `claude -p` calls, each of which can make several model requests")
+                Text("Results: \(directory.path) (git-ignored)")
+            }
+            .font(.system(.caption, design: .monospaced))
+            Text("Next, a terminal pane opens with the runner. It prints the plan and runs nothing until you type SPEND there yourself. Closing that pane stops the run; finished rows are kept.")
+                .font(.caption).foregroundStyle(Theme.textSecondary)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { consentDirectory = nil }.keyboardShortcut(.cancelAction)
+                Button("Open runner in a terminal") {
+                    optimizer.startExperiment(in: workspace, outputDirectory: directory)
+                    consentDirectory = nil
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 520)
+    }
+
+    private var experimentResults: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("Last run: \(optimizer.experimentRunDirectory?.path ?? "")").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("Load results") { optimizer.loadExperimentResults() }.font(.caption)
+            }
+            if let r = optimizer.experimentResults {
+                let planned = optimizer.experimentPlan?.runs
+                let reported = r.rows.filter(\.isProviderReported).count
+                Text("\(r.rows.count)\(planned.map { " of \($0)" } ?? "") rows · \(r.rows.filter(\.success).count) passed · \(r.rows.filter { !$0.error.isEmpty }.count) failed or timed out · usage provider-reported for \(reported), unavailable for \(r.rows.count - reported)\(r.undecodable > 0 ? " · \(r.undecodable) unreadable line(s)" : "")")
+                    .font(.caption).bold()
+                if let planned, r.rows.count < planned { Label("Incomplete: \(planned - r.rows.count) planned run(s) have no row (not started yet, still running, or stopped).", systemImage: "clock").font(Theme.Typography.micro).foregroundStyle(Theme.warning) }
+                if !r.rows.isEmpty && !ExperimentResultRow.sameModelComparison(r.rows) {
+                    Label("Not a same-model comparison: some runs did not use the requested model, or runs differ in the models their transcripts show. Do not compare conditions from this run.", systemImage: "exclamationmark.triangle")
+                        .font(Theme.Typography.micro).foregroundStyle(Theme.warning)
+                }
+                ForEach(r.rows.sorted { $0.order < $1.order }, id: \.order) { row in
+                    HStack(spacing: 8) {
+                        Text("#\(row.order)").frame(width: 28, alignment: .leading).foregroundStyle(Theme.textMuted)
+                        Text("\(row.task) · \(row.arm) · rep \(row.rep)").lineLimit(1).frame(width: 260, alignment: .leading)
+                        Text(row.success ? "pass" : "fail").foregroundStyle(row.success ? Theme.success : Theme.warning)
+                        Text("retries \(row.retries)")
+                        if row.isProviderReported, let i = row.input_tokens, let o = row.output_tokens, let cr = row.cache_read_input_tokens, let cw = row.cache_creation_input_tokens {
+                            Text("in \(i) · out \(o) · cache r \(cr) · w \(cw)").lineLimit(1)
+                        } else {
+                            Text("usage unavailable").foregroundStyle(Theme.textMuted)
+                        }
+                        Text("model \(row.model_match ?? "unavailable")").foregroundStyle(row.model_match == "exact" ? Theme.textSecondary : Theme.warning)
+                            .help(row.models_actual.map { "Models in this run's transcript: \($0)" } ?? "No model read back")
+                        Spacer()
+                    }
+                    .font(Theme.Typography.monoMicro)
+                    .help(row.error.isEmpty ? row.usage_source : row.error)
+                }
+                Text("Token numbers are provider-reported from each run's own transcript; nothing here is a heuristic estimate, and no difference is shown as saved.")
+                    .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
+            }
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: "gauge.with.dots.needle.33percent")
-                Text("Token Optimizer").font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: "gauge.with.dots.needle.33percent").foregroundStyle(Theme.accent)
+                Text("Token Saver").font(.headline)
+                Text(optimizer.isEnabled ? "On" : "Off").font(Theme.Typography.badge).fontWeight(.medium)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .foregroundStyle(optimizer.isEnabled ? Theme.success : Theme.textMuted)
+                    .background((optimizer.isEnabled ? Theme.success : Theme.textMuted).opacity(0.15), in: Capsule())
                 Spacer()
-                Text(entitlementLabel).font(.caption).padding(.horizontal, 6).padding(.vertical, 2)
-                    .background((optimizer.entitlement.isPremium ? Theme.accent : Theme.textMuted).opacity(0.2), in: Capsule())
+                Text(entitlementLabel).font(Theme.Typography.badge).foregroundStyle(Theme.textSecondary)
             }
-            Text("Prepared-context numbers are heuristic estimates. Usage figures below marked provider-reported are read from Claude Code's own local transcripts; the two are never added together and nothing is shown as saved.")
-                .font(.caption).foregroundStyle(Theme.textSecondary)
+            Text("Saved, estimated and used tokens are three different numbers and are never added together.")
+                .font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
         }
     }
 
@@ -214,24 +353,41 @@ struct OptimizerPanelView: View {
                 ForEach(r.actions, id: \.self) { a in
                     Text("• \(a.kind.rawValue): \(a.reason) (\(a.tokensBefore) → \(a.tokensAfter)); original retained").font(Theme.Typography.metadata)
                 }
-                Button("Record this measurement") { Task { await optimizer.recordResult() } }.font(.caption).disabled(!optimizer.isStoreAvailable)
+                let before = ContextPayload(items: optimizer.items).byteCount, after = r.payload.byteCount
+                Text("Measured \(TokenSaverFormat.sizes(before, after)) · \(r.lossyStepsApplied ? "lossy (marked)" : "lossless")"
+                     + (after < before ? (optimizer.isStoreAvailable ? " · recorded as prepared" : " · not recorded: history unavailable") : " · nothing reduced, not recorded"))
+                    .font(Theme.Typography.metadata).foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var history: some View {
-        GroupBox("History (this project)") {
-            VStack(alignment: .leading, spacing: 4) {
-                if optimizer.totals.isEmpty { Text("No recorded measurements.").font(.caption).foregroundStyle(Theme.textSecondary) }
-                ForEach(optimizer.totals.keys.sorted { $0.rawValue < $1.rawValue }, id: \.self) { source in
-                    if let t = optimizer.totals[source] {
-                        Text("\(source.label): \(t.count) run(s), baseline ~\(t.baseline) → ~\(t.optimized)").font(.caption)
-                    }
+    private var activity: some View {
+        let events = optimizer.history.filter { $0.stage != nil && $0.originalBytes != nil }
+        let legacy = optimizer.history.count - events.count
+        return GroupBox("Optimization activity") {
+            VStack(alignment: .leading, spacing: 3) {
+                if events.isEmpty {
+                    Text("No optimization recorded yet. Turning Token Saver on records nothing by itself; only Optimize and hand-offs do.")
+                        .font(.caption).foregroundStyle(Theme.textSecondary)
                 }
-                ForEach(optimizer.history.prefix(10)) { rec in
-                    Text("\(rec.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(rec.sourceDescription) · \(rec.baselineTokens)→\(rec.optimizedTokens) · \(rec.measurementSource.label)")
-                        .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                ForEach(events.prefix(12)) { e in
+                    HStack(spacing: 8) {
+                        Text(e.createdAt.formatted(date: .abbreviated, time: .shortened)).frame(width: 120, alignment: .leading).foregroundStyle(Theme.textSecondary)
+                        Text(e.stage?.label ?? "").frame(width: 150, alignment: .leading)
+                        Text(e.mode?.rawValue ?? "").frame(width: 56, alignment: .leading).foregroundStyle(e.mode == .lossy ? Theme.warning : Theme.textSecondary)
+                        if let b = e.originalBytes, let a = e.resultBytes {
+                            Text("\(TokenSaverFormat.sizes(b, a)) (\(TokenSaverFormat.reduction(b > 0 ? Double(b - a) / Double(b) * 100 : nil)))")
+                        }
+                        Text("~\((e.baselineTokens - e.optimizedTokens).formatted()) tokens est.").foregroundStyle(Theme.textMuted)
+                        Spacer()
+                        Text(e.sourceDescription).lineLimit(1).foregroundStyle(Theme.textMuted)
+                    }
+                    .font(Theme.Typography.monoMicro)
+                    .help("Project \(e.projectPath) · \(e.actionsSummary). Sizes measured in bytes; tokens are a heuristic estimate. A hand-off is not confirmed as read by any agent.")
+                }
+                if legacy > 0 {
+                    Text("\(legacy) earlier manual measurement(s) without byte sizes are kept but not counted.").font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

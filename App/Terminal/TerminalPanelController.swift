@@ -14,6 +14,9 @@ final class TerminalPanelController: NSObject {
     let projectPath: String
     /// When set, the panel hosts an agent CLI instead of the login shell (Bible Part 7 "managed mode").
     private(set) var agentPlan: AgentLaunchPlan?
+    /// argv for the first session instead of the login shell (the Token Saver experiment runner). Used once: a later
+    /// "New session" in this panel starts a plain shell, so a restart can never re-run the command.
+    @ObservationIgnored private var oneShotCommand: (argv: [String], title: String)?
     private(set) var agentRecord: AgentSessionRecord?
     private(set) var record: TerminalSessionRecord?
     private(set) var state: PTYSessionState?
@@ -38,13 +41,14 @@ final class TerminalPanelController: NSObject {
     @ObservationIgnored private var started = false
 
     init(panelID: PanelID, projectPath: String, app: AppModel, previousRecord: TerminalSessionRecord?,
-         agentPlan: AgentLaunchPlan? = nil, previousAgentRecord: AgentSessionRecord? = nil) {
+         agentPlan: AgentLaunchPlan? = nil, previousAgentRecord: AgentSessionRecord? = nil, oneShotCommand: (argv: [String], title: String)? = nil) {
         self.panelID = panelID
         self.projectPath = projectPath
         self.app = app
         self.record = previousRecord
         self.agentPlan = agentPlan
         self.agentRecord = previousAgentRecord
+        self.oneShotCommand = oneShotCommand
         super.init()
     }
 
@@ -93,10 +97,17 @@ final class TerminalPanelController: NSObject {
         let executable: String
         let arguments: [String]
         let directory: String
+        let needsLoginPath = agentPlan != nil || oneShotCommand != nil
+        let oneShotTitle = oneShotCommand?.title
         if let plan = agentPlan {
             executable = plan.executable
             arguments = plan.arguments
             directory = plan.workingDirectory
+        } else if let command = oneShotCommand?.argv, let first = command.first {
+            executable = first
+            arguments = Array(command.dropFirst())
+            directory = projectPath
+            oneShotCommand = nil
         } else {
             do { executable = try PTYSessionConfiguration.loginShell() } catch {
                 app.report("Login shell unavailable", "Could not read the login shell from the user database.")
@@ -107,7 +118,7 @@ final class TerminalPanelController: NSObject {
         }
         var env = PTYSessionConfiguration.inheritedEnvironment()
         // Agent CLIs need the login PATH (node, git, …) that a GUI-launched app does not inherit (Bible Part 7 §4).
-        if agentPlan != nil { let loginPath = AgentDiscovery.loginShellPath(); if !loginPath.isEmpty { env["PATH"] = loginPath } }
+        if needsLoginPath { let loginPath = AgentDiscovery.loginShellPath(); if !loginPath.isEmpty { env["PATH"] = loginPath } }
         env["COLORTERM"] = "truecolor"
         env["TERM_PROGRAM"] = "C2DTerminal"
         env["TERM_PROGRAM_VERSION"] = app.diagnostics.appVersion
@@ -115,7 +126,8 @@ final class TerminalPanelController: NSObject {
         let size = lastGrid.cols > 0 ? TerminalSize(rows: UInt16(lastGrid.rows), columns: UInt16(lastGrid.cols)) : TerminalSize(rows: 24, columns: 80)
         let config = PTYSessionConfiguration(executable: executable, arguments: arguments, environment: env,
                                              workingDirectory: directory, initialSize: size)
-        let rec = TerminalSessionRecord(panelID: panelID, projectPath: projectPath, initialDirectory: directory, shell: executable)
+        var rec = TerminalSessionRecord(panelID: panelID, projectPath: projectPath, initialDirectory: directory, shell: executable)
+        rec.userTitle = oneShotTitle
         if let plan = agentPlan {
             var a = AgentSessionRecord(providerID: plan.provider.id, panelID: panelID, projectPath: projectPath, workingDirectory: directory)
             a.terminalSessionID = rec.id

@@ -12,6 +12,9 @@ public struct CondensedOutput: Hashable, Sendable {
         case groupedByFile         // ≥ 3 consecutive `path:line:text` lines → `path:` header + `  line: text` (lossless)
         case elidedLongLines       // long tool invocations / machine dumps (not diagnostic) keep their start and end
         case truncatedMiddle       // over the line budget: head + tail + every diagnostic line in between
+
+        /// Steps that drop content (each leaves a marker); only reachable when the caller opts in (TSD-08).
+        public var isLossy: Bool { self == .collapsedSimilar || self == .elidedLongLines || self == .truncatedMiddle }
     }
     public let text: String
     public let original: String

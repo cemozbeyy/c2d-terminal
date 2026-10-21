@@ -1,0 +1,36 @@
+{
+  "_comment": "Paired tasks for paired_experiment.py. Paths are relative to this file. `check` runs in the task's work dir with ANSWER_FILE set; exit 0 = success; checks compare the exact set of file:line locations so an answer that adds a wrong location fails. Context files were written by `C2D_CONDENSED_OUT=<dir> swift test --filter OutputCondenserFixtureTests` (raw = the fixture itself). No fixture separates all three arms: lossless differs from raw only on grep_many, and on grep_many the lossy options add nothing; arms with identical context are flagged in the plan and act as A/A controls.",
+  "prompt_template": "Here is the output of a command I ran:\n\n```\n{context}\n```\n\n{question}",
+  "tasks": [
+    {
+      "id": "swift_test_fail",
+      "question": "Which tests failed? For each, give the test name and the exact file:line:column of the failed expectation. Answer in plain text, one per line.",
+      "arms": {
+        "raw": "context/swift_test_fail.raw.txt",
+        "condensed_lossless": "context/swift_test_fail.lossless.txt",
+        "condensed_lossy": "context/swift_test_fail.default.txt"
+      },
+      "check": "grep -q addsNegative \"$ANSWER_FILE\" && test \"$(grep -oE 'LibTests\\.swift:[0-9]+:[0-9]+' \"$ANSWER_FILE\" | sort -u | tr '\\n' ' ')\" = 'LibTests.swift:3:21 LibTests.swift:5:29 '"
+    },
+    {
+      "id": "swift_build_errors",
+      "question": "List every compiler error as file:line:column followed by the message. Answer in plain text, one per line.",
+      "arms": {
+        "raw": "context/swift_build_errors.raw.txt",
+        "condensed_lossless": "context/swift_build_errors.lossless.txt",
+        "condensed_lossy": "context/swift_build_errors.default.txt"
+      },
+      "check": "test \"$(grep -oE 'Lib\\.swift:[0-9]+:[0-9]+' \"$ANSWER_FILE\" | sort -u | tr '\\n' ' ')\" = 'Lib.swift:2:14 Lib.swift:4:28 '"
+    },
+    {
+      "id": "grep_many",
+      "question": "Which file has the most matching lines in this grep output, and exactly how many matching lines does it have? Answer as `path: count` on one line.",
+      "arms": {
+        "raw": "context/grep_many.raw.txt",
+        "condensed_lossless": "context/grep_many.lossless.txt",
+        "condensed_lossy": "context/grep_many.default.txt"
+      },
+      "check": "grep -q 'Sources/C2DCore/Git/GitRepository.swift' \"$ANSWER_FILE\" && grep -qE '(^|[^0-9])57([^0-9]|$)' \"$ANSWER_FILE\""
+    }
+  ]
+}

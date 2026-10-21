@@ -151,7 +151,7 @@ import Testing
     private func ledger(_ r: TranscriptLedgerResult) -> TranscriptLedger? { if case .available(let l) = r { return l }; return nil }
 
     @Test func folderNameReplacesEveryNonAlphanumericCharacter() {
-        #expect(ClaudeTranscriptReader.projectFolderName(for: "/Users/someone/Desktop/myprojects/myapp_0532") == "-Users-someone-Desktop-myprojects-myapp-0532")
+        #expect(ClaudeTranscriptReader.projectFolderName(for: "/Users/someone/Desktop/projects/my_app_0532") == "-Users-someone-Desktop-projects-my-app-0532")
         #expect(ClaudeTranscriptReader.projectFolderName(for: "/a/b c.d") == "-a-b-c-d")
     }
 

@@ -1,0 +1,66 @@
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[32 / 55] Lib
+[40 / 55] Lib
+[45 / 56] LibTests-product
+[52 / 76]
+[56 / 76]
+[58 / 76]
+[59 / 76]
+[61 / 76]
+[62 / 76]
+[70 / 76] LibTests-product
+[72 / 76] LibTests-product
+Build complete! (4,00 sn.)
+Test Suite 'All tests' started at 2026-10-21 02:34:10.148.
+Test Suite 'All tests' passed at 2026-10-21 02:34:10.150.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Test addsNegative() started.
+◇ Test many(_:) started.
+◇ Test adds() started.
+◇ Test case passing 1 argument n → 2 to many(_:) started.
+◇ Test case passing 1 argument n → 3 to many(_:) started.
+◇ Test case passing 1 argument n → 4 to many(_:) started.
+◇ Test case passing 1 argument n → 5 to many(_:) started.
+◇ Test case passing 1 argument n → 1 to many(_:) started.
+◇ Test case passing 1 argument n → 7 to many(_:) started.
+◇ Test case passing 1 argument n → 8 to many(_:) started.
+◇ Test case passing 1 argument n → 6 to many(_:) started.
+◇ Test case passing 1 argument n → 11 to many(_:) started.
+◇ Test case passing 1 argument n → 9 to many(_:) started.
+◇ Test case passing 1 argument n → 13 to many(_:) started.
+◇ Test case passing 1 argument n → 12 to many(_:) started.
+◇ Test case passing 1 argument n → 14 to many(_:) started.
+◇ Test case passing 1 argument n → 15 to many(_:) started.
+◇ Test case passing 1 argument n → 10 to many(_:) started.
+◇ Test case passing 1 argument n → 16 to many(_:) started.
+◇ Test case passing 1 argument n → 17 to many(_:) started.
+◇ Test case passing 1 argument n → 21 to many(_:) started.
+◇ Test case passing 1 argument n → 19 to many(_:) started.
+◇ Test case passing 1 argument n → 23 to many(_:) started.
+✘ Test addsNegative() recorded an issue at LibTests.swift:5:29: Expectation failed: add(-1, -1) == -2
+↳ add(-1, -1) == -2 → false
+↳   add(-1, -1) → 0
+◇ Test case passing 1 argument n → 18 to many(_:) started.
+✘ Test adds() recorded an issue at LibTests.swift:3:21: Expectation failed: add(2, 2) == 4
+↳ add(2, 2) == 4 → false
+↳   add(2, 2) → 0
+◇ Test case passing 1 argument n → 24 to many(_:) started.
+◇ Test case passing 1 argument n → 22 to many(_:) started.
+◇ Test case passing 1 argument n → 28 to many(_:) started.
+◇ Test case passing 1 argument n → 29 to many(_:) started.
+◇ Test case passing 1 argument n → 20 to many(_:) started.
+◇ Test case passing 1 argument n → 27 to many(_:) started.
+✘ Test addsNegative() failed after 0.001 seconds with 1 issue.
+✘ Test adds() failed after 0.001 seconds with 1 issue.
+◇ Test case passing 1 argument n → 26 to many(_:) started.
+◇ Test case passing 1 argument n → 25 to many(_:) started.
+◇ Test case passing 1 argument n → 30 to many(_:) started.
+✔ Test many(_:) with 30 test cases passed after 0.001 seconds.
+✘ Test run with 3 tests in 0 suites failed after 0.001 seconds with 2 issues.
+Note: Some test targets reported failures:
+  - LibTests (Swift Testing)

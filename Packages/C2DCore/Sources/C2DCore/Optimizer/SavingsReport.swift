@@ -33,3 +33,39 @@ public struct SavingsReport: Hashable, Sendable {
                              optimizerCostTokens: optimizerCost, reductionPercent: percent, label: label)
     }
 }
+
+/// What Token Saver can say about one project, in three separate kinds that are never added together:
+/// provider-reported usage (transcripts), estimated reduction (recorded local events: bytes measured, tokens
+/// heuristic), and verified token savings (a controlled comparison of provider-reported usage).
+public struct TokenSaverSummary: Hashable, Sendable {
+    /// Always nil: nothing in C2D has run a controlled comparison yet (TSD-03), so the UI says "Not measured yet".
+    /// Never derived from byte reductions or from usage totals.
+    public var verifiedSavedTokens: Int? { nil }
+    /// Events whose result left C2D (copied or written). nil when there is none — shown as "none recorded", not 0.
+    public let handedOff: EventTotals?
+    /// Optimize runs whose result was only shown in the panel.
+    public let prepared: EventTotals?
+    /// The newest recorded event with measured bytes.
+    public let latest: OptimizationRecord?
+    /// Provider-reported usage, or nil when the ledger is unavailable / not read. Usage, never savings.
+    public let usage: ProviderUsage?
+    public let usageSessions: Int
+    public let usagePeriod: ClosedRange<Date>?
+
+    public init(eventTotals: [OptimizationStage: EventTotals], history: [OptimizationRecord], ledger: TranscriptLedgerResult?) {
+        let handOff = OptimizationStage.allCases.filter(\.isHandOff).compactMap { eventTotals[$0] }
+        handedOff = handOff.isEmpty ? nil : handOff.dropFirst().reduce(handOff[0]) {
+            EventTotals(count: $0.count + $1.count, originalBytes: $0.originalBytes + $1.originalBytes, resultBytes: $0.resultBytes + $1.resultBytes,
+                        originalTokens: $0.originalTokens + $1.originalTokens, resultTokens: $0.resultTokens + $1.resultTokens)
+        }
+        prepared = eventTotals[.prepared]
+        latest = history.filter { $0.stage != nil && $0.originalBytes != nil }.max { $0.createdAt < $1.createdAt }
+        if case .available(let l)? = ledger {
+            usage = l.total; usageSessions = l.sessions.count
+            let first = l.sessions.compactMap(\.firstTimestamp).min(), last = l.sessions.compactMap(\.lastTimestamp).max()
+            usagePeriod = first.flatMap { f in last.map { f...max(f, $0) } }
+        } else {
+            usage = nil; usageSessions = 0; usagePeriod = nil
+        }
+    }
+}

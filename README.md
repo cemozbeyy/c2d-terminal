@@ -2,7 +2,7 @@
 
 macOS-first, AI-native terminal workspace. Product owner: C2D Works.
 
-**Source of truth:** `docs/C2D_Terminal_PRODUCT_BIBLE_v2.md`. Read it before changing architecture.
+Internal product and design documents (`docs/`) are kept private and are not part of this repository.
 
 ## Status
 
@@ -11,18 +11,17 @@ the C2D PTY core), projects, persisted dockable layouts, explorer + NSTextView e
 (status/diff/stage/hunk/commit/branches/worktrees/conflicts) with explicit Fetch / Pull / Push,
 managed Claude Code sessions in C2D-owned PTYs, tasks with dependencies, ⌘K palette, diagnostics
 export with redaction, runtime themes, and a measurement-only Token Optimizer (no provider usage
-ingestion, no hand-off to agents yet — the **Token Saver** initiative that adds those is planned, see `docs/PROGRESS.md`). Verification layers: `swift test` on the core package
+ingestion, no hand-off to agents yet — the **Token Saver** initiative that adds those is planned). Verification layers: `swift test` on the core package
 (176 tests on 2026-10-19 night after Token Saver TS-2; 167 after TS-1; 160 earlier that day, 159 after the 2026-10-18 batch, 154 before it; real shells and real git), Debug-only runtime hooks (below), and CI
 (green on `872917f`, the last pushed commit; later local commits are not CI-verified until pushed).
 Not done: signing/notarization/updater/billing (owner-gated), macOS 15 runtime check, VoiceOver
-audit. Full status: `docs/REMAINING_WORK_AUDIT.md`.
+audit.
 
 **Terminal editing keys** (in a shell panel): Option+←/→ jump a word (zsh `backward-word`/`forward-word`),
 Cmd+Delete clears the input line (`kill-whole-line`), and Ctrl-C aborts the current line — pressed twice
 at an idle prompt it ends the shell, Claude-Code style. A ^C on a *running* command is passed through but
 does not yet interrupt it: the PTY core does not give the shell a controlling terminal, so the kernel has
-no foreground process group to signal. That controlling-tty fix is tracked separately (see
-`docs/REMAINING_WORK_AUDIT.md`).
+no foreground process group to signal. That controlling-tty fix is tracked separately.
 
 ## Requirements
 
@@ -55,7 +54,7 @@ App/                 SwiftUI/AppKit app: Model, Views (workspace canvas), Termin
 Packages/C2DCore/    Engine-free core: PTY, Workspace layout, Persistence (JSON docs + SQLite), Projects, Terminal/Agent registries, Files, Git, Tasks, Optimizer
 Spikes/              SwiftTermSpike evaluation harness (not part of the app)
 Scripts/             build-release.sh
-docs/                Product Bible, DECISIONS.md, OPEN_DECISIONS.md, PROGRESS.md, module notes, evidence/ screenshots
+Tools/experiment/    Token Saver paired-experiment runner (bundled into the app; makes model calls only after typed consent)
 .github/workflows/   CI (core tests on macos-15, app build on macos-26) and a manual unsigned release build
 project.yml          XcodeGen spec
 ```

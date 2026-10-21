@@ -1,0 +1,21 @@
+[c2d: condensed 20→20 lines; every error/warning/file:line kept; original in C2D]
+Building for debugging...
+[Planning deferred tasks]
+error: SwiftCompile normal arm64 failed with a nonzero exit code. Command line:     cd /private/tmp/c2d-bench
+
+/private/tmp/c2d-bench/pkg/Sources/Lib/Lib.swift:2:14: error: cannot convert value of type 'String' to specified type 'Int'
+1 | public func add(_ a: Int, _ b: Int) -> Int { a - b }
+2 | let x: Int = "s"
+  |              `- error: cannot convert value of type 'String' to specified type 'Int'
+3 | func f() { undefinedThing() }
+4 | struct S { var y: String = 3 }
+
+/private/tmp/c2d-bench/pkg/Sources/Lib/Lib.swift:4:28: error: cannot convert value of type 'Int' to specified type 'String'
+2 | let x: Int = "s"
+3 | func f() { undefinedThing() }
+4 | struct S { var y: String = 3 }
+  |                            `- error: cannot convert value of type 'Int' to specified type 'String'
+5 |
+Failed frontend command:
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -emit-module -experimental-skip-non-inlinable-fu [c2d: 4119 chars omitted] ib.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.abi.json
+error: Build failed

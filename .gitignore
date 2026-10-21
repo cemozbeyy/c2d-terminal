@@ -29,3 +29,6 @@ Packages/*/.build/
 .vscode/
 *.swp
 *.log
+
+# Private product/design docs: kept locally, never published
+docs/

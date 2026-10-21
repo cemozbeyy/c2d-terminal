@@ -84,6 +84,7 @@ struct NavigationRail: View {
                 .help(enabled ? d.label : "Open a project first")
                 .accessibilityLabel(d.label)
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                if d == .agents { BuddyRailButton() }   // summons the desktop pet; not a destination
             }
             Spacer()
         }
@@ -244,6 +245,33 @@ struct TopBar: View {
                     NSApp.activate(ignoringOtherApps: true)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showOptimizerPopover = false; showOptimizerPopover = true }
                 }
+                .task {   // `-c2dPopoverSnapshot <png>`: the popover view drawn offscreen after 12 s (a transient popover closes while the app is inactive)
+                    guard let path = UserDefaults.standard.string(forKey: "c2dPopoverSnapshot") else { return }
+                    try? await Task.sleep(for: .seconds(12))
+                    let host = NSHostingView(rootView: OptimizerPopover(workspace: ws).environment(model))
+                    host.frame.size = host.fittingSize
+                    let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                    window.contentView = host
+                    try? await Task.sleep(for: .seconds(2))
+                    host.layoutSubtreeIfNeeded(); host.frame.size = host.fittingSize
+                    if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                        host.cacheDisplay(in: host.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                        debugTrace("popover snapshot written: \(path) \(Int(host.bounds.width))x\(Int(host.bounds.height))")
+                    }
+                    // The whole panel at 900 pt wide, next to the popover (the docked tile is too small to show it all).
+                    let panel = NSHostingView(rootView: OptimizerPanelView(optimizer: ws.optimizer, workspace: ws).environment(model)
+                        .frame(width: 900, height: 1400).background(Theme.panel))
+                    panel.frame.size = CGSize(width: 900, height: 1400)
+                    let panelWindow = NSWindow(contentRect: panel.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                    panelWindow.contentView = panel
+                    try? await Task.sleep(for: .seconds(2))
+                    panel.layoutSubtreeIfNeeded()
+                    if let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
+                        panel.cacheDisplay(in: panel.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-panel.png")))
+                    }
+                }
                 #endif
                 Button("") { ws.toggleExplorer() }.keyboardShortcut("b", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
             }
@@ -352,7 +380,7 @@ struct SettingsPlaceholderView: View {
     }
 }
 
-/// Token Optimizer switch as a small card (top-bar gauge button), not a bare system menu.
+/// Token Saver card behind the top-bar gauge: on/off, then the three kinds of number, kept apart.
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
@@ -361,44 +389,37 @@ struct OptimizerPopover: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: Theme.space3) {
-            HStack(spacing: 10) {
-                IconTile(symbol: "gauge.with.dots.needle.33percent", tint: model.optimizerEnabled ? Theme.accent : Theme.textMuted, size: 32)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Token Optimizer").font(Theme.Typography.title2).fontWeight(.semibold).foregroundStyle(Theme.textPrimary)
-                    Text(model.optimizerEnabled ? "On" : "Off").font(Theme.Typography.detail)
-                        .foregroundStyle(model.optimizerEnabled ? Theme.success : Theme.textMuted)
-                }
-                Spacer(minLength: 12)
-                Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+            HStack(spacing: 8) {
+                Image(systemName: "gauge.with.dots.needle.33percent").font(Theme.Typography.title2)
+                    .foregroundStyle(model.optimizerEnabled ? Theme.accent : Theme.textMuted)
+                Text("Token Saver").font(Theme.Typography.title2).fontWeight(.semibold).foregroundStyle(Theme.textPrimary)
+                Text(model.optimizerEnabled ? "On" : "Off").font(Theme.Typography.badge).fontWeight(.medium)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .foregroundStyle(model.optimizerEnabled ? Theme.success : Theme.textMuted)
+                    .background((model.optimizerEnabled ? Theme.success : Theme.textMuted).opacity(0.15), in: Capsule())
+                Spacer(minLength: 8)
+                Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent)
             }
-            Divider()
-            ledgerLine
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
-                row("chart.bar.doc.horizontal", "Measures the context you hand to an agent and flags what is oversized.")
-                row("lock.shield", "Prepared-context sizes are estimates; usage is read from Claude Code's own transcripts. Nothing is billed or sent anywhere.")
-                row("wand.and.stars", "Optimize condenses terminal output you hand over — lossless unless you opt in; lines recognised as errors or warnings are always kept. Free, no AI.")
+            if model.optimizerEnabled {
+                TokenSaverMetricsView(summary: workspace.optimizer.summary, usageNote: workspace.optimizer.usageNote, compact: true)
                 if rtkHook {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "line.3.horizontal.decrease.circle").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted).frame(width: 14)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("RTK hook found in Claude Code settings: the agent's own Bash output is already filtered by RTK, a separate tool.")
-                                .foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
-                            Link("About RTK", destination: RTKHookDetector.docsURL).clickCursor()
-                        }
-                        .font(Theme.Typography.detail)
+                    HStack(spacing: 4) {
+                        Text("RTK hook active in Claude Code (separate tool).").foregroundStyle(Theme.textMuted)
+                        Link("About", destination: RTKHookDetector.docsURL).clickCursor()
                     }
+                    .font(Theme.Typography.metadata)
                 }
+            } else {
+                Text("Off: nothing is measured, recorded or read.").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
             }
             if model.optimizerEnabled || model.developerMode {
-                Divider()
                 Button {
                     workspace.toggleOptimizerPanel()
                 } label: {
-                    Label(workspace.isOptimizerVisible ? "Hide Token Saver" : "Open Token Saver", systemImage: "rectangle.bottomhalf.inset.filled")
-                        .font(Theme.Typography.detail)
+                    Text(workspace.isOptimizerVisible ? "Hide Token Saver" : "Open Token Saver").font(Theme.Typography.detail).fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain).foregroundStyle(Theme.textSecondary).clickCursor()
+                .buttonStyle(.bordered).controlSize(.small).clickCursor()
             }
         }
         .padding(Theme.space4)
@@ -407,42 +428,6 @@ struct OptimizerPopover: View {
         .task(id: model.optimizerEnabled) {
             rtkHook = model.optimizerEnabled && RTKHookDetector.isConfigured()   // TSD-02: read-only, never writes the settings file
             await workspace.optimizer.loadLedger()
-        }
-    }
-
-    /// TS-1: this project's provider-reported usage, read from Claude Code's local transcripts.
-    @ViewBuilder private var ledgerLine: some View {
-        let o = workspace.optimizer
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "doc.text.magnifyingglass").font(Theme.Typography.detail).foregroundStyle(model.optimizerEnabled ? Theme.accent : Theme.textMuted).frame(width: 14)
-            VStack(alignment: .leading, spacing: 2) {
-                switch o.ledger {
-                case .available(let l):
-                    Text("\(l.total.total.formatted()) tokens in \(l.sessions.count) Claude Code session(s) for this project")
-                        .font(Theme.Typography.detail).foregroundStyle(Theme.textPrimary)
-                    let linked = o.attribution.values.filter(\.isLinked).count
-                    Text("provider-reported · \(l.formatLabel) · \(linked) linked to C2D launches, \(l.sessions.count - linked) not linked\(l.unavailable.isEmpty ? "" : " · \(l.unavailable.count) unavailable")")
-                        .font(Theme.Typography.micro).foregroundStyle(Theme.textMuted)
-                    if let newest = l.sessions.first, newest.lastContextTokens > 0 {
-                        Text("Newest session re-reads ~\(newest.lastContextTokens.formatted()) tokens per reply (peak \(newest.peakContextTokens.formatted())); a fresh session starts near the fixed overhead.")
-                            .font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                case .unavailable(let reason):
-                    Text("Usage unavailable").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
-                    Text(reason).font(Theme.Typography.micro).foregroundStyle(Theme.textMuted).lineLimit(2)
-                case .none:
-                    Text(o.ledgerLoading ? "Reading Claude Code transcripts…" : (model.optimizerEnabled ? "Usage not read yet" : "Off — usage is not read"))
-                        .font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func row(_ symbol: String, _ text: String, muted: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol).font(Theme.Typography.detail).foregroundStyle(muted ? Theme.textMuted : Theme.accent).frame(width: 14)
-            Text(text).font(Theme.Typography.detail).foregroundStyle(muted ? Theme.textMuted : Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

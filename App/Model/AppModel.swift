@@ -196,7 +196,7 @@ final class AppModel {
                 o.add(ContextItem(kind: .instructions, content: "Keep the public API unchanged.", mandatory: true))
                 o.measureOnly()
                 o.optimize()
-                await o.recordResult()
+                try? await Task.sleep(for: .seconds(1))   // the event is recorded asynchronously
                 debugTrace("c2dOptimizerDemo: items=\(o.items.count) before=\(o.result?.before.tokens ?? -1) after=\(o.result?.after.tokens ?? -1) label=\(o.report?.label ?? "none") history=\(o.history.count) error=\(o.lastError ?? "none")")
             }
         }

@@ -2,7 +2,7 @@ name: C2DTerminal
 options:
   bundleIdPrefix: works.c2d
   deploymentTarget:
-    macOS: "15.0"   # CONFIRMED — docs/DECISIONS.md ADR-002
+    macOS: "15.0"   # CONFIRMED (ADR-002)
   createIntermediateGroups: true
 packages:
   C2DCore:
@@ -14,7 +14,12 @@ targets:
   C2DTerminal:
     type: application
     platform: macOS
-    sources: [App]
+    sources:
+      - App
+      # Token Saver paired-experiment runner: copied as-is into Resources/experiment (folder reference, never compiled).
+      - path: Tools/experiment
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: C2DCore
       - package: SwiftTerm

@@ -59,9 +59,9 @@ public enum AgentDiscovery {
         }
     }
 
-    enum RunResult { case success(String), failure(String) }
+    public enum RunResult: Sendable { case success(String), failure(String) }
 
-    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval) async -> RunResult {
+    public static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval) async -> RunResult {
         await withCheckedContinuation { c in
             DispatchQueue.global(qos: .utility).async { c.resume(returning: runSync(executable, arguments, timeout: timeout)) }
         }

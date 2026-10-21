@@ -55,6 +55,7 @@ enum CommandCatalog {
         for d in Destination.allCases where d != .workspace || model.workspace != nil {
             out.append(PaletteCommand(id: "go-\(d.rawValue)", kind: .destination, title: "Go to \(d.label)", subtitle: nil, symbol: d.symbol) { model.destination = d })
         }
+        out.append(PaletteCommand(id: "buddy", kind: .action, title: BuddyPet.shared.isVisible ? "Hide Buddy" : "Show Buddy", subtitle: "Desktop pet", symbol: "face.smiling") { BuddyPet.shared.toggle() })
         if let ws = model.workspace {
             out.append(PaletteCommand(id: "new-terminal", kind: .action, title: "New Terminal", subtitle: ws.projectName, symbol: "plus.rectangle") { ws.newTerminal(); model.destination = .workspace })
             out.append(PaletteCommand(id: "focus", kind: .action, title: ws.layout.maximizedGroup == nil ? "Enter Focus Mode" : "Exit Focus Mode", subtitle: nil, symbol: "arrow.up.left.and.arrow.down.right") {
