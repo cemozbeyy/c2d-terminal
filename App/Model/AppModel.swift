@@ -357,6 +357,23 @@ final class AppModel {
                 let docked = ws.layout.visiblePanelIDs.contains { ws.layout.panels[$0]?.kind == .gitChanges }
                 let s = ws.git.status
                 debugTrace("gitPanelCheck: gitPanelDocked=\(docked) available=\(ws.git.isAvailable) branch=\(s?.branch ?? "?") changed=\(s?.entries.count ?? -1) clean=\(s?.isClean ?? true)")
+                // Clicking a changed file opens its diff as an editor tab (not inside the Git panel); file tabs stay.
+                if let e = s?.entries.first(where: \.hasUnstagedChange) {
+                    // With no editor in the layout, the first one opens as a tab beside the terminal, not a new column.
+                    for id in ws.layout.visiblePanelIDs where ws.layout.panels[id]?.kind == .editor { ws.close(id) }
+                    let groupsBefore = ws.layout.groupIDs.count
+                    ws.openDiff()
+                    let edID = ws.layout.visiblePanelIDs.first { ws.layout.panels[$0]?.kind == .editor }
+                    let withTerminal = edID.flatMap { ws.layout.group(containing: $0) }.map { g in ws.layout.visiblePanelIDs.contains { ws.layout.panels[$0]?.kind == .terminal && ws.layout.group(containing: $0) == g } } ?? false
+                    debugTrace("gitPanelCheck: newEditor groupsBefore=\(groupsBefore) groupsAfter=\(ws.layout.groupIDs.count) tabbedWithTerminal=\(withTerminal)")
+                    ws.openFile(path: ws.git.absolutePath(e.path))
+                    await ws.git.select(path: e.path, staged: false)
+                    ws.openDiff()
+                    let ed = ws.layout.visiblePanelIDs.first { ws.layout.panels[$0]?.kind == .editor }.map { ws.editor(for: $0) }
+                    debugTrace("gitPanelCheck: diffInEditor=\(ed?.isDiffActive ?? false) hunks=\(ws.git.selectedDiff.reduce(0) { $0 + $1.hunks.count }) fileTabs=\(ed?.tabs.map(\.name) ?? [])")
+                    ed?.closeDiff()
+                    debugTrace("gitPanelCheck: afterClose diffTab=\(ed?.diffTabID != nil) selection=\(ws.git.selectedPath ?? "nil") active=\(ed?.activeTab?.name ?? "nil")")
+                }
             }
         }
         // `-c2dGenCommitCheck <path>`: the ✨ button's pipeline (diff → agent CLI on stdin → message box)

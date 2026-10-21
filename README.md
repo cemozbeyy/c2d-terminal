@@ -1,7 +1,9 @@
 # C2D Terminal
 
-A native macOS workspace for working with AI coding agents: real terminals, an editor, Git and
-Claude Code sessions side by side in one window.
+**Cozy terminal. Serious work.**
+
+A native Mac workspace where Claude Code, Git and a real terminal all get along: terminals, an
+editor, Git and agent sessions side by side in one comfy window. Agents propose, you decide.
 
 ![C2D Terminal workspace](Website/shots/shot1.jpg)
 
@@ -108,9 +110,21 @@ Website/             Landing page
 - Claude Code is the only verified agent. A Codex launcher exists but is unverified.
 - No VoiceOver audit yet.
 
-## Contributing
+## Make it yours
 
-Issues and pull requests are welcome. Please run the core tests before opening a pull request.
+C2D Terminal is MIT-licensed, so it's yours too: fork it, bend it, ship your own flavour of it.
+Some ideas if you want a place to start:
+
+- **Bring a new agent.** Codex, Gemini CLI, Aider, your own tool: agents plug in through adapters
+  in `Packages/C2DCore/Sources/C2DCore/Agents`.
+- **Paint a theme.** Four built-in moods so far. Yours could be the fifth.
+- **Teach Token Saver a trick.** Better condensing rules for your build tool's noisy output, with
+  the original always kept.
+- **Sand the rough edges.** Accessibility, keyboard flows, the things that annoy you every day.
+
+Found a bug, have an idea, or built something cool on top? Open an issue or a pull request, we'd
+love to see it. Small fixes are just as welcome as big features. Please run
+`swift test --package-path Packages/C2DCore` before opening a pull request.
 
 ## License
 

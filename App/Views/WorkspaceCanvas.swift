@@ -122,13 +122,14 @@ struct SplitView: View {
     }
 
     /// A child's floor along the split axis. Horizontal: the widest floor among the kinds it hosts —
-    /// an agent needs ~75 columns to render its TUI, a terminal/editor less, a sidebar least. Vertical
-    /// splits only need a modest height floor so a stacked panel keeps a few rows.
+    /// an agent needs the most columns for its TUI, a terminal/editor less, a sidebar least. Vertical
+    /// splits only need a modest height floor so a stacked panel keeps a few rows. The agent floor was
+    /// 560 pt (~75 columns); lowered to 420 (~56) on owner request — it crowded non-full-screen windows.
     private func minSize(_ node: LayoutNode) -> CGFloat {
         guard orientation == .horizontal else { return 120 }
         let floors = node.panelIDs.map { id -> CGFloat in
             switch workspace.layout.panels[id]?.kind {
-            case .some(.agentSession): return 560
+            case .some(.agentSession): return 420
             case .some(.terminal), .some(.editor): return 360
             default: return 200
             }

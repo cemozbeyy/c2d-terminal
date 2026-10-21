@@ -6,7 +6,7 @@ struct EditorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if editor.tabs.isEmpty {
+            if editor.tabs.isEmpty && editor.diffTabID == nil {
                 VStack(spacing: 8) {
                     Text("No file open").foregroundStyle(Theme.textSecondary)
                     Text("Select a file in the Explorer.").font(.caption).foregroundStyle(Theme.textSecondary)
@@ -15,7 +15,9 @@ struct EditorPanelView: View {
             } else {
                 tabStrip
                 Divider()
-                if let tab = editor.activeTab {
+                if editor.isDiffActive, let git = editor.diffSource {
+                    diffContent(git)
+                } else if let tab = editor.activeTab {
                     if tab.externalChange != .none || tab.lastError != nil { conflictBanner(tab) }
                     CodeEditorView(tab: tab).id(tab.id)
                     statusBar(tab)
@@ -54,10 +56,42 @@ struct EditorPanelView: View {
                     .help(tab.path)
                     .accessibilityLabel("\(tab.name)\(tab.isDirty ? ", unsaved" : "")\(tab.id == editor.activeTabID ? ", active" : "")")
                 }
+                if editor.diffTabID != nil, let git = editor.diffSource { diffTabChip(git) }
             }
             .padding(.horizontal, 6)
         }
         .frame(height: 26)
+    }
+
+    private func diffTabChip(_ git: GitController) -> some View {
+        let name = git.selectedPath.map { ($0 as NSString).lastPathComponent } ?? "Changes"
+        let side = git.selectedIsStaged ? "Index" : "Working Tree"
+        return HStack(spacing: 4) {
+            Image(systemName: "arrow.left.arrow.right").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
+            Text("\(name) (\(side))").italic().lineLimit(1)
+            Button { editor.closeDiff() } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.plain)
+        }
+        .font(.caption)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(editor.isDiffActive ? Theme.accent.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .contentShape(Rectangle())
+        .onTapGesture { editor.activateDiff() }
+        .help(git.selectedPath ?? "")
+        .accessibilityLabel("Diff of \(name), \(side)\(editor.isDiffActive ? ", active" : "")")
+    }
+
+    /// The comparison is always named in the header (Bible Part 6 §5); hunk actions stage/unstage as in the Git panel.
+    @ViewBuilder private func diffContent(_ git: GitController) -> some View {
+        if let path = git.selectedPath {
+            DiffView(files: git.selectedDiff,
+                     title: (git.selectedIsStaged ? "Index vs HEAD — " : "Working tree vs index — ") + path,
+                     truncated: git.selectedDiffTruncated,
+                     hunkActionTitle: git.hunkActionTitle,
+                     onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } })
+        } else {
+            Text("Select a changed file in Source Control.").font(.caption).foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private func conflictBanner(_ tab: EditorTab) -> some View {

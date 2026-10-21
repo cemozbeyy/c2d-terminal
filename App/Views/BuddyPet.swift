@@ -29,7 +29,11 @@ final class BuddyPet {
     }
 
     /// Relaunch: bring Buddy back if it was out when the app quit.
+    @ObservationIgnored private var restored = false
+
     func restore() {
+        guard !restored else { return }   // the main window can appear more than once
+        restored = true
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "c2dBuddyPetCheck") { Task { await runCheck() }; return }
         #endif

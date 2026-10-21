@@ -18,6 +18,9 @@ struct C2DTerminalApp: App {
                 .environment(model)
                 .onAppear {
                     delegate.model = model
+                    // Only once the main window exists: a visible pet panel at launch makes SwiftUI skip
+                    // opening the main window.
+                    BuddyPet.shared.restore()
                     delegate.openTerminalWindow = { openWindow(id: "terminal", value: TerminalWindowRequest(directory: model.terminalWindowDirectory)) }
                     // C2D restores its own workspace; AppKit window restoration would resurrect stale
                     // windows from earlier launches (seen as blank 500×500 windows).
@@ -285,7 +288,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.windows.forEach { $0.isRestorable = false }
-        BuddyPet.shared.restore()   // back on the desktop if it was out at quit
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

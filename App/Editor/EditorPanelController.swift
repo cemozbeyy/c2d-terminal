@@ -95,6 +95,30 @@ final class EditorPanelController {
 
     var activeTab: EditorTab? { tabs.first { $0.id == activeTabID } }
 
+    // MARK: Diff tab
+
+    /// At most one diff tab per panel, VS Code style: it shows whatever file the Source Control panel has
+    /// selected (live), and closing it clears that selection. Not persisted.
+    private(set) var diffTabID: UUID?
+    private(set) var diffSource: GitController?
+    var isDiffActive: Bool { diffTabID != nil && activeTabID == diffTabID }
+
+    func showDiff(from git: GitController) {
+        diffSource = git
+        if diffTabID == nil { diffTabID = UUID() }
+        activeTabID = diffTabID
+    }
+
+    func activateDiff() { activeTabID = diffTabID }
+
+    func closeDiff() {
+        let wasActive = isDiffActive
+        diffSource?.selectedPath = nil
+        diffSource = nil
+        diffTabID = nil
+        if wasActive { activeTabID = tabs.last?.id }
+    }
+
     /// Go to a 1-based line (and optional 1-based column) in the active tab (Bible Part 5 §7.3).
     /// Out-of-range values clamp.
     func goTo(line: Int, column: Int? = nil) {
@@ -137,7 +161,7 @@ final class EditorPanelController {
         guard let i = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: i)
         if activeTabID == tab.id { activeTabID = tabs[min(i, max(tabs.count - 1, 0))...].first?.id ?? tabs.last?.id }
-        if tabs.isEmpty { activeTabID = nil }
+        if tabs.isEmpty { activeTabID = diffTabID }
         closeRequest = nil
         persistSoon()
     }

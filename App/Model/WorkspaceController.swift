@@ -67,18 +67,34 @@ final class WorkspaceController {
 
     /// Opens in the active editor panel, or creates one beside the first group (Bible Part 5 §3.3).
     func openFile(path: String, line: Int? = nil, column: Int? = nil) {
+        let e = editor(for: editorTarget())
+        e.open(path: path)
+        if let line { e.goTo(line: line, column: column) }
+    }
+
+    /// Shows the Source Control selection's diff as a tab in the editor, instead of inside the narrow Git panel.
+    func openDiff() {
+        editor(for: editorTarget()).showDiff(from: git)
+    }
+
+    /// The editor in the layout (possibly a background tab), else a hidden one restored, else a new one —
+    /// as a tab beside the first terminal rather than a new column; activated.
+    private func editorTarget() -> PanelID {
         let target: PanelID
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .editor }) {
             target = visible
         } else if let hiddenEditor = layout.hidden.first(where: { layout.panels[$0]?.kind == .editor }) {
             restore(hiddenEditor); target = hiddenEditor
+        } else if let term = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .terminal }),
+                  let group = layout.group(containing: term) {
+            let panel = Panel(kind: .editor, title: "Editor")
+            mutate("new editor") { try $0.add(panel, to: group) }
+            target = panel.id
         } else {
             target = addPanel(.editor, title: "Editor", besideGroup: layout.groupIDs.first)
         }
         activate(target)
-        let e = editor(for: target)
-        e.open(path: path)
-        if let line { e.goTo(line: line, column: column) }
+        return target
     }
 
     /// Opens (or reveals) the single optimizer panel for this workspace.

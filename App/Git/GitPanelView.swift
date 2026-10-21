@@ -80,23 +80,15 @@ struct GitPanelView: View {
         VStack(spacing: 0) {
             operationBanner
             composer
-            if git.selectedPath == nil {
-                changeList
-            } else {
+            // Diffs open as an editor tab (WorkspaceController.openDiff); only conflict resolution stays here.
+            if git.selectedIsConflicted, let path = git.selectedPath {
                 VSplitView {
                     changeList
-                    Group {
-                        if git.selectedIsConflicted, let path = git.selectedPath {
-                            ConflictResolutionView(git: git, workspace: workspace, path: path)
-                        } else {
-                            DiffView(files: git.selectedDiff, title: diffTitle, truncated: git.selectedDiffTruncated,
-                                     hunkActionTitle: git.hunkActionTitle,
-                                     onHunkAction: { idx, hunk in Task { await git.stageHunk(index: idx, hunk: hunk) } },
-                                     onClose: { git.selectedPath = nil })
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 100)
+                    ConflictResolutionView(git: git, workspace: workspace, path: path)
+                        .frame(maxWidth: .infinity, minHeight: 100)
                 }
+            } else {
+                changeList
             }
         }
     }
@@ -121,11 +113,6 @@ struct GitPanelView: View {
             .padding(.bottom, 6)
         }
         .frame(maxWidth: .infinity, minHeight: 120)
-    }
-
-    private var diffTitle: String {
-        guard let p = git.selectedPath else { return "" }
-        return (git.selectedIsStaged ? "Index vs HEAD — " : "Working tree vs index — ") + p
     }
 
     @ViewBuilder private func group(_ title: String, _ entries: [GitStatusEntry], kind: GitChangeGroup) -> some View {
@@ -399,7 +386,12 @@ private struct GitChangeRow: View {
         Button("View File History") { onHistory() }.disabled(entry.isUntracked)
     }
 
-    private func openChanges() { Task { await git.select(path: entry.path, staged: staged) } }
+    private func openChanges() {
+        Task {
+            await git.select(path: entry.path, staged: staged)
+            if !git.selectedIsConflicted { workspace.openDiff() }
+        }
+    }
     private func openFile() { workspace.openFile(path: git.absolutePath(entry.path)) }
 
     private func color(_ letter: String) -> Color {
