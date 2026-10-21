@@ -288,6 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.windows.forEach { $0.isRestorable = false }
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "c2dBuddyPetCheck") { BuddyPet.shared.restore() }   // runs without a main window
+        #endif
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

@@ -25,7 +25,12 @@ public struct AgentLaunchPlan: Hashable, Sendable {
         }
         guard access(executablePath, X_OK) == 0 else { throw AgentError.executableNotRunnable(executablePath) }
         let sessionID = provider.capabilities.explicitSessionID ? UUID().uuidString.lowercased() : nil   // fresh per launch: the CLI refuses a reused id
-        let arguments = (sessionID.map { ["--session-id", $0] } ?? []) + provider.launchArguments(task: task)
+        var arguments = (sessionID.map { ["--session-id", $0] } ?? []) + provider.launchArguments(task: task)
+        if provider.id == AgentProvider.claudeCode.id, let sessionID {
+            // Activity hooks (working / waiting / done) for the desktop pet; see AgentActivity.
+            try? FileManager.default.createDirectory(at: AgentActivity.directory(), withIntermediateDirectories: true)
+            arguments = ["--settings", AgentActivity.hookSettings(stateFile: AgentActivity.stateFile(sessionID: sessionID).path)] + arguments
+        }
         return AgentLaunchPlan(provider: provider, executable: executablePath, arguments: arguments,
                                projectPath: projectPath, workingDirectory: workingDirectory, task: task, environmentAdditions: [:],
                                providerSessionID: sessionID)

@@ -1,4 +1,5 @@
 import AppKit
+import C2DCore
 import SwiftUI
 
 /// Buddy as a desktop pet: a small transparent, borderless panel holding only the mascot. It floats above
@@ -16,6 +17,10 @@ final class BuddyPet {
 
     @ObservationIgnored private var panel: BuddyPetPanel?
     @ObservationIgnored private var bubbleTask: Task<Void, Never>?
+    @ObservationIgnored private var watchTask: Task<Void, Never>?
+    /// State file → the modification date the user last acknowledged (by clicking Buddy).
+    @ObservationIgnored private var acknowledged: [String: Date] = [:]
+    @ObservationIgnored private var lastSeen: [String: (AgentActivity, Date)] = [:]
     private static let size = NSSize(width: 140, height: 150)
     private static let originKey = "c2dBuddyPetOrigin"
     private static let visibleKey = "c2dBuddyPetVisible"
@@ -51,7 +56,7 @@ final class BuddyPet {
         guard panel == nil else { return }
         let p = BuddyPetPanel(contentRect: NSRect(origin: savedOrigin() ?? defaultOrigin(), size: Self.size))
         let content = BuddyPetContentView(frame: NSRect(origin: .zero, size: Self.size), state: state)
-        content.onClick = { [weak self] in self?.poke() }
+        content.onClick = { [weak self] in self?.acknowledge(); self?.poke() }
         content.onDrop = { [weak self] in self?.keepOnScreen(save: true); self?.state.hop += 1 }
         content.onHide = { [weak self] in self?.hide() }
         p.contentView = content
@@ -61,18 +66,64 @@ final class BuddyPet {
         isVisible = true
         UserDefaults.standard.set(true, forKey: Self.visibleKey)
         say("Hi there!", for: 2.4)
+        watchTask = Task { [weak self] in await self?.watchAgents() }
     }
 
     /// The panel is dropped, not just ordered out: no hidden view keeps animating.
     func hide() {
         guard let panel else { return }
         bubbleTask?.cancel()
+        watchTask?.cancel(); watchTask = nil
         state.bubble = nil
         state.held = false
+        state.working = false
+        state.waving = false
         panel.orderOut(nil)
         self.panel = nil
         isVisible = false
         UserDefaults.standard.set(false, forKey: Self.visibleKey)
+    }
+
+    /// Polls the agents' activity files once a second while Buddy is out (a handful of tiny files).
+    /// working anywhere → amber antenna; a finished or waiting session the user hasn't acknowledged →
+    /// wave and hop until they click Buddy or answer the session (which flips it back to working).
+    private func watchAgents() async {
+        let dir = AgentActivity.directory()
+        var lastHop = Date.distantPast
+        // Leftovers from sessions that ended while C2D wasn't running.
+        for url in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            if let m = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate, Date().timeIntervalSince(m) > 86_400 {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        while !Task.isCancelled {
+            let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            var seen: [String: (AgentActivity, Date)] = [:]
+            for url in files {
+                guard let a = AgentActivity.read(url),
+                      let m = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { continue }
+                seen[url.lastPathComponent] = (a, m)
+            }
+            lastSeen = seen
+            // A "working" file untouched for 20 min is a session that died without its hooks firing.
+            let working = seen.values.contains { $0.0 == .working && Date().timeIntervalSince($0.1) < 1200 }
+            let pending = seen.filter { ($0.value.0 == .done || $0.value.0 == .waiting) && $0.value.1 > (acknowledged[$0.key] ?? .distantPast) }
+            state.working = working
+            let waving = !working && !pending.isEmpty
+            if waving != state.waving {
+                state.waving = waving
+                if waving { bubbleTask?.cancel(); state.bubble = pending.values.contains { $0.0 == .waiting } ? "Needs you!" : "Done!" }
+                else if state.bubble == "Done!" || state.bubble == "Needs you!" { state.bubble = nil }
+            }
+            if waving, Date().timeIntervalSince(lastHop) > 3 { state.hop += 1; lastHop = Date() }
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    /// Clicking Buddy says "seen it" for every finished/waiting session right now.
+    private func acknowledge() {
+        for (name, value) in lastSeen where value.0 == .done || value.0 == .waiting { acknowledged[name] = value.1 }
+        if state.waving { state.waving = false; state.bubble = nil }
     }
 
     private func poke() {
@@ -122,6 +173,9 @@ extension BuddyPet {
     /// mouse / system setting and are not covered here.
     func runCheck() async {
         func pets() -> [NSWindow] { NSApp.windows.filter { $0 is BuddyPetPanel && $0.isVisible } }
+        // Same bundle id as the user's app: put their Buddy position/visibility back afterwards.
+        let defaults = UserDefaults.standard, userOrigin = defaults.object(forKey: Self.originKey), userVisible = defaults.object(forKey: Self.visibleKey)
+        defer { defaults.set(userOrigin, forKey: Self.originKey); defaults.set(userVisible, forKey: Self.visibleKey) }
         try? await Task.sleep(for: .seconds(2))
         let activeBefore = NSApp.isActive, keyBefore = NSApp.keyWindow?.title ?? "nil"
         show(); summon(); summon(); show()
@@ -143,6 +197,23 @@ extension BuddyPet {
         show()
         try? await Task.sleep(for: .milliseconds(300))
         debugTrace("buddyCheck: reshown pets=\(pets().count) samePosition=\(panel?.frame.origin == kept) mainWindowVisible=\(NSApp.windows.contains { $0.canBecomeMain && $0.isVisible })")
+        // Agent activity: working → amber antenna; done → wave + "Done!" until clicked (acknowledged).
+        let dir = AgentActivity.directory()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("check-session")
+        try? Data("working".utf8).write(to: file)
+        try? await Task.sleep(for: .seconds(1.5))
+        debugTrace("buddyCheck: activity working → working=\(state.working) waving=\(state.waving)")
+        try? Data("done".utf8).write(to: file)
+        try? await Task.sleep(for: .seconds(1.5))
+        debugTrace("buddyCheck: activity done → working=\(state.working) waving=\(state.waving) bubble=\(state.bubble ?? "nil")")
+        acknowledge()
+        try? await Task.sleep(for: .seconds(1.5))
+        debugTrace("buddyCheck: after click → waving=\(state.waving) bubble=\(state.bubble ?? "nil")")
+        try? Data("working".utf8).write(to: file); try? await Task.sleep(for: .seconds(1.2))
+        try? Data("waiting".utf8).write(to: file); try? await Task.sleep(for: .seconds(1.5))
+        debugTrace("buddyCheck: answered then waiting → waving=\(state.waving) bubble=\(state.bubble ?? "nil")")
+        try? FileManager.default.removeItem(at: file)
     }
 }
 #endif
@@ -154,6 +225,9 @@ final class BuddyPetState {
     var hop = 0
     var held = false
     var bubble: String?
+    /// From the agents' activity hooks (see `BuddyPet.watchAgents`).
+    var working = false
+    var waving = false
 }
 
 /// Borderless, transparent, non-activating; can't become key, so clicking Buddy never steals focus
@@ -211,6 +285,8 @@ final class BuddyPetContentView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        // Control-click is a right-click on macOS: menu, not a poke.
+        if event.modifierFlags.contains(.control) { showMenu(event); return }
         gesture = .pressed(mouse: NSEvent.mouseLocation, origin: window.frame.origin)
     }
 
@@ -244,11 +320,19 @@ final class BuddyPetContentView: NSView {
         }
     }
 
-    override func rightMouseDown(with event: NSEvent) {
+    override func rightMouseDown(with event: NSEvent) { showMenu(event) }
+    override func menu(for event: NSEvent) -> NSMenu? { petMenu() }
+
+    private func showMenu(_ event: NSEvent) {
+        gesture = .idle
+        NSMenu.popUpContextMenu(petMenu(), with: event, for: self)
+    }
+
+    private func petMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Hide Buddy", action: #selector(hideBuddy), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open C2D Terminal", action: #selector(openApp), keyEquivalent: "").target = self
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        return menu
     }
 
     @objc private func hideBuddy() { onHide() }
@@ -279,7 +363,7 @@ private struct BuddyPetView: View {
             }
             .frame(height: 38)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: state.bubble)
-            BuddyMascotView(size: 104, held: state.held, hop: state.hop)
+            BuddyMascotView(size: 104, held: state.held, hop: state.hop, working: state.working, waving: state.waving)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 4)
