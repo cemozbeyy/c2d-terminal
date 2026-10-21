@@ -58,6 +58,8 @@ struct CodeEditorView: NSViewRepresentable {
 
     func updateNSView(_ container: EditorContainerView, context: Context) {
         guard let tv = context.coordinator.textView else { return }
+        // Reading the theme here makes SwiftUI call this again when it changes; recolour in place.
+        if context.coordinator.themeID != ThemeManager.shared.selectedID { context.coordinator.applyHighlighting() }
         // External reload or tab switch: push model text into the view only when they differ.
         if tv.string != tab.text {
             let sel = tv.selectedRange()
@@ -94,6 +96,8 @@ struct CodeEditorView: NSViewRepresentable {
         weak var gutter: LineNumberGutterView?
         private var highlightTask: Task<Void, Never>?
         private let highlighter: SyntaxHighlighter?
+        /// The theme the text was last coloured with.
+        private(set) var themeID = ""
 
         init(tab: EditorTab) {
             self.tab = tab
@@ -126,10 +130,13 @@ struct CodeEditorView: NSViewRepresentable {
         func applyHighlighting() {
             guard let tv = textView, let storage = tv.textStorage else { return }
             let sel = tv.selectedRange()
-            if let highlighter {
+            let theme = ThemeManager.shared.selected
+            themeID = theme.id
+            if var highlighter {
+                highlighter.palette = theme.syntax
                 highlighter.highlight(storage)
             } else {
-                storage.addAttribute(.foregroundColor, value: NSColor.textColor, range: NSRange(location: 0, length: storage.length))
+                storage.addAttribute(.foregroundColor, value: theme.syntax.plain, range: NSRange(location: 0, length: storage.length))
             }
             storage.addAttribute(.font, value: tv.font ?? NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular), range: NSRange(location: 0, length: storage.length))
             tv.setSelectedRange(sel)

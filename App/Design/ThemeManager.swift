@@ -19,6 +19,8 @@ struct ThemeDescriptor: Identifiable, Sendable {
     let palette: ThemePalette
     /// Drives the window's `colorScheme` so AppKit controls (scrollbars, menus) match. Dark by default.
     var isDark: Bool = true
+    /// Code colours in the editor (keywords, strings, tags, attributes…), tuned to this theme.
+    var syntax: SyntaxHighlighter.Palette = .midnight
 }
 
 private func c(_ hex: UInt32) -> Color { Color(nsColor: NSColor(hex: hex)) }
@@ -42,7 +44,8 @@ extension ThemeDescriptor {
             elevated: c(0x1A2832), terminalBackground: c(0x080D12), field: c(0x0E161D),
             borderSubtle: c(0x223038), borderStrong: c(0x30424D),
             textPrimary: c(0xE6EEF2), textSecondary: c(0x9DB0BA), textMuted: c(0x647781),
-            accent: c(0x2FBCC9), accentSoft: c(0x123038), success: c(0x3DD68C), warning: c(0xF0B44A), error: c(0xF06B6B), info: c(0x4FB0E0)))
+            accent: c(0x2FBCC9), accentSoft: c(0x123038), success: c(0x3DD68C), warning: c(0xF0B44A), error: c(0xF06B6B), info: c(0x4FB0E0)),
+        syntax: .ocean)
 
     /// Warm charcoal with an amber accent.
     static let ember = ThemeDescriptor(
@@ -52,7 +55,8 @@ extension ThemeDescriptor {
             elevated: c(0x332920), terminalBackground: c(0x0E0C0A), field: c(0x1A1511),
             borderSubtle: c(0x382E24), borderStrong: c(0x4D3F30),
             textPrimary: c(0xF2ECE4), textSecondary: c(0xBEB2A1), textMuted: c(0x8A7E6C),
-            accent: c(0xEB9A3E), accentSoft: c(0x3A2817), success: c(0x8AC24A), warning: c(0xF0B44A), error: c(0xF0685B), info: c(0xCE954F)))
+            accent: c(0xEB9A3E), accentSoft: c(0x3A2817), success: c(0x8AC24A), warning: c(0xF0B44A), error: c(0xF0685B), info: c(0xCE954F)),
+        syntax: .ember)
 
     /// Light mode: white surfaces, dark text, the brand violet. The terminal surface stays dark
     /// (SwiftTerm colors are set in `TerminalSurfaceView`; theming it is tracked separately).
@@ -64,7 +68,7 @@ extension ThemeDescriptor {
             borderSubtle: c(0xDDE0E7), borderStrong: c(0xC4C9D4),
             textPrimary: c(0x1A1D26), textSecondary: c(0x4A4F5E), textMuted: c(0x858B9A),
             accent: c(0x6C5CE0), accentSoft: c(0xE6E3FA), success: c(0x1F9D63), warning: c(0xB7791F), error: c(0xD64545), info: c(0x2B7DD6)),
-        isDark: false)
+        isDark: false, syntax: .daylight)
 }
 
 /// Holds the active theme and applies a new one at runtime. `Theme`'s color tokens read
