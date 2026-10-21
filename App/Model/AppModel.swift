@@ -160,6 +160,7 @@ final class AppModel {
                 guard let git = self?.workspace?.git else { return }
                 await git.refresh()
                 await git.select(path: rel, staged: false)
+                self?.workspace?.openDiff()   // the same path a click in Source Control takes: the diff opens as an editor tab
                 debugTrace("c2dGitSelect: \(rel) hunks=\(git.selectedDiff.reduce(0) { $0 + $1.hunks.count })")
                 // `-c2dGitStageHunk <index>` stages that unstaged hunk, then reports the resulting split.
                 if UserDefaults.standard.object(forKey: "c2dGitStageHunk") != nil {
