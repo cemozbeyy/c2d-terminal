@@ -15,7 +15,8 @@ struct BuddyMascotView: View {
     var asleep = false
     /// Bump to play one hop.
     var hop = 0
-    /// An agent is working: the antenna glows amber and pulses.
+    /// An agent is working: the antenna glows amber and pulses, and Buddy strikes a thinking pose (hand on
+    /// chin, head tilted, a notebook whose pages turn, thought bubbles).
     var working = false
     /// An agent finished (or needs you): the right arm waves until this goes false.
     var waving = false
@@ -39,6 +40,10 @@ struct BuddyMascotView: View {
         LinearGradient(colors: [Self.blueLight, Self.blue, Self.blueDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     private var motion: Bool { animated && !reduceMotion }
+    /// Waving wins over thinking: a finished session matters more than one still running.
+    private var thinking: Bool { working && !waving }
+    private static let notebookCover = Color(red: 0.44, green: 0.36, blue: 0.95)
+    private static let paper = Color(red: 0.99, green: 0.97, blue: 0.93)
 
     var body: some View {
         let s = size
@@ -80,6 +85,7 @@ struct BuddyMascotView: View {
             else { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { waveUp = false } }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.6), value: waving)
+        .animation(.spring(response: 0.45, dampingFraction: 0.7), value: thinking)
         .task(id: animated) {
             // Blink every few seconds; the task is cancelled when the view leaves the screen.
             guard animated else { return }
@@ -111,7 +117,7 @@ struct BuddyMascotView: View {
                 Capsule().fill(Self.blueDeep).frame(width: s * 0.13, height: s * 0.075).offset(x: side * s * 0.09, y: s * 0.4)
             }
             // Arms, tucked at the sides
-            ForEach(waving ? [-1.0] : [-1.0, 1.0], id: \.self) { side in
+            ForEach(waving || thinking ? [-1.0] : [-1.0, 1.0], id: \.self) { side in
                 Capsule().fill(shell).frame(width: s * 0.085, height: s * 0.19)
                     .rotationEffect(.degrees(side * -22), anchor: .top)
                     .offset(x: side * s * 0.235, y: s * 0.22)
@@ -136,7 +142,26 @@ struct BuddyMascotView: View {
                 Circle().fill(LinearGradient(colors: [Self.blue, Self.blueDeep], startPoint: .top, endPoint: .bottom))
                     .frame(width: s * 0.12).offset(x: side * s * 0.425, y: -s * 0.1)
             }
-            head(s).offset(y: -s * 0.1)
+            head(s).rotationEffect(.degrees(thinking ? 7 : 0)).offset(y: -s * 0.1)
+            if thinking {
+                // Only this part animates per frame, and only while an agent works (30 fps is plenty for it).
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !animated)) { context in
+                    let t = reduceMotion || !animated ? 0 : context.date.timeIntervalSinceReferenceDate
+                    ZStack {
+                        notebook(s, t: t).offset(y: s * 0.31)
+                        thoughtBubbles(s, t: t)
+                    }
+                }
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                // Right arm bent up to the chin, drawn over the head so the hand rests on it.
+                Capsule().fill(shell).frame(width: s * 0.085, height: s * 0.2)
+                    .rotationEffect(.degrees(-37), anchor: .bottom)
+                    .offset(x: s * 0.25, y: s * 0.2)
+                Circle().fill(shell).frame(width: s * 0.1)
+                    .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: max(0.5, s * 0.006)))
+                    .offset(x: s * 0.13, y: s * 0.14)
+                    .transition(.opacity)
+            }
             if waving {
                 // Raised right arm, drawn over the head so the hand shows beside it; swings while waving.
                 Capsule().fill(shell).frame(width: s * 0.085, height: s * 0.19)
@@ -167,7 +192,7 @@ struct BuddyMascotView: View {
                 Capsule().fill(Self.glow).frame(width: s * 0.065, height: s * 0.1)
                     .scaleEffect(y: blinking || asleep ? 0.12 : 1)
                     .shadow(color: Self.glow.opacity(0.7), radius: s * 0.015)
-                    .offset(x: side * s * 0.12, y: -s * 0.05)
+                    .offset(x: side * s * 0.12 + (thinking ? s * 0.025 : 0), y: thinking ? -s * 0.075 : -s * 0.05)
             }
             // Cheeks + the prompt mouth
             ForEach([-1.0, 1.0], id: \.self) { side in
@@ -177,6 +202,55 @@ struct BuddyMascotView: View {
                 .shadow(color: Self.glow.opacity(0.6), radius: s * 0.012).offset(y: s * 0.075)
         }
         .frame(width: s * 0.82, height: s * 0.58)
+    }
+
+    /// An open notebook in front of Buddy; one page turns every 1.6 s (static under Reduce Motion).
+    private func notebook(_ s: CGFloat, t: Double) -> some View {
+        let w = s * 0.19, h = s * 0.15
+        let phase = t.truncatingRemainder(dividingBy: 1.6) / 1.6
+        let turn = min(1, phase / 0.55)                         // flip during the first half, rest after
+        let eased = turn * turn * (3 - 2 * turn)
+        func page(_ lines: Int) -> some View {
+            RoundedRectangle(cornerRadius: s * 0.012, style: .continuous).fill(Self.paper)
+                .overlay(alignment: .top) {
+                    VStack(alignment: .leading, spacing: s * 0.018) {
+                        ForEach(0..<lines, id: \.self) { i in
+                            Capsule().fill(Self.navy.opacity(0.22)).frame(width: w * (i == lines - 1 ? 0.45 : 0.7), height: max(0.6, s * 0.007))
+                        }
+                    }
+                    .padding(.top, h * 0.2)
+                }
+                .frame(width: w, height: h)
+        }
+        return ZStack {
+            // Cover peeking out behind the pages.
+            RoundedRectangle(cornerRadius: s * 0.02, style: .continuous).fill(Self.notebookCover)
+                .frame(width: w * 2 + s * 0.03, height: h + s * 0.03)
+            HStack(spacing: s * 0.004) { page(4); page(3) }
+            if !reduceMotion && animated && turn < 1 {
+                page(3)
+                    .rotation3DEffect(.degrees(-180 * eased), axis: (x: 0, y: 1, z: 0), anchor: .leading, perspective: 0.2)
+                    .offset(x: w / 2 + s * 0.002)
+            }
+            Capsule().fill(Self.notebookCover.opacity(0.9)).frame(width: max(1, s * 0.012), height: h)   // spine
+        }
+        .rotation3DEffect(.degrees(28), axis: (x: 1, y: 0, z: 0), perspective: 0.5)   // tilted towards Buddy
+        .shadow(color: .black.opacity(0.22), radius: s * 0.015, y: s * 0.01)
+    }
+
+    /// Three small bubbles rising beside the head, lighting up one after another.
+    private func thoughtBubbles(_ s: CGFloat, t: Double) -> some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { i in
+                let wave = reduceMotion || !animated ? 1 : 0.5 + 0.5 * sin((t * 4) - Double(i) * 0.9)
+                Circle().fill(.white)
+                    .overlay(Circle().strokeBorder(Self.blue.opacity(0.35), lineWidth: max(0.5, s * 0.006)))
+                    .frame(width: s * (0.035 + 0.018 * Double(i)))
+                    .opacity(0.45 + 0.55 * wave)
+                    .scaleEffect(0.85 + 0.15 * wave)
+                    .offset(x: -s * (0.36 + 0.055 * Double(i)), y: -s * (0.34 + 0.065 * Double(i)))
+            }
+        }
     }
 
     private struct Hop { var squash = 1.0; var lift = 0.0; var tilt = 0.0 }

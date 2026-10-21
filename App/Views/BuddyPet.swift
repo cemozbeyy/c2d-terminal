@@ -20,6 +20,8 @@ final class BuddyPet {
     @ObservationIgnored private var watchTask: Task<Void, Never>?
     /// State file → the modification date the user last acknowledged (by clicking Buddy).
     @ObservationIgnored private var acknowledged: [String: Date] = [:]
+    /// How long Buddy waves "Done!" after a session finishes, unless clicked sooner.
+    private static let doneBubbleSeconds: TimeInterval = 15
     @ObservationIgnored private var lastSeen: [String: (AgentActivity, Date)] = [:]
     private static let size = NSSize(width: 140, height: 150)
     private static let originKey = "c2dBuddyPetOrigin"
@@ -85,8 +87,9 @@ final class BuddyPet {
     }
 
     /// Polls the agents' activity files once a second while Buddy is out (a handful of tiny files).
-    /// working anywhere → amber antenna; a finished or waiting session the user hasn't acknowledged →
-    /// wave and hop until they click Buddy or answer the session (which flips it back to working).
+    /// working anywhere → amber antenna and thinking pose; a finished session → wave and "Done!" for
+    /// `doneBubbleSeconds` (or until clicked); a session waiting for the user → "Needs you!" until they
+    /// click Buddy or answer it (which flips it back to working).
     private func watchAgents() async {
         let dir = AgentActivity.directory()
         var lastHop = Date.distantPast
@@ -107,7 +110,11 @@ final class BuddyPet {
             lastSeen = seen
             // A "working" file untouched for 20 min is a session that died without its hooks firing.
             let working = seen.values.contains { $0.0 == .working && Date().timeIntervalSince($0.1) < 1200 }
-            let pending = seen.filter { ($0.value.0 == .done || $0.value.0 == .waiting) && $0.value.1 > (acknowledged[$0.key] ?? .distantPast) }
+            // "Done!" fades on its own after a while; "Needs you!" stays until answered or clicked.
+            let pending = seen.filter { name, value in
+                guard value.0 == .done || value.0 == .waiting, value.1 > (acknowledged[name] ?? .distantPast) else { return false }
+                return value.0 == .waiting || Date().timeIntervalSince(value.1) < Self.doneBubbleSeconds
+            }
             state.working = working
             let waving = !working && !pending.isEmpty
             if waving != state.waving {
