@@ -2,6 +2,7 @@ import AppKit
 import C2DCore
 import SwiftUI
 
+@main
 struct C2DTerminalApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()

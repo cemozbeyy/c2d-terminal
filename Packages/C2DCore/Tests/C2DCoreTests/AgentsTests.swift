@@ -44,6 +44,21 @@ import Testing
         #expect(plan.displaySummary.contains("Task: do it") && plan.displaySummary.contains("Claude Code"))
     }
 
+    /// ADR-034 security regression: a Claude launch carries activity hooks only — no `PreToolUse` rewrite hook, no
+    /// `permissions` (allow rules), and no reference to the removed runner modes.
+    @Test func launchesCarryNoRewriteHookAndNoAllowRule() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("c2d-launch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let plan = try AgentLaunchPlan.make(provider: .claudeCode, executablePath: "/bin/ls", projectPath: dir.path, workingDirectory: dir.path, task: "t")
+        let settingsIndex = try #require(plan.arguments.firstIndex(of: "--settings"))
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(plan.arguments[settingsIndex + 1].utf8)) as? [String: Any])
+        #expect(Set(settings.keys) == ["hooks"], "no permissions block")
+        let hooks = try #require(settings["hooks"] as? [String: Any])
+        #expect(Set(hooks.keys) == Set(AgentActivity.events.map(\.event)) && hooks["PreToolUse"] == nil)
+        #expect(!plan.arguments.joined(separator: " ").contains("--c2d-token"))
+    }
+
     @Test func activityHookSettingsAreValidAndQuoteThePath() throws {
         let path = "/tmp/a dir/it's"
         let json = AgentActivity.hookSettings(stateFile: path)

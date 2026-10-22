@@ -368,11 +368,10 @@ struct SettingsPlaceholderView: View {
     }
 }
 
-/// Token Saver card behind the top-bar gauge: on/off, then input, output and what the C2D engine saved.
+/// Token Saver card behind the top-bar gauge: on/off, then input, output and the C2D engine's (inactive) state.
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
-    @State private var engine = TokenSaverEngine.Totals()
 
     var body: some View {
         @Bindable var model = model
@@ -389,16 +388,16 @@ struct OptimizerPopover: View {
                 Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent)
             }
             if model.optimizerEnabled {
-                // Input/output: provider-reported (Claude Code transcripts of this project). Saved: the C2D engine's ledger.
+                // Input/output: provider-reported (Claude Code transcripts of this project).
                 let u = workspace.optimizer.summary.usage
                 MetricRow(label: "Input", value: u.map { ($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens).formatted() } ?? "—",
-                          detail: u.map { "\($0.cacheReadInputTokens.formatted()) of it cache reads · Claude Code, this project" } ?? workspace.optimizer.usageNote,
+                          detail: u.map { "\($0.cacheReadInputTokens.formatted()) of it cache reads · provider-reported, all Claude Code sessions of this project" } ?? workspace.optimizer.usageNote,
                           valueMuted: u == nil)
-                MetricRow(label: "Output", value: u?.outputTokens.formatted() ?? "—", valueMuted: u == nil)
-                MetricRow(label: "Saved", value: engine.commands == 0 ? "—" : "~\(engine.savedTokens.formatted())",
-                          detail: engine.commands == 0 ? "Automatic for agents started in C2D; nothing has run through it yet."
-                            : "Estimated · \(TokenSaverFormat.sizes(engine.rawBytes, engine.shownBytes)) · \(engine.commands) command\(engine.commands == 1 ? "" : "s")",
-                          valueMuted: engine.commands == 0)
+                MetricRow(label: "Output", value: u?.outputTokens.formatted() ?? "—", detail: u == nil ? nil : "provider-reported", valueMuted: u == nil)
+                // ADR-034/035: nothing transforms agent output, so there is nothing to count as saved.
+                MetricRow(label: "Saved", value: "Not active",
+                          detail: "Nothing is transformed, so there are no verified savings. Candidate optimizations are measured offline first (ADR-034).",
+                          valueMuted: true)
             } else {
                 Text("Off: nothing is measured, recorded or read.").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
             }
@@ -407,7 +406,6 @@ struct OptimizerPopover: View {
         .frame(width: 300)
         .background(Theme.panel)
         .task(id: model.optimizerEnabled) {
-            engine = TokenSaverEngine.totals()
             await workspace.optimizer.loadLedger()
         }
     }

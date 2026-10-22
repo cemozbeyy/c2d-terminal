@@ -52,7 +52,7 @@ public enum OutputCondenser {
         if cleaned != raw.replacingOccurrences(of: "\r\n", with: "\n") { steps.append(.strippedEscapes) }
         var lines = ContextOptimizer.normalizeWhitespace(cleaned).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         while lines.last?.isEmpty == true { lines.removeLast() }
-        var rawLines = raw.split(separator: "\n", omittingEmptySubsequences: false)
+        var rawLines = raw.components(separatedBy: "\n")
         while rawLines.last?.isEmpty == true { rawLines.removeLast() }
         let linesBefore = rawLines.count
         let diagnostics = lines.filter(isDiagnostic).count
@@ -83,6 +83,44 @@ public enum OutputCondenser {
         }
         return CondensedOutput(text: final.joined(separator: "\n"), original: raw, steps: steps,
                                linesBefore: linesBefore, linesAfter: final.count, diagnosticLines: diagnostics)
+    }
+
+    // MARK: Exact fold (ADR-035)
+
+    /// First line of an exact fold; tells the reader how to read the rows back.
+    public static let exactHeader = "[c2d: lossless fold; under a \"path:\" line, \"  N:…\" means \"path:N:…\"; repeat counts are exact]"
+
+    /// Byte-exact variant of the lossless steps: no escape stripping, no whitespace or CR/LF normalization, only
+    /// exact-repeat counting and file grouping on the raw lines. Returns nil unless the fold is smaller and
+    /// `expandExact` gives back `text` byte for byte — checked on every call, so an ambiguous line in the
+    /// original (a literal marker, a `name:` line followed by indented numbers) makes it decline, never guess.
+    public static func condenseExact(_ text: String) -> String? {
+        let lines = text.components(separatedBy: "\n")
+        let folded = groupByFile(collapseRepeats(lines))
+        guard folded != lines else { return nil }
+        let out = ([exactHeader] + folded).joined(separator: "\n")
+        guard out.utf8.count < text.utf8.count, expandExact(out) == text else { return nil }
+        return out
+    }
+
+    /// Inverse of `condenseExact`: drops the header, expands file groups and repeat markers.
+    public static func expandExact(_ text: String) -> String {
+        guard text.hasPrefix(exactHeader + "\n") else { return text }
+        return expandRepeats(expandGroups(String(text.dropFirst(exactHeader.count + 1)))).joined(separator: "\n")
+    }
+
+    /// Inverse of `collapseRepeats`: each `[c2d: previous line repeated N more times]` becomes N copies of the line before it.
+    static func expandRepeats(_ lines: [String]) -> [String] {
+        var out: [String] = []
+        for line in lines {
+            if line.hasPrefix("[c2d: previous line repeated "), line.hasSuffix(" more times]"),
+               let n = Int(line.dropFirst("[c2d: previous line repeated ".count).dropLast(" more times]".count)), let last = out.last {
+                out += Array(repeating: last, count: n)
+            } else {
+                out.append(line)
+            }
+        }
+        return out
     }
 
     // MARK: Steps
@@ -188,7 +226,7 @@ public enum OutputCondenser {
     public static func expandGroups(_ text: String) -> [String] {
         var out: [String] = []
         var path: String?
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+        for line in text.components(separatedBy: "\n") {
             if line.hasPrefix("  "), let p = path, line.dropFirst(2).first?.isNumber == true { out.append(p + ":" + line.dropFirst(2)); continue }
             if line.hasSuffix(":"), !line.hasPrefix(" "), !line.contains(" "), line.count > 1 { path = String(line.dropLast()); continue }
             path = nil
