@@ -3,9 +3,58 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="C2D Terminal is a native macOS terminal and workspace for developers who work with Claude Code, local projects and Git.">
-<title>C2D Terminal — A cozy home for your agents</title>
+<title>C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents</title>
+<meta name="description" content="C2D Terminal is a native macOS terminal app where Claude Code, Git, an editor and real PTY shells share one window. Free core, local first, Apple Silicon.">
+<link rel="canonical" href="https://c2dterminal.com/">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#fbf6ee">
+<meta name="keywords" content="mac terminal, macOS terminal app, Claude Code terminal, AI coding agent terminal, terminal with git, iTerm alternative, developer workspace mac">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="C2D Terminal">
+<meta property="og:url" content="https://c2dterminal.com/">
+<meta property="og:title" content="C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents">
+<meta property="og:description" content="A native macOS terminal where Claude Code, Git, an editor and real PTY shells share one cozy window. Free core, local first.">
+<meta property="og:image" content="https://c2dterminal.com/shots/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="C2D Terminal workspace: explorer, editor, agent panel and a running zsh terminal">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents">
+<meta name="twitter:description" content="A native macOS terminal where Claude Code, Git, an editor and real PTY shells share one cozy window. Free core, local first.">
+<meta name="twitter:image" content="https://c2dterminal.com/shots/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Caveat:wght@600&family=JetBrains+Mono:wght@500&display=swap">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "C2D Terminal",
+      "url": "https://c2dterminal.com/",
+      "image": "https://c2dterminal.com/shots/og.jpg",
+      "description": "A native macOS terminal app where Claude Code, Git, an editor and real PTY shells share one window.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS 15 or later (Apple Silicon)",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Organization", "name": "C2D Works", "url": "https://c2dterminal.com/" },
+      "sameAs": ["https://github.com/cemozbeyy/c2d-terminal"]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Is it a real terminal or a chat window?", "acceptedAnswer": { "@type": "Answer", "text": "A real terminal. Every shell and agent runs in a genuine PTY with your own shell config and PATH." } },
+        { "@type": "Question", "name": "Does my code leave my Mac?", "acceptedAnswer": { "@type": "Answer", "text": "Not to C2D. Agents talk to the provider you set up, with your own access, and you're responsible for those charges." } },
+        { "@type": "Question", "name": "Will an agent commit or push for me?", "acceptedAnswer": { "@type": "Answer", "text": "Never. Commits, pushes, pulls and discards are always your explicit actions." } },
+        { "@type": "Question", "name": "How much does it cost?", "acceptedAnswer": { "@type": "Answer", "text": "The core is free: terminal, editor, Git and agents. Premium is on the way and will never lock core features." } }
+      ]
+    }
+  ]
+}
+</script>
 <style>
 /* Layout: Apple-style rhythm (centered headlines, one idea per section, bento, product rising
    on scroll) in a warm, soft register: cream paper, pastel tiles, stickers, and Tiny the mascot. */
@@ -192,7 +241,7 @@ footer a:hover{color:var(--cream)}
 <nav class="nav"><div class="wrap">
   <a class="brand" href="#top"><svg><use href="#tiny"/></svg>C2D Terminal</a>
   <ul><li><a href="#inside">Inside</a></li><li><a href="#how">How it works</a></li><li><a href="#moods">Moods</a></li><li><a href="#film">Film</a></li><li><a href="#faq">FAQ</a></li></ul>
-  <a class="get" href="#download">Download</a>
+  <a class="get" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Build from source</a>
 </div></nav>
 
 <header class="hero wrap center" id="top">
@@ -209,7 +258,7 @@ footer a:hover{color:var(--cream)}
   <span class="hand">meet your new favorite terminal</span>
   <h1>Cozy terminal.<br><em>Serious work.</em></h1>
   <p class="sub">A native Mac workspace where Claude Code, Git and a real terminal all get along.</p>
-  <div class="ctas"><a class="pill" href="#download">Download for Mac</a><a class="more" href="#film">Watch the film</a></div>
+  <div class="ctas"><a class="pill" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Build from source</a><a class="more" href="#film">Watch the film</a></div>
   <p class="fine">Free to start · Apple Silicon · macOS 15+</p>
 </header>
 
@@ -296,8 +345,8 @@ footer a:hover{color:var(--cream)}
     <svg width="110" height="110" class="rv" aria-hidden="true"><g class="wave"><use href="#tiny"/></g></svg>
     <h2 class="rv" style="font-size:clamp(40px,6vw,72px);font-weight:900;letter-spacing:-.03em;line-height:1">Come on in.</h2>
     <p class="lead rv">Native Mac. Free core. Your projects, your agents, your Git, all in one cozy window.</p>
-    <a class="pill rv" href="#download" style="margin-top:8px">Download for Mac</a>
-    <p class="rv" style="color:#a39890;font-size:14px;font-weight:600">Apple Silicon · macOS 15 or later</p>
+    <a class="pill rv" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run" style="margin-top:8px">Build from source on GitHub</a>
+    <p class="rv" style="color:#a39890;font-size:14px;font-weight:600">Apple Silicon · macOS 15 or later · Signed download coming soon</p>
     <footer><span>© 2026 C2D Works · C2D Terminal</span><span><a href="#inside">Inside</a> · <a href="#faq">FAQ</a></span></footer>
   </div>
 </section>

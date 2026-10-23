@@ -1,0 +1,6 @@
+{
+  "redirects": [
+    { "source": "/", "has": [{ "type": "host", "value": "www.c2dterminal.com" }], "destination": "https://c2dterminal.com/", "permanent": true },
+    { "source": "/:path+", "has": [{ "type": "host", "value": "www.c2dterminal.com" }], "destination": "https://c2dterminal.com/:path+", "permanent": true }
+  ]
+}
