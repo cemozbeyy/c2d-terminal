@@ -36,7 +36,7 @@ final class WorkspaceController {
         self.explorer = ExplorerController(rootPath: projectPath)
         self.git = GitController(projectPath: projectPath, diagnostics: app.diagnosticsRecorder)
         self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
-        self.optimizer = OptimizerController(projectPath: projectPath, store: app.optimizationStore, app: app)
+        self.optimizer = OptimizerController(projectPath: projectPath, app: app)
         // Remote failures (fetch/pull/push) are started from the top bar, so they must be visible even
         // when the Git panel is hidden: route them to the window-level message banner as well.
         git.onRemoteFailure = { [weak app] title, detail in app?.report(title, detail) }

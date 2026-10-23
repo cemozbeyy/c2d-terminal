@@ -246,7 +246,9 @@ public enum OutputCondenser {
     }
 
     /// Keeps `head` and `tail` lines, and from the middle every diagnostic line with one line of context on
-    /// each side. Gaps become explicit markers with the number of lines omitted.
+    /// each side. Gaps become explicit markers naming the count and the 1-based positions omitted, so a reader
+    /// knows the result is incomplete and which range to read again (positions are of this output as handed in;
+    /// for a plain file listing they are the file's line numbers).
     static func truncateMiddle(_ lines: [String], head: Int, tail: Int) -> [String] {
         guard lines.count > head + tail else { return lines }
         var keep = Set(0..<head).union((lines.count - tail)..<lines.count)
@@ -257,7 +259,7 @@ public enum OutputCondenser {
         var gap = 0
         for i in 0..<lines.count {
             if keep.contains(i) {
-                if gap > 0 { out.append("[c2d: \(gap) lines omitted]"); gap = 0 }
+                if gap > 0 { out.append("[c2d: \(gap) lines omitted: \(i - gap + 1)–\(i) of this output]"); gap = 0 }
                 out.append(lines[i])
             } else {
                 gap += 1

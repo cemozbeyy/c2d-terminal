@@ -15,9 +15,9 @@ struct ExplorerPanelView: View {
             HStack {
                 Text(URL(fileURLWithPath: explorer.rootPath).lastPathComponent).font(.caption).bold().lineLimit(1)
                 Spacer()
-                Toggle(isOn: $explorer.includeHidden) { Image(systemName: "eye") }.toggleStyle(.button).controlSize(.small).help("Show hidden files")
+                Toggle(isOn: $explorer.includeHidden) { Image(systemName: "eye") }.toggleStyle(.button).controlSize(.small).clickCursor().help("Show hidden files")
                     .onChange(of: explorer.includeHidden) { explorer.reloadAll() }
-                Button { explorer.reloadAll() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Refresh")
+                Button { explorer.reloadAll() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.clickPlain).help("Refresh")
             }
             .padding(.horizontal, 8).frame(height: 24)
             Divider()
@@ -81,7 +81,7 @@ struct ExplorerPanelView: View {
         .background(explorer.selectedPath == entry.path ? Theme.accentSoft : hoveredPath == entry.path ? Theme.elevated : .clear)
         .contentShape(Rectangle()).clickCursor()
         .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
-        .onTapGesture {
+        .clickCursor().onTapGesture {
             explorer.selectedPath = entry.path
             if entry.isDirectory { explorer.toggle(entry) } else { workspace.openFile(path: entry.path) }
         }

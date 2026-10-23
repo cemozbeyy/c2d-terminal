@@ -190,11 +190,24 @@ public enum Replay {
         public let original: Data
         public let shown: Data
         public let violations: Set<Violation>
+        /// Lines of the original that `looksDiagnostic` flags and that are absent from the shown text (after undoing
+        /// lossless steps). Independent of the condenser's own classifier, deliberately over-matching: a comment
+        /// containing "error" counts. 0 for an exact transform by construction.
+        public let suspectDropped: Int
+    }
+
+    /// A broad, independent detector of lines a reader would not want to lose: error/warning/fatal/failed/exception/
+    /// panic/traceback wording, `path:line[:col]`, exit-status wording, test failure markers.
+    static let suspectPattern = try! NSRegularExpression(
+        pattern: #"(?i)\b(error|warning|fatal|failed|failure|exception|panic|traceback|assert|abort|segfault|timed? ?out|denied|not found|no such file|exit(ed)? (status|code)|✘|FAIL)\b|[A-Za-z0-9_./-]+\.[A-Za-z]{1,6}:\d+(:\d+)?"#)
+    public static func looksDiagnostic(_ line: String) -> Bool {
+        suspectPattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
     }
 
     public static func check(_ t: Transform, _ original: Data) -> Outcome {
         let shown = t.apply(original)
         var v = Set<Violation>()
+        var suspect = 0
         if t.apply(original) != shown { v.insert(.nondeterministic) }
         if shown.count > original.count { v.insert(.grew) }
         if shown != original {
@@ -207,9 +220,10 @@ public enum Replay {
                 if ref.split(separator: "\n").contains(where: { OutputCondenser.isDiagnostic(String($0)) && !shownLines.contains($0) }) {
                     v.insert(.droppedDiagnostic)
                 }
+                suspect = ref.split(separator: "\n").filter { looksDiagnostic(String($0)) && !shownLines.contains($0) }.count
             }
         }
-        return Outcome(original: original, shown: shown, violations: v)
+        return Outcome(original: original, shown: shown, violations: v, suspectDropped: suspect)
     }
 
     /// Non-whitespace characters, sorted, after removing terminal escape sequences (CSI, OSC, other two-byte ESC)
@@ -260,6 +274,8 @@ public enum Replay {
         public var rawTokens = 0, shownTokens = 0
         public var carriedRawTokens = 0, carriedShownTokens = 0
         public var violations: [Violation: Int] = [:]
+        /// Independent-detector lines lost (see `Outcome.suspectDropped`) and the outputs they came from.
+        public var suspectDropped = 0, outputsWithSuspectDropped = 0
         public init() {}
 
         mutating func add(_ s: Sample, _ o: Outcome) {
@@ -271,6 +287,7 @@ public enum Replay {
             if changedHere { changed += 1 }
             if s.isError { errorSamples += 1; if changedHere { errorChanged += 1 } }
             for v in o.violations { violations[v, default: 0] += 1 }
+            suspectDropped += o.suspectDropped; if o.suspectDropped > 0 { outputsWithSuspectDropped += 1 }
         }
 
         static func + (a: Metrics, b: Metrics) -> Metrics {
@@ -279,6 +296,7 @@ public enum Replay {
             m.rawBytes += b.rawBytes; m.shownBytes += b.shownBytes; m.rawTokens += b.rawTokens; m.shownTokens += b.shownTokens
             m.carriedRawTokens += b.carriedRawTokens; m.carriedShownTokens += b.carriedShownTokens
             m.violations.merge(b.violations, uniquingKeysWith: +)
+            m.suspectDropped += b.suspectDropped; m.outputsWithSuspectDropped += b.outputsWithSuspectDropped
             return m
         }
     }
@@ -335,6 +353,86 @@ public enum Replay {
             m.netCarriedTokens += net; m.byTool[s.tool, default: 0] += net
         }
         return m
+    }
+
+    // MARK: Cross-result line overlap (measurement only)
+
+    /// Lines of a Bash result that already appeared, as a run of at least `window` consecutive lines, in an earlier
+    /// Bash result of the same session segment (overlapping `sed -n` ranges, `cat` after an edit, a re-run build).
+    /// Hash windows, so an upper bound with a negligible collision error. No transform does this: a reference would
+    /// need per-session state, a reset on compaction, and proof that the earlier result is still in the context.
+    public struct OverlapMetrics: Hashable, Sendable {
+        public var results = 0, bytes = 0, carriedTokens = 0
+        public var overlappingResults = 0, overlapBytes = 0, overlapCarriedTokens = 0
+        /// Carried tokens saved after paying for one reference marker per overlapping result.
+        public var netCarriedTokens = 0
+        public var byFamily: [String: Int] = [:]   // overlap bytes per program
+        public init() {}
+
+        public static func + (a: OverlapMetrics, b: OverlapMetrics) -> OverlapMetrics {
+            var m = a
+            m.results += b.results; m.bytes += b.bytes; m.carriedTokens += b.carriedTokens
+            m.overlappingResults += b.overlappingResults; m.overlapBytes += b.overlapBytes; m.overlapCarriedTokens += b.overlapCarriedTokens
+            m.netCarriedTokens += b.netCarriedTokens
+            m.byFamily.merge(b.byFamily, uniquingKeysWith: +)
+            return m
+        }
+    }
+
+    public static func overlap(in session: Session, window: Int = 10, minimumBytes: Int = 512) -> OverlapMetrics {
+        var m = OverlapMetrics()
+        var seen = Set<Int>(), segment = -1
+        for s in session.samples where s.tool == "Bash" {
+            if s.segment != segment { seen.removeAll(); segment = s.segment }
+            let text = String(decoding: s.output, as: UTF8.self)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            m.results += 1; m.bytes += s.output.count
+            let tokens = TokenEstimator.estimate(text).tokens
+            m.carriedTokens += tokens * s.carry
+            guard s.output.count >= minimumBytes, lines.count >= window else { continue }
+            var keys: [Int] = []
+            keys.reserveCapacity(lines.count - window + 1)
+            for i in 0...(lines.count - window) {
+                var h = Hasher()
+                for l in lines[i..<(i + window)] { h.combine(l) }
+                keys.append(h.finalize())
+            }
+            var covered = [Bool](repeating: false, count: lines.count)
+            for (i, k) in keys.enumerated() where seen.contains(k) {
+                for j in i..<(i + window) { covered[j] = true }
+            }
+            seen.formUnion(keys)
+            let coveredLines = zip(lines, covered).filter(\.1).map(\.0)
+            guard !coveredLines.isEmpty else { continue }
+            let bytes = coveredLines.reduce(0) { $0 + $1.utf8.count + 1 }
+            let coveredTokens = TokenEstimator.estimate(coveredLines.joined(separator: "\n")).tokens
+            m.overlappingResults += 1; m.overlapBytes += bytes; m.overlapCarriedTokens += coveredTokens * s.carry
+            m.netCarriedTokens += max(0, coveredTokens - referenceTokens) * s.carry
+            m.byFamily[family(of: s.command), default: 0] += bytes
+        }
+        return m
+    }
+
+    /// The condenser's opt-in lossy defaults (similar-line folding, long-line elision, middle truncation) as a
+    /// replay candidate: a ceiling for "repetitive log" reduction, judged by `droppedDiagnostic` like every other.
+    /// Not wired anywhere; lossy stays opt-in (TSD-08).
+    public static let runnerDefault = lossy(name: "runner-default (opt-in lossy)", options: OutputCondenser.Options())
+    /// The three lossy steps one at a time, so the ceiling can be attributed to the risky step (file-body
+    /// truncation) and the lower-risk ones (counter-line folding, long-line elision).
+    public static let lossySimilar = lossy(name: "lossy: similar-line folding only", options: .init(lineBudget: nil, longLine: nil))
+    public static let lossyLongLines = lossy(name: "lossy: long-line elision only", options: .init(lineBudget: nil, similarRunMinimum: .max))
+    public static let lossyTruncate = lossy(name: "lossy: head/tail truncation only", options: .init(similarRunMinimum: .max, longLine: nil))
+
+    static func lossy(name: String, options: OutputCondenser.Options) -> Transform {
+        Transform(name: name, fidelity: .lossy,
+                  apply: { raw in
+                      guard let text = String(data: raw, encoding: .utf8), !("\n" + text).contains("\ndiff --git "), !("\n" + text).contains("\n@@ ") else { return raw }
+                      let condensed = OutputCondenser.condense(text, options: options)
+                      let candidate = Data((condensed.text + (text.hasSuffix("\n") ? "\n" : "")).utf8)
+                      return condensed.changed && candidate.count < raw.count ? candidate : raw
+                  },
+                  restore: runnerLossless.restore,   // undoes only the lossless steps (groups, repeat markers) so dropped lines are judged on real lines
+                  normalize: runnerLossless.normalize)
     }
 
     // MARK: Session restarts (model, not a measurement)

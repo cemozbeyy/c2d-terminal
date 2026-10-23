@@ -1,4 +1,4 @@
-[c2d: condensed 20→20 lines; every error/warning/file:line kept; original in C2D]
+[c2d: condensed 20→20 lines; every error/warning/file:line kept]
 Building for debugging...
 [Planning deferred tasks]
 error: SwiftCompile normal arm64 failed with a nonzero exit code. Command line:     cd /private/tmp/c2d-bench

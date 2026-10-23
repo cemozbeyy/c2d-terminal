@@ -14,14 +14,38 @@ public enum TokenSaverHook {
     /// PostToolUse payload → response JSON, or nil to leave the result exactly as it is. Only Bash stdout is ever
     /// changed, only by `OutputCondenser.condenseExact` (byte-reversible), and every other `tool_response` field
     /// (stderr, interrupted, isImage, returnCodeInterpretation, bashEditDiff, …) is copied verbatim.
-    public static func postToolUseResponse(payload: Data) -> Data? {
+    /// Opt-in lossy variants for the owner's quality experiment only (`c2d-token-helper --lossy <variant>`; never the
+    /// default, never in a launch). Each drops content behind an explicit `[c2d: … omitted]` marker; diagnostics are kept
+    /// by the condenser's classifier. `all` is the condenser's default option set.
+    public enum LossyVariant: String, CaseIterable, Sendable {
+        case similar, longline, truncate, all
+        public var options: OutputCondenser.Options {
+            switch self {
+            case .similar: .init(lineBudget: nil, longLine: nil)
+            case .longline: .init(lineBudget: nil, similarRunMinimum: .max)
+            case .truncate: .init(similarRunMinimum: .max, longLine: nil)
+            case .all: .init()
+            }
+        }
+    }
+
+    public static func postToolUseResponse(payload: Data, lossy: LossyVariant? = nil) -> Data? {
         guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
               root["hook_event_name"] as? String ?? "PostToolUse" == "PostToolUse", root["tool_name"] as? String == "Bash",
               let command = (root["tool_input"] as? [String: Any])?["command"] as? String,
               var response = root["tool_response"] as? [String: Any], let stdout = response["stdout"] as? String,
               response["interrupted"] as? Bool != true, response["isImage"] as? Bool != true,
-              !stdout.isEmpty, stdout.utf8.count <= maximumBytes, !skips(command: command, stdout: stdout),
-              let folded = OutputCondenser.condenseExact(stdout) else { return nil }
+              !stdout.isEmpty, stdout.utf8.count <= maximumBytes, !skips(command: command, stdout: stdout) else { return nil }
+        let folded: String
+        if let lossy {
+            let c = OutputCondenser.condense(stdout, options: lossy.options)
+            guard c.changed, c.steps.contains(where: \.isLossy) || c.steps.contains(.collapsedRepeats) || c.steps.contains(.groupedByFile),
+                  c.text.utf8.count < stdout.utf8.count else { return nil }
+            folded = c.text + (stdout.hasSuffix("\n") ? "\n" : "")
+        } else {
+            guard let exact = OutputCondenser.condenseExact(stdout) else { return nil }
+            folded = exact
+        }
         response["stdout"] = folded
         return try? JSONSerialization.data(withJSONObject: ["hookSpecificOutput": ["hookEventName": "PostToolUse", "updatedToolOutput": response]],
                                            options: [.sortedKeys])

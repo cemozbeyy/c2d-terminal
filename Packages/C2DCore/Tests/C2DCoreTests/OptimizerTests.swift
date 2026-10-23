@@ -244,6 +244,69 @@ import Testing
         #expect(l.unavailable.contains { $0.reason.contains("unrecognised usage shape") })
         #expect(l.unavailable.contains { $0.reason.contains("another directory") })
     }
+
+    // A session that moved into a project subfolder stays the project's (it was dropped before: the popover froze).
+    @Test func sessionsInProjectSubfoldersAreCounted() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2), assistant(id: "m2", input: 3, output: 4, cwd: project + "/docs"),
+                   assistant(id: "m3", input: 5, output: 6, cwd: project + "/Website/src/")], to: folder, name: "moved.jsonl")
+        try write([assistant(id: "m1", input: 7, output: 8, cwd: project + "/docs/../Tools")], to: folder, name: "dotdot.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.unavailable.isEmpty && l.sessions.count == 2)
+        #expect(l.total == ProviderUsage(inputTokens: 16, outputTokens: 20))   // provider numbers unchanged, nothing estimated
+    }
+
+    // Another project must never be counted: textual prefix siblings, `..` escapes and mixed sessions are refused whole.
+    @Test func pathsOutsideTheProjectAreRefused() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 1, cwd: project + "-other")], to: folder, name: "sibling.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 1, cwd: project + "/../My Project_1")], to: folder, name: "escape.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 1), assistant(id: "m2", input: 1, output: 1, cwd: "/tmp")], to: folder, name: "mixed.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 1, cwd: "relative/path")], to: folder, name: "relative.jsonl")
+        try write([assistant(id: "m1", input: 1, output: 1, cwd: "/Users/someone/dev")], to: folder, name: "parent.jsonl")
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.isEmpty && l.unavailable.count == 5)
+        #expect(l.unavailable.allSatisfy { $0.reason.contains("another directory") })
+        #expect(l.total == ProviderUsage())
+    }
+
+    @Test func unreadableFolderAndFileAreUnavailableNotGuessed() throws {
+        let (home, folder) = try makeHome()
+        try write([assistant(id: "m1", input: 1, output: 2)], to: folder, name: "ok.jsonl")
+        try write([assistant(id: "m1", input: 9, output: 9)], to: folder, name: "locked.jsonl")
+        let locked = folder.appendingPathComponent("locked.jsonl")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        let l = try #require(ledger(ClaudeTranscriptReader.read(projectPath: project, claudeHome: home)))
+        #expect(l.sessions.count == 1 && l.total == ProviderUsage(inputTokens: 1, outputTokens: 2))
+        #expect(l.unavailable.count == 1 && l.unavailable.first?.reason.contains("could not read") == true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        guard case .unavailable(let reason) = ClaudeTranscriptReader.read(projectPath: project, claudeHome: home) else { Issue.record("expected unavailable"); return }
+        #expect(reason.contains("could not be listed"))
+    }
+
+    @Test func containmentComparesResolvedComponents() throws {
+        typealias R = ClaudeTranscriptReader
+        #expect(R.isWithin("/a/b", root: "/a/b") && R.isWithin("/a/b/", root: "/a/b") && R.isWithin("/a/b/c/d", root: "/a/b/"))
+        #expect(R.isWithin("/a/b/./c", root: "/a/b") && R.isWithin("/a/x/../b/c", root: "/a/b"))
+        #expect(!R.isWithin("/a/bc", root: "/a/b") && !R.isWithin("/a/b-c", root: "/a/b") && !R.isWithin("/a", root: "/a/b"))
+        #expect(!R.isWithin("/a/b/../c", root: "/a/b") && !R.isWithin("a/b", root: "/a/b") && !R.isWithin("/a/b", root: "a/b"))
+        #expect(!R.isWithin("/A/B", root: "/a/b"))   // case is compared as written (Claude Code records the real spelling)
+        // Symlinks: a link to the project and the project itself are the same place; a link inside the project that
+        // points outside it is outside. Missing paths are compared as written.
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("within-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let real = base.appendingPathComponent("real"), outside = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: real.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: base.appendingPathComponent("alias"), withDestinationURL: real)
+        try FileManager.default.createSymbolicLink(at: real.appendingPathComponent("escape"), withDestinationURL: outside)
+        defer { try? FileManager.default.removeItem(at: base) }
+        #expect(R.isWithin(base.appendingPathComponent("alias/sub").path, root: real.path))
+        #expect(R.isWithin(real.appendingPathComponent("sub").path, root: base.appendingPathComponent("alias").path))
+        #expect(!R.isWithin(real.appendingPathComponent("escape").path, root: real.path))
+        #expect(R.isWithin(real.appendingPathComponent("gone/deeper").path, root: real.path))
+        #expect(!R.isWithin(base.appendingPathComponent("gone").path, root: real.path))
+    }
 }
 
 // MARK: - Token Saver TS-2: transcript ↔ C2D launch attribution

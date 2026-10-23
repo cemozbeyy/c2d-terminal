@@ -4,7 +4,8 @@ hook and the exact answer, so a run shows what the CLI passed in and what came b
 per-run `--settings` for a synthetic work dir; never installed anywhere.
 
   hook_wrapper.py <mode> <log dir> <helper>
-  mode: fold (answer with c2d-token-helper) | log (observe, answer nothing) | garbage (invalid JSON) | badshape (stdout: 42)
+  mode: fold (answer with c2d-token-helper) | lossy:<similar|longline|truncate|all> (helper --lossy) | log (observe, answer nothing)
+        | garbage (invalid JSON) | badshape (stdout: 42)
 """
 import json, os, subprocess, sys, time
 
@@ -13,6 +14,8 @@ payload = sys.stdin.buffer.read()
 start = time.perf_counter()
 if mode == "fold":
     out = subprocess.run([helper], input=payload, capture_output=True).stdout
+elif mode.startswith("lossy:"):
+    out = subprocess.run([helper, "--lossy", mode.split(":", 1)[1]], input=payload, capture_output=True).stdout
 elif mode == "garbage":
     out = b"{not json"
 elif mode == "badshape":

@@ -16,6 +16,7 @@ struct C2DTerminalApp: App {
         WindowGroup("C2D Terminal") {
             MainWindowView()
                 .environment(model)
+                .buttonStyle(.clickDefault)
                 .onAppear {
                     delegate.model = model
                     // Only once the main window exists: a visible pet panel at launch makes SwiftUI skip
@@ -68,15 +69,31 @@ struct C2DTerminalApp: App {
                     }
                     #endif
                     #if DEBUG
-                    // `-c2dResizeCheck YES`: after 3 s shrink the main window by 400×200 pt; every terminal
-                    // panel's grid must follow (trace "grid …"), proving Bible Part 4 §5.2 resize→PTY.
+                    // `-c2dResizeCheck YES`: after 3 s shrink the main window by 400×200 pt in 20 quick steps
+                    // (a live corner drag), then grow it back. Every terminal panel's grid must follow (trace
+                    // "grid …") but the PTY must get one coalesced resize per drag (trace "pty resized …"),
+                    // proving Bible Part 4 §5.2 resize→PTY. `-c2dResizeProbe <file>` appends the shell's own
+                    // COLUMNS/LINES afterwards.
                     if UserDefaults.standard.bool(forKey: "c2dResizeCheck") {
                         Task { @MainActor in
                             try? await Task.sleep(for: .seconds(3))
                             guard let w = NSApp.windows.first(where: { $0.isVisible && $0.tabbingIdentifier != "c2d.terminal" }) else { return }
-                            var f = w.frame; f.size.width -= 400; f.size.height -= 200; f.origin.y += 200
-                            debugTrace("resizeCheck: \(Int(w.frame.width))x\(Int(w.frame.height)) → \(Int(f.width))x\(Int(f.height))")
+                            var f = w.frame
+                            debugTrace("resizeCheck: \(Int(f.width))x\(Int(f.height)) → \(Int(f.width - 400))x\(Int(f.height - 200))")
+                            for _ in 0..<20 {
+                                f.size.width -= 20; f.size.height -= 10; f.origin.y += 10
+                                w.setFrame(f, display: true)
+                                try? await Task.sleep(for: .milliseconds(16))
+                            }
+                            try? await Task.sleep(for: .seconds(2))
+                            debugTrace("resizeCheck: after shrink window=\(Int(w.frame.width)) content=\(Int(w.contentView?.frame.width ?? 0)) \(terminalFrames(model))")
+                            f.size.width += 400; f.size.height += 200; f.origin.y -= 200
                             w.setFrame(f, display: true)
+                            try? await Task.sleep(for: .seconds(2))
+                            debugTrace("resizeCheck: after grow window=\(Int(w.frame.width)) \(terminalFrames(model))")
+                            if let probe = UserDefaults.standard.string(forKey: "c2dResizeProbe") {   // shell-side view of the grid
+                                model.workspace?.terminals.values.filter(\.isRunning).forEach { $0.write(Data("echo COLS=$COLUMNS LINES=$LINES >> \(probe)\n".utf8)) }
+                            }
                         }
                     }
                     Task { @MainActor in
@@ -180,6 +197,7 @@ struct C2DTerminalApp: App {
         WindowGroup("Terminal", id: "terminal", for: TerminalWindowRequest.self) { $request in
             TerminalWindowView(request: request ?? TerminalWindowRequest(directory: NSHomeDirectory()))
                 .environment(model)
+                .buttonStyle(.clickDefault)
                 .frame(minWidth: 520, minHeight: 320)
         }
         .windowStyle(.titleBar)
@@ -334,6 +352,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateCancel
     }
 }
+
+#if DEBUG
+/// Every live terminal panel's hosted view: frame vs the part actually visible, and its SwiftUI container.
+@MainActor func terminalFrames(_ model: AppModel) -> String {
+    (model.workspace?.terminals.values ?? [:].values).filter(\.isRunning).map { t in
+        guard let v = t.hostedView else { return "nohost" }
+        return "[view=\(Int(v.frame.width))x\(Int(v.frame.height)) visible=\(Int(v.visibleRect.width))x\(Int(v.visibleRect.height)) container=\(Int(v.superview?.frame.width ?? 0))x\(Int(v.superview?.frame.height ?? 0)) containerVisible=\(Int(v.superview?.visibleRect.width ?? 0))]"
+    }.joined(separator: " ")
+}
+#endif
 
 /// Debug-only stderr trace for runtime checks that run the binary directly (os_log is not readable while the process lives).
 func debugTrace(_ message: String) {

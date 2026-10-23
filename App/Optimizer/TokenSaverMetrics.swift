@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Number formatting for the Token Saver popover.
 enum TokenSaverFormat {
-    static func bytes(_ n: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file) }
-    static func sizes(_ before: Int, _ after: Int) -> String { "\(bytes(before)) → \(bytes(after))" }
+    /// 107 280 767 → "107.3M": a popover column is too narrow for full counts.
+    static func count(_ n: Int) -> String { n.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))) }
 }
 
 /// Label left, key figure right, one line of basis underneath.

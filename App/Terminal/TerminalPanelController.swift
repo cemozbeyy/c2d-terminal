@@ -37,6 +37,7 @@ final class TerminalPanelController: NSObject {
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     @ObservationIgnored private var lastGrid: (cols: Int, rows: Int) = (0, 0)
+    @ObservationIgnored private var resizeTask: Task<Void, Never>?
     /// Output is read only after `start()` succeeded; reading an unstarted session would end the stream.
     @ObservationIgnored private var started = false
 
@@ -269,8 +270,16 @@ final class TerminalPanelController: NSObject {
     private func startFeeding() {
         guard feedTask == nil, let session, let surface else { return }
         feedTask = Task { [weak self, weak surface] in
+            #if DEBUG
+            // `-c2dPtyDump <file>` appends every raw byte an agent panel receives (rendering forensics).
+            let dump = self?.agentPlan != nil ? UserDefaults.standard.string(forKey: "c2dPtyDump").flatMap { FileHandle(forWritingAtPath: $0) ?? { FileManager.default.createFile(atPath: $0, contents: nil); return FileHandle(forWritingAtPath: $0) }($0) } : nil
+            dump?.seekToEndOfFile()
+            #endif
             for await chunk in session.output {
                 guard !Task.isCancelled, let surface else { return }
+                #if DEBUG
+                dump?.write(Data(chunk))
+                #endif
                 surface.feed(byteArray: ArraySlice(chunk))
             }
             _ = self
@@ -317,8 +326,19 @@ final class TerminalPanelController: NSObject {
     func gridChanged(cols: Int, rows: Int) {
         guard cols > 0, rows > 0 else { return }
         lastGrid = (cols, rows)
+        debugTrace("grid \(cols)x\(rows) view=\(Int(hostedView?.frame.width ?? 0)) visible=\(Int(hostedView?.visibleRect.width ?? 0))")
         guard let session else { return }
-        Task { try? await session.resize(TerminalSize(rows: UInt16(rows), columns: UInt16(cols))) }
+        // A live window/divider drag fires a size change per frame. Forwarding each one makes a TUI
+        // (Claude Code's ink renderer) repaint on every SIGWINCH and leave stale rows and torn lines
+        // behind. Coalesce: only a grid that holds for 80 ms reaches the PTY, so the program redraws
+        // once at the settled size. A single programmatic resize still lands, just 80 ms later.
+        resizeTask?.cancel()
+        resizeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled, let grid = self?.lastGrid else { return }
+            do { try await session.resize(TerminalSize(rows: UInt16(grid.rows), columns: UInt16(grid.cols))); debugTrace("pty resized \(grid.cols)x\(grid.rows)") }
+            catch { debugTrace("pty resize failed: \(error)") }
+        }
     }
 
     func terminate() async {
@@ -371,7 +391,8 @@ final class TerminalPanelController: NSObject {
 
 extension TerminalPanelController: TerminalViewDelegate {
     nonisolated func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        Task { @MainActor in self.gridChanged(cols: newCols, rows: newRows) }
+        // AppKit layout calls this on the main thread; applying it inline keeps the sizes in order.
+        MainActor.assumeIsolated { self.gridChanged(cols: newCols, rows: newRows) }
     }
     nonisolated func setTerminalTitle(source: TerminalView, title: String) {}
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}

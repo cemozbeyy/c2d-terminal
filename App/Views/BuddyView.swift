@@ -273,7 +273,7 @@ struct BuddyRailButton: View {
             .frame(width: 72, height: 52)
             .background(on ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
         }
-        .buttonStyle(.plain).clickCursor()
+        .buttonStyle(.clickPlain).clickCursor()
         .onHover { hovered = $0 }
         .help(on ? "Buddy is on your desktop. Click to put Buddy to sleep." : "Buddy is asleep. Click to wake Buddy up.")
         .accessibilityLabel("Buddy")

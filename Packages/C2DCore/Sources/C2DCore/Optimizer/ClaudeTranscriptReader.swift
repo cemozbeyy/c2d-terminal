@@ -210,8 +210,10 @@ public enum ClaudeTranscriptReader {
             messages[id] = Message(usage: usage, model: model, timestamp: ts)
         }
 
-        let wanted = URL(fileURLWithPath: projectPath).standardizedFileURL.path
-        if let other = cwds.first(where: { URL(fileURLWithPath: $0).standardizedFileURL.path != wanted }) {
+        // A session started in the project keeps its transcript in the project's folder even after it moves into a
+        // subfolder (`cd docs`), so a cwd at or under the project root is the project's. Anything else is refused: folder
+        // names are lossy (`/a/b-c` and `/a/b/c` share `-a-b-c`), and this check is what keeps another project's usage out.
+        if let other = cwds.sorted().first(where: { !isWithin($0, root: projectPath) }) {
             return .failure(Failure(message: "transcript belongs to another directory (\(other))"))
         }
         guard !messages.isEmpty else { return .failure(Failure(message: "no assistant messages with usage in this file")) }
@@ -226,6 +228,15 @@ public enum ClaudeTranscriptReader {
             peakContextTokens: messages.values.map(\.usage.contextTokens).max() ?? 0,
             formatCheck: versions.isSubset(of: verifiedCLIVersions) ? .handVerified : .shapeChecked)
         return .success(SessionRead(session: session, skippedRecords: skipped, inProgressLines: inProgress))
+    }
+
+    /// True when `path` is `root` or inside it, compared by path component after resolving `.`, `..` and symlinks (a
+    /// missing path is compared as written). `/a/bc` is not inside `/a/b`; a relative path is never inside anything.
+    public static func isWithin(_ path: String, root: String) -> Bool {
+        guard path.hasPrefix("/"), root.hasPrefix("/") else { return false }
+        func components(_ p: String) -> [String] { URL(fileURLWithPath: p).standardizedFileURL.resolvingSymlinksInPath().pathComponents }
+        let p = components(path), r = components(root)
+        return p.count >= r.count && Array(p.prefix(r.count)) == r
     }
 
     private static func parseTimestamp(_ s: String) -> Date? {

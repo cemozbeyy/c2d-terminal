@@ -202,7 +202,7 @@ struct CommandPaletteView: View {
                     }
                     .padding(.vertical, 2)
                     .listRowBackground(index == selection ? Theme.accent.opacity(0.25) : Color.clear)
-                    .contentShape(Rectangle())
+                    .contentShape(Rectangle()).clickCursor()
                     .onTapGesture { run(cmd) }
                     .id(cmd.id)
                 }

@@ -1,4 +1,4 @@
-[c2d: condensed 596→638 lines; every error/warning/file:line kept; original in C2D]
+[c2d: condensed 596→638 lines; every error/warning/file:line kept]
 App/C2DTerminalApp.swift:
   242:        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); TerminalWindowConfigurator.configure(window, id: id) }
   244:    func makeNSView(context: Context) -> NSView { let v = HookView(); v.id = window; return v }

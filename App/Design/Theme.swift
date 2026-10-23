@@ -75,12 +75,33 @@ enum Theme {
     }
 }
 
+/// Every button shows the pointing hand on hover (owner rule: anything clickable or draggable changes the
+/// cursor). Installed as the default style at each window root, so a new `Button` gets it without asking;
+/// use `.clickPlain` / `.clickProminent` instead of `.plain` / `.borderedProminent`.
+struct ClickableButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle {
+    let base: Base
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration).buttonStyle(base).pointerStyle(.link)
+    }
+}
+
+extension PrimitiveButtonStyle where Self == ClickableButtonStyle<DefaultButtonStyle> {
+    static var clickDefault: Self { .init(base: .automatic) }
+}
+extension PrimitiveButtonStyle where Self == ClickableButtonStyle<PlainButtonStyle> {
+    static var clickPlain: Self { .init(base: .plain) }
+}
+extension PrimitiveButtonStyle where Self == ClickableButtonStyle<BorderedProminentButtonStyle> {
+    static var clickProminent: Self { .init(base: .borderedProminent) }
+}
+
 extension View {
-    /// Pointing-hand cursor on hover, to mark a control as clickable.
+    /// Pointing-hand cursor on hover, for clickable things that are not `Button`s (menus, toggles,
+    /// pickers, tap-gesture rows). Buttons already get it from `ClickableButtonStyle`.
     func clickCursor() -> some View { pointerStyle(.link) }
     /// Enlarges a small icon control's clickable area to a comfortable square and makes the whole
     /// square hit-test (not just the glyph). Icon buttons otherwise only respond on the few points the
-    /// symbol covers, which is hard to hit. Apply after `.buttonStyle(.plain)`.
+    /// symbol covers, which is hard to hit. Apply after `.buttonStyle(.clickPlain)`.
     func tapTarget(_ size: CGFloat = 28) -> some View {
         frame(minWidth: size, minHeight: size).contentShape(Rectangle())
     }

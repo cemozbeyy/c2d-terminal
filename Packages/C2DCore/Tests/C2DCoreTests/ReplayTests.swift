@@ -136,6 +136,59 @@ import Testing
         #expect(Replay.extract(lines: Self.transcript).samples.map(\.segment) == [0, 0, 1], "segments follow compactions")
     }
 
+    @Test func overlapCountsOnlyEarlierRunsInTheSameSegment() {
+        let a = (1...40).map { "line \($0) of the file, long enough to matter for the window" }
+        func sample(_ lines: [String], segment: Int = 0, carry: Int = 2, command: String = "sed -n 1,40p f") -> Replay.Sample {
+            Replay.Sample(command: command, output: Data((lines.joined(separator: "\n") + "\n").utf8), carry: carry, segment: segment)
+        }
+        var s = Replay.Session()
+        s.samples = [sample(a), sample(Array(a[20...]) + ["tail"], command: "cat f")]   // 20 shared lines, then new text
+        let m = Replay.overlap(in: s)
+        #expect(m.results == 2 && m.overlappingResults == 1)
+        #expect(m.overlapBytes == a[20...].reduce(0) { $0 + $1.utf8.count + 1 }, "exactly the shared run, not the new line")
+        #expect(m.byFamily == ["cat": m.overlapBytes] && m.overlapCarriedTokens > 0 && m.netCarriedTokens < m.overlapCarriedTokens)
+        s.samples = [sample(a), sample(a, segment: 1)]
+        #expect(Replay.overlap(in: s).overlapBytes == 0, "a compaction boundary resets what counts as already seen")
+        s.samples = [sample(a), sample(Array(a[0..<5]) + Array(a[32...]))]   // 5 + 8 shared lines: both under the window
+        #expect(Replay.overlap(in: s).overlapBytes == 0, "runs shorter than the window never count")
+        s.samples = [sample(a, carry: 0), sample(a)]
+        #expect(Replay.overlap(in: s).overlapBytes > 0 && Replay.overlap(in: s).overlappingResults == 1, "the first result is never overlap")
+        let twice = Replay.overlap(in: s)
+        #expect(twice == Replay.overlap(in: s), "deterministic")
+    }
+
+    @Test func independentDetectorCountsLostSuspectLinesAndClearsExactTransforms() {
+        for (name, input) in Self.corpus {
+            #expect(Replay.check(Replay.exactFold, input).suspectDropped == 0, "\(name): an exact transform loses nothing")
+        }
+        // A transform that drops its second half loses the error line in the middle; the detector sees it, the condenser's classifier agrees here.
+        let text = (1...100).map { $0 == 60 ? "note: the error is on this line" : "plain line \($0)" }.joined(separator: "\n") + "\n"
+        let half = Replay.Transform(name: "half", fidelity: .lossy, apply: { Data(String(decoding: $0, as: UTF8.self).split(separator: "\n").prefix(50).joined(separator: "\n").utf8) })
+        let o = Replay.check(half, Self.data(text))
+        #expect(o.suspectDropped == 1 && o.violations.contains(.droppedDiagnostic))
+        // Over-matching by design: "warning" in prose counts for the detector even where the classifier also counts it.
+        #expect(Replay.looksDiagnostic("just a warning about nothing") && Replay.looksDiagnostic("src/a.swift:12:3") && !Replay.looksDiagnostic("    let x = 1"))
+        // The three lossy steps measured one at a time keep the contract and stay within the combined one.
+        let log = (1...200).map { "Compiling module \($0)/200" }.joined(separator: "\n") + "\n" + String(repeating: "x", count: 5000) + "\nSources/x.swift:3:1: error: boom\n"
+        let d = Self.data(log)
+        let parts = [Replay.lossySimilar, Replay.lossyLongLines, Replay.lossyTruncate].map { Replay.check($0, d) }
+        for (i, p) in parts.enumerated() { #expect(p.violations.isEmpty && p.suspectDropped == 0 && p.shown.count <= d.count, "part \(i)") }
+        #expect(Replay.check(Replay.runnerDefault, d).shown.count <= parts.map(\.shown.count).min()!)
+        #expect(String(decoding: Replay.check(Replay.lossyTruncate, Self.data((1...400).map { "l\($0)" }.joined(separator: "\n"))).shown, as: UTF8.self).contains("lines omitted: 41–320 of this output]"))
+    }
+
+    @Test func lossyCandidateIsJudgedByTheSameContract() {
+        for (name, input) in Self.corpus {
+            let o = Replay.check(Replay.runnerDefault, input)
+            #expect(o.original == input && !o.violations.contains(.grew), "\(name)")
+            #expect(!o.violations.contains(.droppedDiagnostic), "\(name): lossy steps never drop a diagnostic")
+        }
+        let log = (1...200).map { "Compiling module \($0)/200" }.joined(separator: "\n") + "\nSources/x.swift:3:1: error: boom\n"
+        let o = Replay.check(Replay.runnerDefault, Self.data(log))
+        #expect(o.shown.count < o.original.count && o.violations.isEmpty)
+        #expect(String(decoding: o.shown, as: UTF8.self).contains("Sources/x.swift:3:1: error: boom"))
+    }
+
     @Test func restartModelMatchesTheRecordingBelowThresholdAndBracketsItAbove() {
         // A session growing by 10 k fresh tokens per call from a 50 k base, everything else read from cache.
         let calls = (0..<40).map { i in

@@ -8,3 +8,4 @@
 - Project file is generated: edit `project.yml`, run `xcodegen generate`.
 - Git: never commit unless the owner asks for it in the current message (the 2026-10-16 "commit without asking" mandate was revoked on 2026-10-18). Never `git push`, publish, deploy, or spend money without explicit permission.
 - Tests: `swift test --package-path Packages/C2DCore` (real shells, serialized). Always run with a watchdog; a hung test means a cancellation bug, not a slow machine.
+- UI: everything clickable or draggable changes the cursor on hover (owner rule). Buttons get it from `ClickableButtonStyle` — use `.buttonStyle(.clickPlain)` / `.clickProminent`, never `.plain` / `.borderedProminent`; menus, toggles, pickers and tap-gesture rows need `.clickCursor()`; a new `NSHostingView` root needs `.buttonStyle(.clickDefault)`.

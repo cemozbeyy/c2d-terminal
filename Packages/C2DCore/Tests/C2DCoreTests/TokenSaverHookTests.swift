@@ -109,6 +109,91 @@ import Testing
         none(try! JSONSerialization.data(withJSONObject: other), "failure event: output cannot be replaced there")
     }
 
+    /// Boundary and encoding cases: each either leaves the result alone (nil) or round-trips byte for byte with
+    /// every other field untouched. Nothing in between.
+    static let edgeCases: [(String, String)] = {
+        let bound = TokenSaverHook.maximumBytes
+        let rows = String(repeating: "a.swift:1:x\n", count: bound / 12)
+        var c: [(String, String)] = []
+        c.append(("whitespace only", String(repeating: " \t\n", count: 300)))
+        c.append(("blank lines", String(repeating: "\n", count: 500)))
+        c.append(("unicode rows", (1...30).map { "src/naïve_日本語_🇹🇷.swift:\($0):let é = \"e\u{301}\" // ‮rtl" }.joined(separator: "\n") + "\n"))
+        c.append(("combining marks repeated", String(repeating: "a\u{301}\u{302}\u{303}\n", count: 40)))
+        c.append(("one 200 KB line", String(repeating: "x", count: 200_000) + "\n"))
+        c.append(("long rows", (1...20).map { "a.swift:\($0):" + String(repeating: "y", count: 20_000) }.joined(separator: "\n") + "\n"))
+        c.append(("CRLF rows", (1...30).map { "a.swift:\($0):x\r" }.joined(separator: "\n") + "\r\n"))
+        c.append(("lone CR", String(repeating: "same\r", count: 20)))
+        c.append(("header collision inside", grep + OutputCondenser.exactHeader + "\n" + grep))
+        c.append(("marker collision", grep + "[c2d: previous line repeated 99 more times]\n" + grep))
+        c.append(("group collision", "src:\n  1:a\n  2:b\n  3:c\n" + grep))
+        c.append(("exit code text", grep + "exit status 2\nerror: boom\n" + grep))
+        c.append(("null bytes", (1...30).map { "a.swift:\($0):\u{0}x\u{0}" }.joined(separator: "\n") + "\n"))
+        c.append(("exactly the size bound", rows.padding(toLength: bound, withPad: "z", startingAt: 0)))
+        c.append(("one byte over the bound", rows.padding(toLength: bound + 1, withPad: "z", startingAt: 0)))
+        return c
+    }()
+
+    @Test(arguments: edgeCases) func edgeCasesEitherPassThroughOrRoundTrip(_ c: (String, String)) throws {
+        let (name, stdout) = c
+        let extra: [String: Any] = ["exitCode": 2, "returnCodeInterpretation": "exit 2", "stderr": "grep: warning\n"]
+        guard let data = TokenSaverHook.postToolUseResponse(payload: Self.payload("grep -rn x .", stdout: stdout, extra: extra)) else {
+            if stdout.utf8.count <= TokenSaverHook.maximumBytes { #expect(OutputCondenser.condenseExact(stdout) == nil, "\(name): declined only when there is nothing exact to fold") }
+            return
+        }
+        #expect(stdout.utf8.count <= TokenSaverHook.maximumBytes, "\(name): over the bound is never touched")
+        let r = try #require((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["hookSpecificOutput"] as? [String: Any])
+        let out = try #require(r["updatedToolOutput"] as? [String: Any])
+        let folded = try #require(out["stdout"] as? String)
+        #expect(OutputCondenser.expandExact(folded) == stdout && folded.utf8.count < stdout.utf8.count, "\(name): byte-exact and smaller")
+        #expect(out["exitCode"] as? Int == 2 && out["returnCodeInterpretation"] as? String == "exit 2" && out["stderr"] as? String == "grep: warning\n",
+                "\(name): exit status and stderr untouched")
+    }
+
+    /// Opt-in lossy variants (helper `--lossy`): same skip rules, same two response keys, an explicit marker that
+    /// names the omitted range, diagnostics kept; the exact fold declines the same plain file body.
+    @Test func lossyVariantsAreMarkedKeepDiagnosticsAndShareTheSkipRules() throws {
+        var body = (1...400).map { "    let field\($0) = compute(\($0))" }
+        body[249] = "    let secret = compute(7331)"; body[214] = "Sources/long.swift:215:9: error: boom"   // 250 is inside the omitted 217–320
+        let stdout = body.joined(separator: "\n") + "\n"
+        #expect(TokenSaverHook.postToolUseResponse(payload: Self.payload("cat src/long.swift", stdout: stdout)) == nil, "exact fold: nothing to fold")
+        let data = try #require(TokenSaverHook.postToolUseResponse(payload: Self.payload("cat src/long.swift", stdout: stdout), lossy: .truncate))
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let out = try #require(root["hookSpecificOutput"] as? [String: Any])
+        #expect(Set(out.keys) == ["hookEventName", "updatedToolOutput"])
+        let r = try #require(out["updatedToolOutput"] as? [String: Any])
+        let text = try #require(r["stdout"] as? String)
+        #expect(text.hasPrefix("[c2d: condensed 400→") && text.utf8.count < stdout.utf8.count)
+        #expect(text.contains("[c2d: 173 lines omitted: 41–213 of this output]") && text.contains("[c2d: 104 lines omitted: 217–320 of this output]"))
+        #expect(text.contains("Sources/long.swift:215:9: error: boom") && !text.contains("secret = compute(7331)"), "diagnostic kept, plain middle line gone")
+        #expect(text.hasSuffix("    let field400 = compute(400)\n"))
+        #expect(r["stderr"] as? String == "warn: x\n" && r["returnCodeInterpretation"] as? String == "No matches")
+        for v in TokenSaverHook.LossyVariant.allCases {
+            #expect(TokenSaverHook.postToolUseResponse(payload: Self.payload("rtk cat src/long.swift", stdout: stdout), lossy: v) == nil, "\(v): RTK-owned")
+            #expect(TokenSaverHook.postToolUseResponse(payload: Self.payload("git diff", stdout: stdout), lossy: v) == nil, "\(v): diff command")
+            #expect(TokenSaverHook.postToolUseResponse(payload: Self.payload("cat x", stdout: stdout, extra: ["interrupted": true]), lossy: v) == nil, "\(v): interrupted")
+        }
+        // Similar-line folding on this body: either nothing to fold (nil) or a marked, smaller result — never an unmarked change.
+        if let d = TokenSaverHook.postToolUseResponse(payload: Self.payload("cat src/long.swift", stdout: stdout), lossy: .similar) {
+            let t = String(decoding: d, as: UTF8.self)
+            #expect(t.contains("[c2d: condensed") && t.contains("similar lines omitted"))
+        }
+    }
+
+    /// The response can only ever carry a replacement output: no permission decision, no input rewrite, no
+    /// continue/stop control. Execution and permissions are decided before this hook runs and it cannot reach them.
+    @Test func responseCarriesNoPermissionOrExecutionSemantics() throws {
+        let data = try #require(TokenSaverHook.postToolUseResponse(payload: Self.payload("grep -rn x .", stdout: Self.grep)))
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(root.keys) == ["hookSpecificOutput"])
+        let out = try #require(root["hookSpecificOutput"] as? [String: Any])
+        #expect(Set(out.keys) == ["hookEventName", "updatedToolOutput"])
+        let forbidden = ["decision", "permissionDecision", "permissionDecisionReason", "continue", "stopReason", "suppressOutput", "updatedInput",
+                         "additionalContext", "systemMessage", "reason"]
+        let text = String(decoding: data, as: UTF8.self)
+        for key in forbidden { #expect(!text.contains("\"\(key)\""), "never emits \(key)") }
+        #expect(!text.contains("\"command\""), "the command is never echoed back")
+    }
+
     @Test func exactFoldPassesTheReplayContract() {
         for (name, data) in ReplayTests.corpus {
             #expect(Replay.check(Replay.exactFold, data).violations.isEmpty, "\(name)")

@@ -47,9 +47,16 @@ DispatchQueue.concurrentPerform(iterations: files.count) { i in
 }
 let sessions = parsed.withLock { $0.compactMap { $0 } }
 let samples = sessions.flatMap(\.samples).filter { $0.tool == "Bash" }
-let transforms = [Replay.runnerLossless, Replay.exactFold]
+let transforms = [Replay.runnerLossless, Replay.exactFold, Replay.runnerDefault, Replay.lossySimilar, Replay.lossyLongLines, Replay.lossyTruncate]
 let results = transforms.map { Replay.measure($0, on: samples) }
 let repeats = sessions.map { Replay.repeats(in: $0) }.reduce(Replay.RepeatMetrics(), +)
+let overlap = sessions.map { Replay.overlap(in: $0) }.reduce(Replay.OverlapMetrics(), +)
+// What Claude Code itself already keeps away from the model: results it moved to a file (a preview stays), and how
+// large the largest result that still reached the model in full was. Bounds any "large output" optimization.
+let persistedSamples = samples.filter { $0.output.range(of: Data("<persisted-output>".utf8)) != nil }
+let persistedBytes = persistedSamples.reduce(0) { $0 + $1.output.count }
+let largestInline = samples.filter { $0.output.range(of: Data("<persisted-output>".utf8)) == nil }.map(\.output.count).max() ?? 0
+let over32k = samples.filter { $0.output.count > 32_768 }
 
 func pct(_ part: Int, _ whole: Int) -> String { whole == 0 ? "—" : String(format: "%.2f %%", 100 * Double(part) / Double(whole)) }
 func reduction(_ before: Int, _ after: Int) -> String { "\(before.formatted()) → \(after.formatted())  (−\(pct(before - after, before)))" }
@@ -82,6 +89,7 @@ for (t, m) in zip(transforms, results) {
       Re-read    \(reduction(m.carriedRawTokens, m.carriedShownTokens))   heuristic tokens × later calls before compaction
       Changed    \(m.changed.formatted()) of \(m.samples.formatted()) outputs; error outputs changed: \(m.errorChanged) of \(m.errorSamples)
       Contract   \(Replay.Violation.allCases.map { "\($0.rawValue) \(m.violations[$0, default: 0])" }.joined(separator: ", "))
+      Suspect    \(m.suspectDropped.formatted()) lines flagged by the independent detector (error/warning/failed/path:line…, over-matching) are missing from \(m.outputsWithSuspectDropped.formatted()) outputs
     """)
 }
 print("""
@@ -91,6 +99,19 @@ Repeats      text tool results (all tools) ≥ 1 KB identical to an earlier one 
   Re-read    \(repeats.repeatCarriedTokens.formatted()) of \(repeats.carriedTokens.formatted()) heuristic re-read tokens (\(pct(repeats.repeatCarriedTokens, repeats.carriedTokens))); \
 net of the reference text \(repeats.netCarriedTokens.formatted()) (\(pct(repeats.netCarriedTokens, repeats.carriedTokens)))
   By tool    \(repeats.byTool.sorted { $0.value > $1.value }.prefix(6).map { "\($0.key) \(pct($0.value, repeats.carriedTokens))" }.joined(separator: ", "))
+""")
+
+print("""
+
+Overlap      Bash result lines already seen as a run of ≥ 10 lines in an earlier Bash result of the same segment (hashed windows; upper bound)
+  \(overlap.overlappingResults.formatted()) of \(overlap.results.formatted()) results, \(overlap.overlapBytes.formatted()) of \(overlap.bytes.formatted()) bytes (\(pct(overlap.overlapBytes, overlap.bytes)))   measured
+  Re-read    \(overlap.overlapCarriedTokens.formatted()) of \(overlap.carriedTokens.formatted()) heuristic re-read tokens (\(pct(overlap.overlapCarriedTokens, overlap.carriedTokens))); \
+net of one reference marker per result \(overlap.netCarriedTokens.formatted()) (\(pct(overlap.netCarriedTokens, overlap.carriedTokens)))
+  By program \(overlap.byFamily.sorted { $0.value > $1.value }.prefix(6).map { "\($0.key) \(pct($0.value, overlap.overlapBytes))" }.joined(separator: ", "))
+  No transform does this: it needs per-session state, a reset on compaction and proof the earlier result is still in context.
+
+Persisted    Bash results Claude Code moved to a file itself (a preview reached the model): \(persistedSamples.count) results, \(persistedBytes.formatted()) bytes as shown
+             largest result that reached the model in full: \(largestInline.formatted()) bytes; results over 32 KiB: \(over32k.count) (\(pct(over32k.reduce(0) { $0 + $1.output.count }, bashBytes)) of Bash bytes)
 """)
 
 // Session restarts: measured facts first, then a model whose assumptions are printed with it.
@@ -143,16 +164,20 @@ for c in calibration {
 }
 
 if showFamilies {
-    var byFamily: [String: (raw: Int, exact: Int, n: Int)] = [:]
+    let columns = [Replay.exactFold, Replay.lossySimilar, Replay.lossyLongLines, Replay.lossyTruncate, Replay.runnerDefault]
+    var byFamily: [String: (raw: Int, n: Int, saved: [Int])] = [:]
     for s in samples {
         let f = Replay.family(of: s.command)
-        byFamily[f, default: (0, 0, 0)].raw += s.output.count
-        byFamily[f]!.exact += s.output.count - Replay.exactFold.apply(s.output).count
-        byFamily[f]!.n += 1
+        var e = byFamily[f] ?? (0, 0, [Int](repeating: 0, count: columns.count))
+        e.raw += s.output.count; e.n += 1
+        for (i, t) in columns.enumerated() { e.saved[i] += s.output.count - t.apply(s.output).count }
+        byFamily[f] = e
     }
-    print("\nBy program (bytes, measured; exact-fold reduction; top 12 by raw bytes)")
+    print("\nBy program (bytes, measured; reduction per transform; top 12 by raw bytes)")
+    print("  " + "program".padding(toLength: 16, withPad: " ", startingAt: 0) + "        bytes  results   exact  similar  longline truncate  lossy-all")
     for (name, v) in byFamily.sorted(by: { $0.value.raw > $1.value.raw }).prefix(12) {
-        print("  \(name.padding(toLength: 16, withPad: " ", startingAt: 0)) \(v.raw.formatted()) bytes, \(v.n) results, −\(pct(v.exact, v.raw))")
+        let cells = v.saved.map { String(format: "%7.2f%%", 100 * Double($0) / Double(max(1, v.raw))) }.joined(separator: " ")
+        print("  \(name.padding(toLength: 16, withPad: " ", startingAt: 0)) \(String(format: "%12d", v.raw)) \(String(format: "%8d", v.n)) \(cells)")
     }
 }
 let elapsed = Date().timeIntervalSince(started)
@@ -175,7 +200,13 @@ if let jsonOut {
             "rereadWeightedTokens": metric("heuristic tokens × later calls before compaction", m.carriedRawTokens, m.carriedShownTokens),
             "changedOutputs": m.changed, "changedErrorOutputs": m.errorChanged,
             "violations": Dictionary(uniqueKeysWithValues: Replay.Violation.allCases.map { ($0.rawValue, m.violations[$0, default: 0]) }),
+            "suspectDroppedLines (independent detector, over-matching)": m.suspectDropped, "outputsWithSuspectDropped": m.outputsWithSuspectDropped,
         ] as [String: Any] },
+        "overlap": ["kind": "upper bound, hashed 10-line windows, Bash only", "results": overlap.results, "bytes": overlap.bytes,
+                    "overlappingResults": overlap.overlappingResults, "overlapBytes": overlap.overlapBytes, "overlapShare": ratio(overlap.overlapBytes, overlap.bytes),
+                    "carriedTokens": overlap.carriedTokens, "overlapCarriedTokens": overlap.overlapCarriedTokens, "netCarriedTokens": overlap.netCarriedTokens,
+                    "netShare": ratio(overlap.netCarriedTokens, overlap.carriedTokens), "overlapBytesByFamily": overlap.byFamily],
+        "persisted": ["results": persistedSamples.count, "bytesShown": persistedBytes, "largestInlineBytes": largestInline, "resultsOver32KiB": over32k.count],
         "repeats": ["kind": "upper bound, heuristic re-read tokens", "results": repeats.results, "repeats": repeats.repeats,
                     "repeatBytes": repeats.repeatBytes, "carriedTokens": repeats.carriedTokens, "repeatCarriedTokens": repeats.repeatCarriedTokens,
                     "netCarriedTokens": repeats.netCarriedTokens, "netShare": ratio(repeats.netCarriedTokens, repeats.carriedTokens),
