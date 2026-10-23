@@ -36,7 +36,8 @@ final class TerminalPanelController: NSObject {
     @ObservationIgnored var keyMonitor: Any?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
-    @ObservationIgnored private var lastGrid: (cols: Int, rows: Int) = (0, 0)
+    /// The grid SwiftTerm last reported (what the PTY is told); readable for the Debug resize check.
+    @ObservationIgnored private(set) var lastGrid: (cols: Int, rows: Int) = (0, 0)
     @ObservationIgnored private var resizeTask: Task<Void, Never>?
     /// Output is read only after `start()` succeeded; reading an unstarted session would end the stream.
     @ObservationIgnored private var started = false
