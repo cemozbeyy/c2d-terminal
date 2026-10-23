@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents</title>
+<title>C2D Terminal — macOS Terminal for Claude Code & AI Agents</title>
 <meta name="description" content="C2D Terminal is a native macOS terminal app where Claude Code, Git, an editor and real PTY shells share one window. Free core, local first, Apple Silicon.">
 <link rel="canonical" href="https://c2dterminal.com/">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
@@ -14,19 +14,20 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="C2D Terminal">
 <meta property="og:url" content="https://c2dterminal.com/">
-<meta property="og:title" content="C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents">
+<meta property="og:title" content="C2D Terminal — macOS Terminal for Claude Code &amp; AI Agents">
 <meta property="og:description" content="A native macOS terminal where Claude Code, Git, an editor and real PTY shells share one cozy window. Free core, local first.">
 <meta property="og:image" content="https://c2dterminal.com/shots/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="C2D Terminal workspace: explorer, editor, agent panel and a running zsh terminal">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="C2D Terminal — Native Mac Terminal for Claude Code, Git and AI Coding Agents">
+<meta name="twitter:title" content="C2D Terminal — macOS Terminal for Claude Code &amp; AI Agents">
 <meta name="twitter:description" content="A native macOS terminal where Claude Code, Git, an editor and real PTY shells share one cozy window. Free core, local first.">
 <meta name="twitter:image" content="https://c2dterminal.com/shots/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Caveat:wght@600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Caveat:wght@600&family=JetBrains+Mono:wght@500&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Caveat:wght@600&family=JetBrains+Mono:wght@500&display=swap"></noscript>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -38,6 +39,7 @@
       "image": "https://c2dterminal.com/shots/og.jpg",
       "description": "A native macOS terminal app where Claude Code, Git, an editor and real PTY shells share one window.",
       "applicationCategory": "DeveloperApplication",
+      "license": "https://opensource.org/license/mit",
       "operatingSystem": "macOS 15 or later (Apple Silicon)",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "author": { "@type": "Organization", "name": "C2D Works", "url": "https://c2dterminal.com/" },
@@ -49,7 +51,9 @@
         { "@type": "Question", "name": "Is it a real terminal or a chat window?", "acceptedAnswer": { "@type": "Answer", "text": "A real terminal. Every shell and agent runs in a genuine PTY with your own shell config and PATH." } },
         { "@type": "Question", "name": "Does my code leave my Mac?", "acceptedAnswer": { "@type": "Answer", "text": "Not to C2D. Agents talk to the provider you set up, with your own access, and you're responsible for those charges." } },
         { "@type": "Question", "name": "Will an agent commit or push for me?", "acceptedAnswer": { "@type": "Answer", "text": "Never. Commits, pushes, pulls and discards are always your explicit actions." } },
-        { "@type": "Question", "name": "How much does it cost?", "acceptedAnswer": { "@type": "Answer", "text": "The core is free: terminal, editor, Git and agents. Premium is on the way and will never lock core features." } }
+        { "@type": "Question", "name": "How much does it cost?", "acceptedAnswer": { "@type": "Answer", "text": "The core is free: terminal, editor, Git and agents. Premium is on the way and will never lock core features." } },
+        { "@type": "Question", "name": "How is this different from iTerm2 or Warp?", "acceptedAnswer": { "@type": "Answer", "text": "Those are terminal emulators. C2D Terminal is a workspace: real PTY terminals plus an editor, a Git panel and a dedicated place for Claude Code sessions, all in one native macOS window. Keep your favorite terminal for everything else." } },
+        { "@type": "Question", "name": "Does it work with Codex or other agents?", "acceptedAnswer": { "@type": "Answer", "text": "Claude Code is the verified agent today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested." } }
       ]
     }
   ]
@@ -59,7 +63,7 @@
 /* Layout: Apple-style rhythm (centered headlines, one idea per section, bento, product rising
    on scroll) in a warm, soft register: cream paper, pastel tiles, stickers, and Tiny the mascot. */
 :root{
-  --cream:#fbf6ee;--cream-2:#f4ece0;--ink:#2d2723;--ink-2:#6b625b;--ink-3:#a39890;
+  --cream:#fbf6ee;--cream-2:#f4ece0;--ink:#2d2723;--ink-2:#6b625b;--ink-3:#766b63;--lav-text:#5d49e0;
   --lav:#c9bcff;--lav-d:#6f5cf1;--peach:#ffd3b8;--mint:#c6ecd9;--butter:#ffeaa6;--sky:#cfe6ff;--rose:#ffd0dc;
   --tiny:#6f5cf1;--tiny-2:#8f80ff;
   --font:"Nunito",ui-rounded,"SF Pro Rounded","Helvetica Neue",Arial,sans-serif;
@@ -80,7 +84,7 @@ img{display:block;max-width:100%;height:auto}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;border-radius:999px;font-weight:800;font-size:16px;background:var(--ink);color:var(--cream);box-shadow:0 4px 0 #000;transition:transform .12s,box-shadow .12s}
 .pill:hover{transform:translateY(-2px);box-shadow:0 6px 0 #000}
 .pill:active{transform:translateY(3px) scale(.98);box-shadow:0 1px 0 #000}
-.more{font-weight:700;color:var(--lav-d)}
+.more{font-weight:700;color:var(--lav-text)}
 .more::after{content:" ›";display:inline-block;transition:transform .15s}
 .more:hover::after{transform:translateX(3px)}
 
@@ -92,7 +96,16 @@ img{display:block;max-width:100%;height:auto}
 .nav ul{list-style:none;display:flex;gap:22px;margin:0 auto;padding:0;color:var(--ink-2)}
 .nav ul a:hover{color:var(--ink)}
 .nav .get{background:var(--lav-d);color:#fff;padding:6px 14px;border-radius:999px;font-weight:800;font-size:13px}
-@media (max-width:760px){.nav ul{display:none}.nav .get{margin-left:auto}}
+.nav .menu{display:none;width:40px;height:40px;border:0;background:none;padding:8px;border-radius:10px;cursor:pointer;flex-direction:column;justify-content:center;gap:5px}
+.nav .menu span{display:block;height:2px;border-radius:2px;background:var(--ink);transition:transform .2s,opacity .2s}
+.nav .menu[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.nav .menu[aria-expanded="true"] span:nth-child(2){opacity:0}
+.nav .menu[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+@media (max-width:760px){
+  .nav .wrap{gap:12px}.nav ul{display:none}.nav .brand,.nav .get{white-space:nowrap}.nav .get{margin-left:auto}.nav .menu{display:flex;flex:none}
+  .nav ul.open{display:flex;flex-direction:column;gap:4px;position:absolute;left:0;right:0;top:52px;padding:10px 20px 16px;background:var(--cream);box-shadow:0 18px 30px rgba(45,39,35,.12)}
+  .nav ul.open a{display:block;padding:10px 4px;font-size:16px}
+}
 
 /* hero */
 .hero{padding-block:56px 0;gap:18px}
@@ -240,10 +253,12 @@ footer a:hover{color:var(--cream)}
 
 <nav class="nav"><div class="wrap">
   <a class="brand" href="#top"><svg><use href="#tiny"/></svg>C2D Terminal</a>
-  <ul><li><a href="#inside">Inside</a></li><li><a href="#how">How it works</a></li><li><a href="#moods">Moods</a></li><li><a href="#film">Film</a></li><li><a href="#faq">FAQ</a></li></ul>
+  <ul id="nav-links"><li><a href="#inside">Inside</a></li><li><a href="#how">How it works</a></li><li><a href="#moods">Moods</a></li><li><a href="#film">Film</a></li><li><a href="#faq">FAQ</a></li></ul>
   <a class="get" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Build from source</a>
+  <button class="menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><span></span><span></span><span></span></button>
 </div></nav>
 
+<main>
 <header class="hero wrap center" id="top">
   <div class="tiny-wrap">
     <svg class="tiny" id="tiny" viewBox="0 0 120 120" role="img" aria-label="Tiny, the C2D mascot. Click to say hi.">
@@ -257,7 +272,7 @@ footer a:hover{color:var(--cream)}
   </div>
   <span class="hand">meet your new favorite terminal</span>
   <h1>Cozy terminal.<br><em>Serious work.</em></h1>
-  <p class="sub">A native Mac workspace where Claude Code, Git and a real terminal all get along.</p>
+  <p class="sub">A native macOS terminal and workspace where Claude Code, Git and real shells all get along.</p>
   <div class="ctas"><a class="pill" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Build from source</a><a class="more" href="#film">Watch the film</a></div>
   <p class="fine">Free to start · Apple Silicon · macOS 15+</p>
 </header>
@@ -268,7 +283,7 @@ footer a:hover{color:var(--cream)}
     <span class="stk b">stays on your Mac 🌿</span>
     <span class="stk c">you hold the commit button ✋</span>
     <div class="laptop" id="laptop">
-      <div class="lid"><img src="shots/shot1.jpg" width="1600" height="962" alt="C2D Terminal workspace: Explorer, Editor, Agent panel and a running zsh terminal"></div>
+      <div class="lid"><img src="shots/shot1.jpg" fetchpriority="high" width="1600" height="962" alt="C2D Terminal workspace: Explorer, Editor, Agent panel and a running zsh terminal"></div>
       <div class="base"></div>
     </div>
   </div>
@@ -329,6 +344,14 @@ footer a:hover{color:var(--cream)}
   </div>
 </section>
 
+<section class="sec wrap center" id="for-whom" style="padding-top:0">
+  <span class="hand rv">who it's for</span>
+  <h2 class="rv">A macOS terminal built for AI coding agents.</h2>
+  <p class="lead rv">C2D Terminal is for Mac developers who run Claude Code every day and are tired of juggling a terminal app, an editor, a Git client and a chat window. It is a native Swift app for Apple Silicon Macs on macOS 15 or later, not an Electron shell.</p>
+  <p class="lead rv">If you already live in iTerm2, Warp, Ghostty or Terminal.app, you can keep them. C2D Terminal is where the agent work happens: each Claude Code session runs in its own real PTY, the files it touches show up in the built-in editor, and every change lands in the Git panel for you to review and commit. The terminal panes are real zsh, bash or fish shells with your own dotfiles, so your aliases, tmux and CLI tools work as they do anywhere else.</p>
+  <p class="lead rv">The core is free and open source under the MIT license. No account, no C2D cloud, no token resale. You bring your own provider access and your source stays on your Mac.</p>
+</section>
+
 <section class="sec wrap center" id="faq" style="padding-top:0">
   <span class="hand rv">good questions</span>
   <h2 class="rv">Ask away.</h2>
@@ -337,6 +360,8 @@ footer a:hover{color:var(--cream)}
     <details><summary>Does my code leave my Mac?</summary><p>Not to C2D. Agents talk to the provider you set up, with your own access, and you're responsible for those charges.</p></details>
     <details><summary>Will an agent commit or push for me?</summary><p>Never. Commits, pushes, pulls and discards are always your explicit actions.</p></details>
     <details><summary>How much does it cost?</summary><p>The core is free: terminal, editor, Git and agents. Premium is on the way and will never lock core features.</p></details>
+    <details><summary>How is this different from iTerm2 or Warp?</summary><p>Those are terminal emulators. C2D Terminal is a workspace: real PTY terminals plus an editor, a Git panel and a dedicated place for Claude Code sessions, all in one native macOS window. Keep your favorite terminal for everything else.</p></details>
+    <details><summary>Does it work with Codex or other agents?</summary><p>Claude Code is the verified agent today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested.</p></details>
   </div>
 </section>
 
@@ -347,13 +372,21 @@ footer a:hover{color:var(--cream)}
     <p class="lead rv">Native Mac. Free core. Your projects, your agents, your Git, all in one cozy window.</p>
     <a class="pill rv" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run" style="margin-top:8px">Build from source on GitHub</a>
     <p class="rv" style="color:#a39890;font-size:14px;font-weight:600">Apple Silicon · macOS 15 or later · Signed download coming soon</p>
-    <footer><span>© 2026 C2D Works · C2D Terminal</span><span><a href="#inside">Inside</a> · <a href="#faq">FAQ</a></span></footer>
+    <footer><span>© 2026 C2D Works · C2D Terminal</span><span><a href="#inside">Inside</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
   </div>
 </section>
+</main>
 
 <script>
 (function(){
   var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Mobile nav: button toggles the link list; Escape and link clicks close it and return focus.
+  var menu=document.querySelector('.nav .menu'),links=document.getElementById('nav-links');
+  function setMenu(open){links.classList.toggle('open',open);menu.setAttribute('aria-expanded',open?'true':'false')}
+  menu.addEventListener('click',function(){setMenu(menu.getAttribute('aria-expanded')!=='true')});
+  links.addEventListener('click',function(e){if(e.target.closest('a'))setMenu(false)});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&menu.getAttribute('aria-expanded')==='true'){setMenu(false);menu.focus()}});
 
   // Tiny: eyes follow the cursor, click for a little hello.
   var tiny=document.getElementById('tiny'),bubble=document.getElementById('bubble');
