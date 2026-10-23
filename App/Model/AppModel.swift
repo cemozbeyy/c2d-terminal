@@ -249,7 +249,33 @@ final class AppModel {
                     let plan = try AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: ws.projectPath, workingDirectory: ws.projectPath, task: nil)
                     ws.launchAgent(plan)
                     debugTrace("c2dLaunchAgent: launched \(plan.executable) \(plan.arguments)")
+                    // `-c2dAgentPrompt "<text>"` types it + Enter after 6 s; `-c2dAgentTrust YES` first answers the
+                    // first-run "trust this folder?" dialog (↓, Enter) and waits another 6 s.
+                    if let prompt = UserDefaults.standard.string(forKey: "c2dAgentPrompt") {
+                        try? await Task.sleep(for: .seconds(6))
+                        guard let t = ws.terminals.values.first(where: { $0.agentPlan != nil && $0.isRunning }) else { debugTrace("c2dAgentPrompt: no agent"); return }
+                        if UserDefaults.standard.bool(forKey: "c2dAgentTrust") {
+                            t.write(Data("\u{1b}[B".utf8)); try? await Task.sleep(for: .milliseconds(300)); t.write(Data("\r".utf8))
+                            try? await Task.sleep(for: .seconds(6))
+                        }
+                        t.write(Data(prompt.utf8)); try? await Task.sleep(for: .milliseconds(300)); t.write(Data("\r".utf8))
+                        debugTrace("c2dAgentPrompt: sent")
+                    }
                 } catch { debugTrace("c2dLaunchAgent: \(error)") }
+            }
+        }
+        // `-c2dScreenDump <file>` appends every running agent panel's screen buffer there every 2 s for
+        // 15 min (rendering forensics: pair with `-c2dPtyDump` to compare what was written with what was drawn).
+        if let path = UserDefaults.standard.string(forKey: "c2dScreenDump") {
+            Task { [weak self] in
+                for i in 0..<450 {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard let agents = self?.workspace?.terminals.values.filter({ $0.agentPlan != nil && $0.isRunning }), !agents.isEmpty else { continue }
+                    let h = FileHandle(forWritingAtPath: path) ?? { FileManager.default.createFile(atPath: path, contents: nil); return FileHandle(forWritingAtPath: path) }()
+                    h?.seekToEndOfFile()
+                    for t in agents { h?.write(Data("\n===== screen \(i) \(Date().formatted(date: .omitted, time: .standard)) =====\n\(t.screenText())".utf8)) }
+                    try? h?.close()
+                }
             }
         }
         // `-c2dOpenFile <path>` opens a file in the editor; `-c2dEditorAppendAndSave "<text>"` appends to the
