@@ -12,6 +12,14 @@ private func sh(_ script: String, size: TerminalSize = TerminalSize(rows: 24, co
                             workingDirectory: NSTemporaryDirectory(), initialSize: size)
 }
 
+/// zsh opens its tty with O_NOCTTY and never acquires a controlling terminal by itself; bash does
+/// (`check_dev_tty` reopens `ttyname(0)` at startup), which is why `sh` tests cannot prove the spawn path
+/// handed one over. Anything that asserts a controlling tty or SIGWINCH must run under zsh.
+private func zsh(_ script: String) -> PTYSessionConfiguration {
+    PTYSessionConfiguration(executable: "/bin/zsh", arguments: ["-c", script], environment: testEnv,
+                            workingDirectory: NSTemporaryDirectory())
+}
+
 private func program(_ path: String, _ args: [String] = []) -> PTYSessionConfiguration {
     PTYSessionConfiguration(executable: path, arguments: args, environment: testEnv, workingDirectory: NSTemporaryDirectory())
 }
@@ -113,7 +121,7 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
 @Suite(.serialized) struct PTYSessionTests {
 
     @Test func shellStartsWithControllingTerminalAndRunsCommand() async throws {
-        try await withSession(sh("echo hello-c2d; tty; [ -t 0 ] && echo isatty; pwd; echo END")) { session in
+        try await withSession(zsh("echo hello-c2d; tty; [ -t 0 ] && echo isatty; echo TPGID-$(ps -o tpgid= -p $$ | tr -d ' '); pwd; echo END")) { session in
             try await session.start()
             guard case .running(let pid) = await session.state else { Issue.record("not running"); return }
             #expect(pid > 0)
@@ -121,6 +129,7 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
             #expect(out.contains("hello-c2d"))
             #expect(out.contains("/dev/ttys"))
             #expect(out.contains("isatty"))
+            #expect(!out.contains("TPGID-0\r"), "child has no controlling tty")
             let tmpLeaf = NSTemporaryDirectory().split(separator: "/").last.map(String.init) ?? "T"
             #expect(out.contains("/\(tmpLeaf)\r\n"))
             #expect(try await session.waitForExit() == .exited(code: 0))
@@ -187,7 +196,7 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
     /// A full-screen program (Claude Code, vim) only redraws at the new width when SIGWINCH reaches it,
     /// which needs the slave to be the child's controlling tty — the PTY size alone is not enough.
     @Test func resizeDeliversSIGWINCHToTheChild() async throws {
-        try await withSession(sh("trap 'echo WINCH-$(stty size)' WINCH; echo TPGID-$(ps -o tpgid= -p $$ | tr -d ' ')-READY; while :; do sleep 0.1; done")) { session in
+        try await withSession(zsh("trap 'echo WINCH-$(stty size)' WINCH; echo TPGID-$(ps -o tpgid= -p $$ | tr -d ' ')-READY; while :; do sleep 0.1; done")) { session in
             try await session.start()
             let collector = OutputCollector(session)
             let ready = await collector.contains("-READY")
@@ -198,10 +207,24 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
         }
     }
 
+    /// A session leader that exits with output still queued towards the master sleeps in the kernel
+    /// (`ttywait`) until someone reads it; `terminate()` must keep draining even when the consumer stopped.
+    @Test func terminateFinishesWhenTheConsumerStoppedReading() async throws {
+        let session = PTYSession(configuration: zsh("echo READY; while :; do echo spam-spam-spam; done"))
+        try await session.start()
+        await OutputCollector(session).contains("READY")   // then nobody reads: the output queue fills up
+        try await Task.sleep(for: .milliseconds(300))
+        let status = try? await withTimeout(.seconds(5)) { await session.terminate(gracePeriod: .milliseconds(200)) }
+        if status == nil { Issue.record("terminate() wedged behind an unread output queue"); await session.close() }
+        #expect(status != nil)
+        await session.close()
+    }
+
     @Test func initialSizeIsAppliedAndResizePropagates() async throws {
         try await withSession(program("/bin/sh", [], ).withSize(rows: 31, columns: 97)) { session in
             try await session.start()
             let collector = OutputCollector(session)
+            await collector.contains("$ ")   // readline's tcsetattr(TCSAFLUSH) discards input typed before the prompt
             try await session.write(Data("stty size\n".utf8))
             let first = await collector.contains("31 97")
             #expect(first.contains("31 97"))
@@ -210,6 +233,7 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
             let second = await collector.contains("44 123")
             #expect(second.contains("44 123"))
             try await session.write(Data("exit\n".utf8))
+            await collector.drain()   // a leader exiting with unread output sleeps in the kernel until it is read
             #expect(try await session.waitForExit() == .exited(code: 0))
             await #expect(throws: PTYError.notRunning) { try await session.resize(TerminalSize(rows: 1, columns: 1)) }
         }
@@ -230,11 +254,11 @@ func processExists(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
 
     @Test func spawnFailureLeaksNothing() async throws {
         let before = openDescriptorCount()
-        // A directory passes the X_OK pre-check but cannot be exec'd, so posix_spawn itself fails
-        // after the PTY pair has been allocated — the path that must release both descriptors.
+        // A directory passes X_OK; validation must refuse it before the PTY pair is allocated, since the
+        // `/bin/sh -c exec` trampoline could only report it as exit status 126 afterwards.
         let session = PTYSession(configuration: program("/usr/bin"))
-        await #expect(throws: PTYError.spawnFailed(errno: EACCES)) { try await session.start() }
-        #expect(await session.state == .failed(.spawnFailed(errno: EACCES)))
+        await #expect(throws: PTYError.invalidExecutable(path: "/usr/bin")) { try await session.start() }
+        #expect(await session.state == .failed(.invalidExecutable(path: "/usr/bin")))
         #expect(await session.pid == nil)
         #expect(openDescriptorCount() == before)
         await session.close()
