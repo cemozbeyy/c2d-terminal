@@ -32,3 +32,6 @@ Packages/*/.build/
 
 # Private product/design docs: kept locally, never published
 docs/
+
+# Vercel CLI link (Website/)
+.vercel

@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <a href="https://c2dterminal.com"><b>c2dterminal.com</b></a>
+</p>
+
+<p align="center">
   <a href="#see-it-in-action"><img src=".github/readme/btn-demo.png" alt="Watch the demo (45 s)" height="52"></a>&nbsp;
   <a href="#build-and-run"><img src=".github/readme/btn-build.png" alt="Build from source" height="52"></a>&nbsp;
   <a href="#make-it-yours"><img src=".github/readme/btn-contribute.png" alt="Contribute" height="52"></a>
@@ -195,7 +199,7 @@ Tools/experiment/    Token Saver paired-experiment runner (bundled into the app)
 Tools/readme/        Renders the README artwork in .github/readme (./Tools/readme/render.sh)
 Scripts/             run-debug.sh, build-release.sh
 Spikes/              SwiftTerm evaluation harness (not part of the app)
-Website/             Landing page, screenshots and the demo video
+Website/             Landing page (c2dterminal.com), screenshots and the demo video
 ```
 
 ## Known limitations
