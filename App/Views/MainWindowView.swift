@@ -165,7 +165,7 @@ struct TopBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.3.group").foregroundStyle(Theme.textSecondary)
-                        Text(ws.layout.isBuiltIn ? ws.layout.name : "Custom layout").font(Theme.Typography.body).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
+                        Text("Custom layout")   // owner rule (2026-10-25): the label never changes to the preset name.font(Theme.Typography.body).fontWeight(.medium).foregroundStyle(Theme.textSecondary)
                         Image(systemName: "chevron.down").font(Theme.Typography.micro).fontWeight(.bold).foregroundStyle(Theme.textMuted)
                     }
                 }

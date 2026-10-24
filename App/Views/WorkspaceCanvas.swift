@@ -195,7 +195,9 @@ struct PanelGroupView: View {
             Divider()
             ZStack {
                 if let active, let panel = workspace.layout.panels[active] {
-                    PanelContentView(panel: panel, groupID: groupID, workspace: workspace)
+                    // Keyed by panel, not kind: two terminal tabs hit the same `switch` branch, so without this
+                    // SwiftUI kept the first tab's hosted `TerminalView` and every sibling showed the same shell.
+                    PanelContentView(panel: panel, groupID: groupID, workspace: workspace).id(active)
                 } else {
                     EmptyGroupView(groupID: groupID, workspace: workspace)
                 }
