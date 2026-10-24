@@ -1,4 +1,4 @@
-[c2d: condensed 66→46 lines; every error/warning/file:line kept; original in C2D]
+[c2d: condensed 66→46 lines; every error/warning/file:line kept]
 Building for debugging...
 [Planning deferred tasks]
 [27 / 50]

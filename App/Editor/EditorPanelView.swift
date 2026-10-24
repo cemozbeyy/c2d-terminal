@@ -46,12 +46,12 @@ struct EditorPanelView: View {
                     HStack(spacing: 4) {
                         Text(tab.name).lineLimit(1)
                         if tab.isDirty { Circle().fill(Theme.accent).frame(width: 6, height: 6).accessibilityLabel("unsaved") }
-                        Button { editor.requestClose(tab) } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.plain)
+                        Button { editor.requestClose(tab) } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.clickPlain)
                     }
                     .font(.caption)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(tab.id == editor.activeTabID ? Theme.accent.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
-                    .contentShape(Rectangle())
+                    .contentShape(Rectangle()).clickCursor()
                     .onTapGesture { editor.activate(tab) }
                     .help(tab.path)
                     .accessibilityLabel("\(tab.name)\(tab.isDirty ? ", unsaved" : "")\(tab.id == editor.activeTabID ? ", active" : "")")
@@ -69,12 +69,12 @@ struct EditorPanelView: View {
         return HStack(spacing: 4) {
             Image(systemName: "arrow.left.arrow.right").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
             Text("\(name) (\(side))").italic().lineLimit(1)
-            Button { editor.closeDiff() } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.plain)
+            Button { editor.closeDiff() } label: { Image(systemName: "xmark").font(Theme.Typography.micro) }.buttonStyle(.clickPlain)
         }
         .font(.caption)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(editor.isDiffActive ? Theme.accent.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
-        .contentShape(Rectangle())
+        .contentShape(Rectangle()).clickCursor()
         .onTapGesture { editor.activateDiff() }
         .help(git.selectedPath ?? "")
         .accessibilityLabel("Diff of \(name), \(side)\(editor.isDiffActive ? ", active" : "")")

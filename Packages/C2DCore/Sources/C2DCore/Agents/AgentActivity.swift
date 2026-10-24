@@ -21,7 +21,8 @@ public enum AgentActivity: String, Sendable, Equatable {
         ("Notification", .waiting), ("Stop", .done),
     ]
 
-    /// The `--settings` JSON that makes the CLI report into `stateFile`.
+    /// The `--settings` JSON that makes the CLI report into `stateFile`. Activity hooks only: no `PreToolUse`
+    /// hook and no `permissions` (ADR-034 retired the Token Saver command rewrite and its allow rule).
     public static func hookSettings(stateFile: String) -> String {
         let quoted = "'" + stateFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
         var hooks: [String: Any] = [:]

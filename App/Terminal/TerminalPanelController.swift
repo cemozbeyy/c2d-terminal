@@ -36,7 +36,8 @@ final class TerminalPanelController: NSObject {
     @ObservationIgnored var keyMonitor: Any?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
-    @ObservationIgnored private var lastGrid: (cols: Int, rows: Int) = (0, 0)
+    /// The grid SwiftTerm last reported (what the PTY is told); readable for the Debug resize check.
+    @ObservationIgnored private(set) var lastGrid: (cols: Int, rows: Int) = (0, 0)
     @ObservationIgnored private var resizeTask: Task<Void, Never>?
     /// Output is read only after `start()` succeeded; reading an unstarted session would end the stream.
     @ObservationIgnored private var started = false
@@ -301,8 +302,8 @@ final class TerminalPanelController: NSObject {
     /// arms for 2 s and shows a hint; a second press within that window ends the shell with `exit`, the
     /// way Claude Code quits on a double Ctrl-C. Busy/idle comes from the cached process context, so a
     /// running command is never mistaken for an idle prompt and double-^C cannot close the shell while a
-    /// command is running. (Interrupting a *running* command needs the shell to own a controlling tty,
-    /// which the PTY core does not set up yet; that is a separate, tracked limitation.)
+    /// command is running. The ^C byte also reaches the line discipline, which sends SIGINT to the
+    /// foreground group (the child owns the PTY as controlling tty since the ADR-010 amendment).
     /// Returns false for agent panels and panels without a session, which keep SwiftTerm's behaviour.
     func interrupt() -> Bool {
         guard agentPlan == nil, session != nil else { return false }

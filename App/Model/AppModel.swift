@@ -49,7 +49,6 @@ final class AppModel {
     private(set) var sessions: TerminalSessionRegistry
     private(set) var agentSessions: AgentSessionRegistry
     let taskStore: TaskStore?
-    let optimizationStore: OptimizationStore?
     /// Bounded, redacted diagnostic buffer behind the "Export Diagnostics…" bundle (Bible Part 11 §18).
     let diagnosticsRecorder = DiagnosticsRecorder()
     private(set) var entitlement = Entitlement()
@@ -122,7 +121,6 @@ final class AppModel {
         sessions = (try? TerminalSessionRegistry(store: store)) ?? (try! TerminalSessionRegistry(store: nil))
         agentSessions = (try? AgentSessionRegistry(store: store)) ?? (try! AgentSessionRegistry(store: nil))
         taskStore = (try? TaskStore(path: TaskStore.standardPath())) ?? (try? TaskStore.inMemory())
-        optimizationStore = (try? OptimizationStore(path: OptimizationStore.standardPath())) ?? (try? OptimizationStore.inMemory())
         // No entitlement document is read: until a billing provider exists (DEF-15) there is no
         // trustworthy source, and a hand-edited file must not unlock Premium (ADR-016).
         #if DEBUG
@@ -185,22 +183,6 @@ final class AppModel {
                 }
             }
         }
-        // `-c2dOptimizerDemo YES` builds a payload from the open editor files twice (to create an exact
-        // duplicate), optimizes, and records.
-        if UserDefaults.standard.bool(forKey: "c2dOptimizerDemo") {
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(2))
-                guard let ws = self?.workspace else { return }
-                ws.showOptimizerPanel()
-                let o = ws.optimizer
-                o.addOpenEditorFiles(ws); o.addOpenEditorFiles(ws)
-                o.add(ContextItem(kind: .instructions, content: "Keep the public API unchanged.", mandatory: true))
-                o.measureOnly()
-                o.optimize()
-                try? await Task.sleep(for: .seconds(1))   // the event is recorded asynchronously
-                debugTrace("c2dOptimizerDemo: items=\(o.items.count) before=\(o.result?.before.tokens ?? -1) after=\(o.result?.after.tokens ?? -1) label=\(o.report?.label ?? "none") history=\(o.history.count) error=\(o.lastError ?? "none")")
-            }
-        }
         // `-c2dPaletteQuery "<text>"` opens the palette with a query and prints the matching commands.
         if let q = UserDefaults.standard.string(forKey: "c2dPaletteQuery") {
             Task { [weak self] in
@@ -249,12 +231,12 @@ final class AppModel {
                     let plan = try AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: ws.projectPath, workingDirectory: ws.projectPath, task: nil)
                     ws.launchAgent(plan)
                     debugTrace("c2dLaunchAgent: launched \(plan.executable) \(plan.arguments)")
-                    // `-c2dAgentPrompt "<text>"` types it + Enter after 6 s; `-c2dAgentTrust YES` first answers the
-                    // first-run "trust this folder?" dialog (↓, Enter) and waits another 6 s.
+                    // `-c2dAgentPrompt "<text>"` types it + Enter after 10 s; `-c2dScreenDump <file>` writes the
+                    // agent panel's screen buffer there every 2 s (appended, separated) until quit.
                     if let prompt = UserDefaults.standard.string(forKey: "c2dAgentPrompt") {
                         try? await Task.sleep(for: .seconds(6))
                         guard let t = ws.terminals.values.first(where: { $0.agentPlan != nil && $0.isRunning }) else { debugTrace("c2dAgentPrompt: no agent"); return }
-                        if UserDefaults.standard.bool(forKey: "c2dAgentTrust") {
+                        if UserDefaults.standard.bool(forKey: "c2dAgentTrust") {   // answer the first-run "trust this folder?" dialog: ↓ then Enter
                             t.write(Data("\u{1b}[B".utf8)); try? await Task.sleep(for: .milliseconds(300)); t.write(Data("\r".utf8))
                             try? await Task.sleep(for: .seconds(6))
                         }
@@ -715,25 +697,6 @@ final class AppModel {
         // `-c2dGitSync YES` exercises fetch/pull/push through the controller against a LOCAL remote
         // (prepared by the caller): fetch should surface behind>0, pull clear it, commit make ahead>0,
         // push clear it. Makes a local commit + pushes to a local bare remote only.
-        // `-c2dTokenSaverCheck YES`: types a noisy command into the first live terminal,
-        // adds that terminal's output to the optimizer, optimizes, and writes the hand-off file — the path the
-        // panel's buttons take. Writes only `<project>/.c2d/` (git-ignored by its own .gitignore).
-        if UserDefaults.standard.bool(forKey: "c2dTokenSaverCheck") {
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(3))
-                guard let ws = self?.workspace else { return }
-                if !ws.terminals.values.contains(where: \.isRunning) { ws.newTerminal(); try? await Task.sleep(for: .seconds(3)) }
-                guard let t = ws.terminals.values.first(where: \.isRunning) else { debugTrace("tokenSaverCheck: no live terminal"); return }
-                t.write(Data("clear; for i in $(seq 1 120); do echo \"Compiling module $i/120\"; done; for i in 1 2 3 4 5; do echo 'retrying connection to build server'; done; echo 'Sources/App/main.swift:3:1: error: boom'; echo done\n".utf8))
-                try? await Task.sleep(for: .seconds(2))
-                let o = ws.optimizer
-                o.clear(); o.addTerminalOutput(t); o.lossyOutputFolding = true
-                let raw = o.items.first?.content ?? ""
-                o.optimize(); o.writeHandOffFile()
-                let file = (try? String(contentsOfFile: (ws.projectPath as NSString).appendingPathComponent(".c2d/context.md"), encoding: .utf8)) ?? ""
-                debugTrace("tokenSaverCheck: rawLines=\(raw.split(separator: "\n").count) actions=\(o.result?.actions.map(\.kind.rawValue) ?? []) before=\(o.result?.before.tokens ?? -1) after=\(o.result?.after.tokens ?? -1) errorKept=\(file.contains("main.swift:3:1: error: boom")) folded=\(file.contains("similar lines omitted")) repeat=\(file.contains("repeated")) note=\(o.handOffNote ?? o.lastError ?? "nil")")
-            }
-        }
         // `-c2dGitFetchOnly YES` — fetch through the controller against whatever origin the project has
         // (the real remote included). Read-only on purpose: no pull, commit or push.
         if UserDefaults.standard.bool(forKey: "c2dGitFetchOnly") {

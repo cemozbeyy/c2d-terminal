@@ -78,7 +78,7 @@ struct NavigationRail: View {
                     .frame(width: 72, height: 52)
                     .background(selected ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
                 }
-                .buttonStyle(.plain).clickCursor()
+                .buttonStyle(.clickPlain).clickCursor()
                 .disabled(!enabled)
                 .opacity(enabled ? 1 : 0.4)
                 .help(enabled ? d.label : "Open a project first")
@@ -121,7 +121,7 @@ struct TopBar: View {
                                     Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.textMuted)
                                         .frame(width: 14, height: 14).contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain).help("Close this page")
+                                .buttonStyle(.clickPlain).help("Close this page")
                             }
                         }
                         .padding(.leading, 9).padding(.trailing, active && model.openWorkspaces.count > 1 ? 4 : 9).frame(height: 24)
@@ -203,7 +203,7 @@ struct TopBar: View {
                 .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                 .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(Theme.borderSubtle))
             }
-            .buttonStyle(.plain).clickCursor().keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
+            .buttonStyle(.clickPlain).clickCursor().keyboardShortcut("k", modifiers: .command).accessibilityLabel("Search and commands")
 
             Button { ThemeManager.shared.toggleLightDark() } label: {
                 Image(systemName: ThemeManager.shared.isDark ? "sun.max" : "moon")
@@ -212,13 +212,13 @@ struct TopBar: View {
                     .background(Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).clickCursor()
+            .buttonStyle(.clickPlain).clickCursor()
             .help(ThemeManager.shared.isDark ? "Switch to light mode" : "Switch to dark mode")
 
             Toggle(isOn: $model.developerMode) {
                 Label("Dev Mode", systemImage: "wrench.and.screwdriver").font(Theme.Typography.detail).fontWeight(.semibold)
             }
-            .toggleStyle(.button).controlSize(.small)
+            .toggleStyle(.button).controlSize(.small).clickCursor()
             .tint(Theme.accent)
             .help("Show process ids, session ids and paths in panel headers (Bible Part 2 §11)")
 
@@ -234,7 +234,7 @@ struct TopBar: View {
                         .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).stroke(model.optimizerEnabled ? Theme.accent.opacity(0.6) : .clear))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).clickCursor()
+                .buttonStyle(.clickPlain).clickCursor()
                 .help(model.optimizerEnabled ? "Token Optimizer: on" : "Token Optimizer: off")
                 .popover(isPresented: $showOptimizerPopover, arrowEdge: .bottom) {
                     OptimizerPopover(workspace: ws)
@@ -248,7 +248,7 @@ struct TopBar: View {
                 .task {   // `-c2dPopoverSnapshot <png>`: the popover view drawn offscreen after 12 s (a transient popover closes while the app is inactive)
                     guard let path = UserDefaults.standard.string(forKey: "c2dPopoverSnapshot") else { return }
                     try? await Task.sleep(for: .seconds(12))
-                    let host = NSHostingView(rootView: OptimizerPopover(workspace: ws).environment(model))
+                    let host = NSHostingView(rootView: OptimizerPopover(workspace: ws).environment(model).buttonStyle(.clickDefault))
                     host.frame.size = host.fittingSize
                     let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
                     window.contentView = host
@@ -258,18 +258,6 @@ struct TopBar: View {
                         host.cacheDisplay(in: host.bounds, to: rep)
                         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                         debugTrace("popover snapshot written: \(path) \(Int(host.bounds.width))x\(Int(host.bounds.height))")
-                    }
-                    // The whole panel at 900 pt wide, next to the popover (the docked tile is too small to show it all).
-                    let panel = NSHostingView(rootView: OptimizerPanelView(optimizer: ws.optimizer, workspace: ws).environment(model)
-                        .frame(width: 900, height: 1400).background(Theme.panel))
-                    panel.frame.size = CGSize(width: 900, height: 1400)
-                    let panelWindow = NSWindow(contentRect: panel.frame, styleMask: .borderless, backing: .buffered, defer: false)
-                    panelWindow.contentView = panel
-                    try? await Task.sleep(for: .seconds(2))
-                    panel.layoutSubtreeIfNeeded()
-                    if let rep = panel.bitmapImageRepForCachingDisplay(in: panel.bounds) {
-                        panel.cacheDisplay(in: panel.bounds, to: rep)
-                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-panel.png")))
                     }
                 }
                 #endif
@@ -290,7 +278,7 @@ struct TopBar: View {
                 .background(active ? Theme.accent.opacity(0.15) : Theme.elevated, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).clickCursor().tooltip(help).accessibilityLabel(help)
+        .buttonStyle(.clickPlain).clickCursor().tooltip(help).accessibilityLabel(help)
     }
 }
 
@@ -371,7 +359,7 @@ struct SettingsPlaceholderView: View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings").font(.title2)
-            Toggle("Developer Mode — show process ids, session ids and paths", isOn: $model.developerMode)
+            Toggle("Developer Mode — show process ids, session ids and paths", isOn: $model.developerMode).clickCursor()
             Text("Appearance, shortcuts, terminal defaults and privacy controls arrive with their features. Only working settings are listed here (Bible §3.12).")
                 .font(.caption).foregroundStyle(Theme.textSecondary)
         }
@@ -380,11 +368,10 @@ struct SettingsPlaceholderView: View {
     }
 }
 
-/// Token Saver card behind the top-bar gauge: on/off, then the three kinds of number, kept apart.
+/// Token Saver card behind the top-bar gauge: on/off, then input, output and the C2D engine's (inactive) state.
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
-    @State private var rtkHook = false
 
     var body: some View {
         @Bindable var model = model
@@ -398,35 +385,27 @@ struct OptimizerPopover: View {
                     .foregroundStyle(model.optimizerEnabled ? Theme.success : Theme.textMuted)
                     .background((model.optimizerEnabled ? Theme.success : Theme.textMuted).opacity(0.15), in: Capsule())
                 Spacer(minLength: 8)
-                Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent)
+                Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent).clickCursor()
             }
             if model.optimizerEnabled {
-                TokenSaverMetricsView(summary: workspace.optimizer.summary, usageNote: workspace.optimizer.usageNote, compact: true)
-                if rtkHook {
-                    HStack(spacing: 4) {
-                        Text("RTK hook active in Claude Code (separate tool).").foregroundStyle(Theme.textMuted)
-                        Link("About", destination: RTKHookDetector.docsURL).clickCursor()
-                    }
-                    .font(Theme.Typography.metadata)
-                }
+                // Input/output: provider-reported (Claude Code transcripts of this project).
+                let u = workspace.optimizer.usage
+                MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens) } ?? "—",
+                          detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it cache reads · provider-reported, all Claude Code sessions of this project" } ?? workspace.optimizer.usageNote,
+                          valueMuted: u == nil)
+                MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—", detail: u == nil ? nil : "provider-reported", valueMuted: u == nil)
+                // ADR-034/035: nothing transforms agent output, so there is nothing to count as saved.
+                MetricRow(label: "Saved", value: "Not active",
+                          detail: "Nothing is transformed, so there are no verified savings. Candidate optimizations are measured offline first (ADR-034).",
+                          valueMuted: true)
             } else {
                 Text("Off: nothing is measured, recorded or read.").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
-            }
-            if model.optimizerEnabled || model.developerMode {
-                Button {
-                    workspace.toggleOptimizerPanel()
-                } label: {
-                    Text(workspace.isOptimizerVisible ? "Hide Token Saver" : "Open Token Saver").font(Theme.Typography.detail).fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered).controlSize(.small).clickCursor()
             }
         }
         .padding(Theme.space4)
         .frame(width: 300)
         .background(Theme.panel)
         .task(id: model.optimizerEnabled) {
-            rtkHook = model.optimizerEnabled && RTKHookDetector.isConfigured()   // TSD-02: read-only, never writes the settings file
             await workspace.optimizer.loadLedger()
         }
     }

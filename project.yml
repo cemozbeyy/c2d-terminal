@@ -16,10 +16,6 @@ targets:
     platform: macOS
     sources:
       - App
-      # Token Saver paired-experiment runner: copied as-is into Resources/experiment (folder reference, never compiled).
-      - path: Tools/experiment
-        type: folder
-        buildPhase: resources
     dependencies:
       - package: C2DCore
       - package: SwiftTerm

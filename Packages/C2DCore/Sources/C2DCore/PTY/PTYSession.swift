@@ -124,8 +124,13 @@ public actor PTYSession {
         var slaveStat = stat()
         if fstat(slaveFD, &slaveStat) == 0 { slaveDevice = slaveStat.st_rdev }
 
-        // Child: new session, slave opened by path so it becomes the controlling tty,
-        // stdin/stdout/stderr on the slave, cwd set, every other descriptor closed.
+        // Child: new session, slave on stdin/stdout/stderr, cwd set, every other descriptor closed.
+        // The slave does NOT become the controlling tty here: XNU runs spawn file actions before
+        // POSIX_SPAWN_SETSID, so the child is not yet a session leader when `addopen` runs, and the
+        // kernel never grants a ctty implicitly to a non-leader. Without a ctty the PTY has no
+        // foreground group, so TIOCSWINSZ reaches nobody (no SIGWINCH), ^C/^Z deliver no signal and
+        // closing the master hangs nothing up. bash hides this by reopening its tty at startup
+        // (`check_dev_tty`); zsh (O_NOCTTY) and Claude Code do not. See the trampoline below.
         var actions: posix_spawn_file_actions_t? = nil
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
@@ -143,7 +148,13 @@ public actor PTYSession {
         posix_spawnattr_setsigmask(&attr, &noSignals)
         posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT))
 
-        let argv = [configuration.executable] + configuration.arguments
+        // Trampoline: by the time `sh` runs, SETSID has made it a session leader, and a session leader's
+        // first open of a tty without O_NOCTTY acquires it as controlling tty (bash and dash open
+        // `<>` redirections that way). `exec` then keeps pid, ctty, cwd and environment for the real
+        // program, so the exit watcher and `terminate()` see the same pid as before. The slave path
+        // travels as `$0`; the executable and its arguments as `"$@"`, untouched.
+        let argv = ["/bin/sh", "-c", "exec 0<>\"$0\" 1>&0 2>&0 && exec \"$@\"", slavePath, configuration.executable]
+            + configuration.arguments
         let envp = configuration.environment.map { "\($0.key)=\($0.value)" }
         var cArgv: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) } + [nil]
         var cEnvp: [UnsafeMutablePointer<CChar>?] = envp.map { strdup($0) } + [nil]
@@ -153,7 +164,7 @@ public actor PTYSession {
         }
 
         var childPID: pid_t = 0
-        let rc = posix_spawn(&childPID, configuration.executable, &actions, &attr, &cArgv, &cEnvp)
+        let rc = posix_spawn(&childPID, argv[0], &actions, &attr, &cArgv, &cEnvp)
         Darwin.close(slaveFD)   // the parent must not keep the slave open, or the master never sees EOF
         slaveFD = -1
         guard rc == 0 else { throw fail(.spawnFailed(errno: rc)) }
@@ -213,16 +224,16 @@ public actor PTYSession {
                 kill(p.pid, SIGCONT)   // a stopped job cannot act on SIGHUP otherwise (what the kernel does on hangup)
             }
             let deadline = ContinuousClock.now + gracePeriod
-            let status = await waitForExit(timeout: gracePeriod)
+            let status = await draining { await waitForExit(timeout: gracePeriod) }
             if status == nil, case .terminating = state {
                 Log.pty.notice("terminate pid=\(pid, privacy: .public) escalating to SIGKILL")
                 kill(pid, SIGKILL)
             }
             await finishDescendants(descendants, deadline: deadline)
             if let status { return status }
-            return try? await waitForExit()
+            return await draining { try? await waitForExit() }
         case .terminating:
-            return try? await waitForExit()
+            return await draining { try? await waitForExit() }
         case .exited(let status):
             return status
         case .created, .failed:
@@ -250,6 +261,20 @@ public actor PTYSession {
         }
         guard let result else { throw CancellationError() }
         return result
+    }
+
+    /// Keeps the master drained while `body` waits for the exit, whenever no consumer read is in flight.
+    /// A session leader that exits with bytes still queued towards the master sleeps in the kernel until
+    /// they are read (XNU `proc_exit` → `ttywait`); nothing, not even SIGKILL, finishes it before then.
+    /// The app's terminal view reads continuously, but a consumer that stopped reading must not wedge
+    /// `terminate()` forever.
+    private func draining<T: Sendable>(_ body: () async -> T) async -> T {
+        let handle = master
+        let drain = Task.detached {
+            while !Task.isCancelled { handle.drainIfIdle(); try? await Task.sleep(for: .milliseconds(25)) }
+        }
+        defer { drain.cancel() }
+        return await body()
     }
 
     private func cancelExitWaiter(_ id: UUID) {
@@ -389,6 +414,21 @@ private final class MasterHandle: Sendable {
             return g.readInFlight ? nil : g.fd
         }
         if let fd = fdToClose, fd >= 0 { Darwin.close(fd) }
+    }
+
+    /// Reads and discards whatever is already pending, unless a consumer read is in flight (then the
+    /// consumer drains). Bounded: at most 64 × 4 KiB per call.
+    func drainIfIdle() {
+        guarded.withLock { g in
+            guard !g.closed, g.fd >= 0, !g.readInFlight else { return }
+            let fd = g.fd
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            for _ in 0..<64 {
+                var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                guard poll(&pfd, 1, 0) > 0,
+                      buffer.withUnsafeMutableBytes({ Darwin.read(fd, $0.baseAddress, $0.count) }) > 0 else { return }
+            }
+        }
     }
 
     /// Reads one chunk off the actor on a global queue. `nil` means EOF, closed, or the

@@ -32,6 +32,26 @@ final class FocusableTerminalView: TerminalView {
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         super.mouseDown(with: event)
     }
+
+    /// During a live window drag SwiftTerm 1.99 queues each size for its render loop instead of resizing the
+    /// grid synchronously (`queueSizeChange`), and nothing reconciles at the end of the drag. Re-applying the
+    /// final frame once the drag is over takes the synchronous path (`inLiveResize` is false now), so the grid
+    /// — and through `sizeChanged`, the PTY — always ends at the settled size. A no-op when already consistent.
+    #if DEBUG
+    /// `-c2dResizeCheck` moves the window programmatically, which never sets `inLiveResize`; this flag makes the
+    /// view take SwiftTerm's live-drag path (queued size changes) so the check covers what a pointer drag does.
+    var simulatedLiveResize = false
+    override var inLiveResize: Bool { simulatedLiveResize || super.inLiveResize }
+    #endif
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.inLiveResize else { return }
+            self.setFrameSize(self.frame.size)
+            debugTrace("live resize ended: view=\(Int(self.frame.width))x\(Int(self.frame.height)) container=\(Int(self.superview?.frame.width ?? 0))x\(Int(self.superview?.frame.height ?? 0))")
+        }
+    }
 }
 
 struct TerminalSurfaceView: NSViewRepresentable {
@@ -56,12 +76,23 @@ struct TerminalSurfaceView: NSViewRepresentable {
     /// terminal is never blanked when a sibling tab is closed). Returning a cached NSView straight from
     /// `makeNSView` is unsafe; re-parenting a persistent subview between fresh containers is the robust
     /// way to keep an AppKit view alive across SwiftUI view-identity changes.
+    /// The terminal always fills its container: `layout()` re-applies `bounds` on every AppKit layout pass, so
+    /// the frame can never lag behind a window or divider drag or a re-parenting into a container that had no
+    /// size yet. Autoresizing masks alone left the hosted view at a stale width (owner report 2026-10-23: text
+    /// cut off at the width of an earlier, narrower pane after the window grew back).
+    final class Container: NSView {
+        override func layout() {
+            super.layout()
+            for v in subviews where v.frame != bounds { v.frame = bounds }
+        }
+    }
+
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = Container()
         let term = controller.hostedView ?? makeTerminal()
         term.frame = container.bounds
-        term.autoresizingMask = [.width, .height]
         if term.superview !== container { term.removeFromSuperview(); container.addSubview(term) }
+        container.needsLayout = true
         DispatchQueue.main.async { [weak term] in
             guard let term, let window = term.window, window.isKeyWindow else { return }
             if !(window.firstResponder is NSText || window.firstResponder is TerminalView) {

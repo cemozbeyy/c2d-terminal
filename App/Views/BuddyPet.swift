@@ -275,7 +275,7 @@ final class BuddyPetContentView: NSView {
     init(frame: NSRect, state: BuddyPetState) {
         self.state = state
         super.init(frame: frame)
-        let host = NSHostingView(rootView: BuddyPetView(state: state))
+        let host = NSHostingView(rootView: BuddyPetView(state: state).buttonStyle(.clickDefault))
         host.frame = bounds
         host.autoresizingMask = [.width, .height]
         addSubview(host)

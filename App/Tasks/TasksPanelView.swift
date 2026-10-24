@@ -17,7 +17,7 @@ struct TasksPanelView: View {
                 TextField("New task title…", text: $newTitle).textFieldStyle(.roundedBorder).font(.caption)
                     .onSubmit { let t = newTitle; newTitle = ""; Task { await tasks.create(title: t) } }
                 Button("Add") { let t = newTitle; newTitle = ""; Task { await tasks.create(title: t) } }.disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                Toggle("Done", isOn: $tasks.showTerminal).toggleStyle(.checkbox).font(.caption).onChange(of: tasks.showTerminal) { Task { await tasks.reload() } }
+                Toggle("Done", isOn: $tasks.showTerminal).toggleStyle(.checkbox).clickCursor().font(.caption).onChange(of: tasks.showTerminal) { Task { await tasks.reload() } }
             }
             .padding(8)
             TextField("Filter", text: $tasks.filterText).textFieldStyle(.roundedBorder).font(.caption).padding(.horizontal, 8).padding(.bottom, 6)
@@ -75,7 +75,7 @@ struct TasksPanelView: View {
                         Text(statusLabel(t.status)).font(.caption).bold().padding(.horizontal, 6).padding(.vertical, 2).background(Theme.accent.opacity(0.2), in: Capsule())
                         Picker("", selection: Binding(get: { t.priority }, set: { v in var r = t; r.priority = v; Task { await tasks.update(r) } })) {
                             ForEach(TaskPriority.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.pickerStyle(.menu).fixedSize().controlSize(.small)
+                        }.pickerStyle(.menu).fixedSize().controlSize(.small).clickCursor()
                         Spacer()
                     }
                     transitions(t)
@@ -158,7 +158,7 @@ struct TasksPanelView: View {
                     ForEach(tasks.plans) { p in Button(p.goal) { Task { await tasks.assign(t, toPlan: p.id) } } }
                     Divider()
                     Button("New plan…") { creatingPlan = true }
-                }.font(.caption).fixedSize()
+                }.font(.caption).fixedSize().clickCursor()
                 Spacer()
                 if let p = tasks.plan(for: t) {
                     Text("\(tasks.tasks(inPlan: p.id).count) task(s), \(tasks.eligibleCount(inPlan: p.id)) ready")
@@ -200,7 +200,7 @@ struct TasksPanelView: View {
                         Text("(\(statusLabel(d.status)))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary)
                         Spacer()
                         Button { Task { await tasks.removeDependency(t, on: d.id) } } label: { Image(systemName: "xmark.circle").font(Theme.Typography.metadata) }
-                            .buttonStyle(.plain).help("Remove this dependency")
+                            .buttonStyle(.clickPlain).help("Remove this dependency")
                     }
                 }
                 if !tasks.isEligible(t) {
@@ -210,7 +210,7 @@ struct TasksPanelView: View {
             if !candidates.isEmpty {
                 Menu("Add dependency…") {
                     ForEach(candidates) { c in Button(c.title) { Task { await tasks.addDependency(t, on: c) } } }
-                }.font(.caption).fixedSize()
+                }.font(.caption).fixedSize().clickCursor()
             }
             if !dependents.isEmpty {
                 Text("Blocks: \(dependents.map(\.title).joined(separator: ", "))").font(Theme.Typography.micro).foregroundStyle(Theme.textSecondary).lineLimit(2)

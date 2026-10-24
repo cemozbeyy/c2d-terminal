@@ -45,7 +45,7 @@ import Testing
         #expect(c.text.contains(lines[1000]) && c.text.contains(lines[999]) && c.text.contains(lines[1001]))
         #expect(c.text.contains(lines[1500]))
         #expect(c.text.contains("line 0 payload") && c.text.contains(lines[1999]))
-        #expect(c.text.contains("lines omitted]"))
+        #expect(c.text.contains("lines omitted: ") && c.text.contains(" of this output]"))
         #expect(c.linesAfter < 140 && c.original == lines.joined(separator: "\n"))
         #expect(c.text.hasPrefix("[c2d: condensed 2000→"))
     }
@@ -119,7 +119,7 @@ struct OutputCondenserFixtureTests {
             let raw = String(decoding: try Data(contentsOf: f), as: UTF8.self)
             let clock = ContinuousClock.now
             let c = OutputCondenser.condense(raw, options: options)
-            if let dir = ProcessInfo.processInfo.environment["C2D_CONDENSED_OUT"] {   // inputs for docs/token-saver/paired_experiment.py
+            if let dir = ProcessInfo.processInfo.environment["C2D_CONDENSED_OUT"] {   // inputs for Tools/experiment/paired_experiment.py (copy the 6 files tasks.example.json names into Tools/experiment/context)
                 try c.text.write(toFile: "\(dir)/\(f.deletingPathExtension().lastPathComponent).\(mode).txt", atomically: true, encoding: .utf8)
             }
             let ms = Double((ContinuousClock.now - clock) / .microseconds(1)) / 1000

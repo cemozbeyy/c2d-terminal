@@ -222,7 +222,6 @@ struct PanelGroupView: View {
                 Button { workspace.newPanel(.projectExplorer, in: groupID) } label: { Label("Explorer", systemImage: "folder") }
                 Button { workspace.newPanel(.gitChanges, in: groupID) } label: { Label("Git Changes", systemImage: "arrow.triangle.branch") }
                 Button { workspace.newPanel(.tasks, in: groupID) } label: { Label("Tasks", systemImage: "checklist") }
-                Button { workspace.newPanel(.tokenOptimizer, in: groupID) } label: { Label("Token Optimizer", systemImage: "gauge.with.dots.needle.33percent") }
             } label: {
                 Image(systemName: "plus").font(Theme.Typography.detail).fontWeight(.semibold)
             }
@@ -230,10 +229,10 @@ struct PanelGroupView: View {
             .tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Add a panel to this group")
             if workspace.layout.maximizedGroup == groupID {
                 Button { workspace.exitFocusMode() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
+                    .buttonStyle(.clickPlain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Exit Focus Mode")
             } else {
                 Button { workspace.maximize(groupID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(Theme.Typography.detail).fontWeight(.semibold) }
-                    .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
+                    .buttonStyle(.clickPlain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Focus Mode: this group fills the workspace")
             }
         }
         .padding(.horizontal, 8)
@@ -314,12 +313,12 @@ struct PanelTab: View {
             Image(systemName: style.symbol).font(Theme.Typography.metadata).fontWeight(.semibold).foregroundStyle(isActive ? style.tint : Theme.textMuted)
             Text(title).lineLimit(1).font(.system(size: 11.5, weight: isActive ? .semibold : .regular))
             Button { workspace.requestClose(panel.id) } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
-                .buttonStyle(.plain).tapTarget(22).clickCursor().foregroundStyle(Theme.textMuted).help("Close panel")
+                .buttonStyle(.clickPlain).tapTarget(22).clickCursor().foregroundStyle(Theme.textMuted).help("Close panel")
         }
         .foregroundStyle(isActive ? Theme.textPrimary : Theme.textSecondary)
         .padding(.horizontal, 9).padding(.vertical, 5)
         .background(isActive ? Theme.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
-        .contentShape(Rectangle())
+        .contentShape(Rectangle()).clickCursor()
         .onTapGesture { workspace.activate(panel.id) }
         .onDrag {
             workspace.draggingPanel = panel.id
@@ -364,8 +363,6 @@ struct PanelContentView: View {
             AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:
             TasksPanelView(tasks: workspace.tasks, workspace: workspace)
-        case .tokenOptimizer:
-            OptimizerPanelView(optimizer: workspace.optimizer, workspace: workspace)
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }
@@ -420,13 +417,13 @@ struct TerminalPanelView: View {
                 }
                 if let onSplit {
                     Button { onSplit(false) } label: { Image(systemName: "rectangle.split.2x1").font(Theme.Typography.detail).fontWeight(.semibold) }
-                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split right (⌘D): a new shell beside this one")
+                        .buttonStyle(.clickPlain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split right (⌘D): a new shell beside this one")
                     Button { onSplit(true) } label: { Image(systemName: "rectangle.split.1x2").font(Theme.Typography.detail).fontWeight(.semibold) }
-                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split down (⌘⇧D): a new shell below this one")
+                        .buttonStyle(.clickPlain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Split down (⌘⇧D): a new shell below this one")
                 }
                 if let onClose {
                     Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
-                        .buttonStyle(.plain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Close this pane (ends its shell)")
+                        .buttonStyle(.clickPlain).tapTarget().clickCursor().foregroundStyle(Theme.textMuted).help("Close this pane (ends its shell)")
                 }
             }
             .padding(.horizontal, Theme.space2).frame(height: 28)
@@ -440,7 +437,7 @@ struct TerminalPanelView: View {
                         Text("Shell: \(URL(fileURLWithPath: r.shell).lastPathComponent) · directory: \(r.initialDirectory)")
                             .font(.caption).foregroundStyle(Theme.textMuted).lineLimit(2).truncationMode(.middle)
                     }
-                    Button("New Session") { controller.startNewSession() }.tint(Theme.accent).buttonStyle(.borderedProminent)
+                    Button("New Session") { controller.startNewSession() }.tint(Theme.accent).buttonStyle(.clickProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.panel)   // placeholder, not a terminal: readable in light themes

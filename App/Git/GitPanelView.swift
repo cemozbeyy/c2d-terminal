@@ -21,7 +21,7 @@ struct GitPanelView: View {
                     Text("Changes").tag(0); Text("Branches").tag(1); Text("Worktrees").tag(2); Text("History").tag(3)
                 }
                 .pickerStyle(.menu).controlSize(.small).fixedSize().labelsHidden()
-                Button { Task { await git.refresh(); await git.loadBranchesAndHistory(); await git.loadWorktrees() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).clickCursor().help("Refresh from git")
+                Button { Task { await git.refresh(); await git.loadBranchesAndHistory(); await git.loadWorktrees() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.clickPlain).clickCursor().help("Refresh from git")
             }
             .padding(.horizontal, 8).frame(height: 30).background(Theme.panel)
             Divider()
@@ -100,12 +100,11 @@ struct GitPanelView: View {
                     if s.isClean { Text("No changes").font(.caption).foregroundStyle(Theme.textSecondary).padding(10) }
                     let conflicted = s.entries.filter(\.isConflicted)
                     let staged = s.entries.filter(\.hasStagedChange)
-                    let unstaged = s.entries.filter(\.hasUnstagedChange)
-                    let untracked = s.entries.filter(\.isUntracked)
+                    // VS Code's default (`git.untrackedChanges: mixed`): untracked files sit in Changes with a U, sorted by path.
+                    let unstaged = s.entries.filter { $0.hasUnstagedChange || $0.isUntracked }.sorted { $0.path < $1.path }
                     if !conflicted.isEmpty { group("Merge Changes", conflicted, kind: .conflicted) }
                     if !staged.isEmpty { group("Staged Changes", staged, kind: .staged) }
                     if !unstaged.isEmpty { group("Changes", unstaged, kind: .unstaged) }
-                    if !untracked.isEmpty { group("Untracked", untracked, kind: .untracked) }
                 } else {
                     Text("Reading status…").font(.caption).foregroundStyle(Theme.textSecondary).padding(10)
                 }
@@ -117,12 +116,13 @@ struct GitPanelView: View {
 
     @ViewBuilder private func group(_ title: String, _ entries: [GitStatusEntry], kind: GitChangeGroup) -> some View {
         let open = !collapsed.contains(title)
-        GitGroupHeader(title: title, count: entries.count, open: open, kind: kind, paths: entries.map(\.path), git: git, workspace: workspace) {
+        GitGroupHeader(title: title, count: entries.count, open: open, kind: kind, paths: entries.map(\.path),
+                       discardable: entries.filter { !$0.isUntracked }.map(\.path), git: git, workspace: workspace) {
             if open { collapsed.insert(title) } else { collapsed.remove(title) }
         }
         if open {
             ForEach(entries, id: \.self) { e in
-                GitChangeRow(entry: e, kind: kind, git: git, workspace: workspace, onHistory: { showHistory(for: e.path) })
+                GitChangeRow(entry: e, kind: e.isUntracked && kind == .unstaged ? .untracked : kind, git: git, workspace: workspace, onHistory: { showHistory(for: e.path) })
             }
         }
     }
@@ -147,7 +147,7 @@ struct GitPanelView: View {
                         }
                         .frame(width: 16, height: 16).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain).foregroundStyle(Theme.accent).clickCursor()
+                    .buttonStyle(.clickPlain).foregroundStyle(Theme.accent).clickCursor()
                     .disabled(git.generatingMessage || git.isBusy)
                     .help("Generate a commit message with Claude Code")
                 }
@@ -161,12 +161,12 @@ struct GitPanelView: View {
                     Label(git.stagedCount > 0 ? "Commit (\(git.stagedCount))" : "Commit", systemImage: "checkmark")
                         .font(.system(size: 13)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.clickPlain).keyboardShortcut(.return, modifiers: .command)
                 Rectangle().fill(Theme.onAccent.opacity(0.35)).frame(width: 1, height: 16)
                 Menu {
                     Button("Commit & Push") { Task { await git.commit(); if git.lastError == nil { await git.push() } } }
                 } label: { Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28).contentShape(Rectangle()) }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.button).buttonStyle(.clickPlain).menuIndicator(.hidden).fixedSize()
             }
             .foregroundStyle(Theme.onAccent).frame(height: 28)
             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 4))
@@ -243,7 +243,7 @@ struct GitPanelView: View {
                     Text("History of \(p)").font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     Button { git.historyPath = nil; Task { await git.loadBranchesAndHistory() } } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.plain).clickCursor().help("Show all history")
+                        .buttonStyle(.clickPlain).clickCursor().help("Show all history")
                 }
                 .padding(.horizontal, 8).frame(height: 24)
                 Divider()
@@ -275,6 +275,8 @@ private struct GitGroupHeader: View {
     let open: Bool
     let kind: GitChangeGroup
     let paths: [String]
+    /// Discard targets: tracked files only (`git checkout` cannot restore an untracked file, and C2D never deletes one).
+    let discardable: [String]
     @Bindable var git: GitController
     let workspace: WorkspaceController
     let toggle: () -> Void
@@ -290,7 +292,7 @@ private struct GitGroupHeader: View {
                 switch kind {
                 case .staged: GitIconButton(symbol: "minus", help: "Unstage All Changes") { Task { await git.unstage(paths) } }
                 case .unstaged:
-                    GitIconButton(symbol: "arrow.uturn.backward", help: "Discard All Changes") { git.discardRequest = paths }
+                    if !discardable.isEmpty { GitIconButton(symbol: "arrow.uturn.backward", help: "Discard All Changes") { git.discardRequest = discardable } }
                     GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
                 case .untracked: GitIconButton(symbol: "plus", help: "Stage All Changes") { Task { await git.stage(paths) } }
                 case .conflicted: EmptyView()
@@ -308,7 +310,7 @@ private struct GitGroupHeader: View {
             switch kind {
             case .staged: Button("Unstage All Changes") { Task { await git.unstage(paths) } }
             case .unstaged:
-                Button("Discard All Changes") { git.discardRequest = paths }
+                Button("Discard All Changes") { git.discardRequest = discardable }.disabled(discardable.isEmpty)
                 Button("Stage All Changes") { Task { await git.stage(paths) } }
             case .untracked: Button("Stage All Changes") { Task { await git.stage(paths) } }
             case .conflicted: EmptyView()
@@ -406,7 +408,7 @@ private struct GitIconButton: View {
 
     var body: some View {
         Button(action: action) { Image(systemName: symbol).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textSecondary).frame(width: 18, height: 18).contentShape(Rectangle()) }
-            .buttonStyle(.plain).clickCursor().help(help)
+            .buttonStyle(.clickPlain).clickCursor().help(help)
     }
 }
 
@@ -426,7 +428,7 @@ struct DiffView: View {
                 Text(title).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 if truncated { Text("truncated to \(GitController.diffLineLimit) lines").font(.caption).foregroundStyle(Theme.warning) }
-                if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain).clickCursor().help("Close diff") }
+                if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.clickPlain).clickCursor().help("Close diff") }
             }
             .padding(.horizontal, 8).frame(height: 22)
             Divider()
@@ -471,7 +473,7 @@ struct DiffView: View {
                         Text(hunk.header).font(Theme.Typography.monoDetail).foregroundStyle(Theme.info).lineLimit(1).fixedSize()
                         Spacer(minLength: 12)
                         if let title = hunkActionTitle, let action = onHunkAction {
-                            Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.plain).foregroundStyle(Theme.accent)
+                            Button(title) { action(hunkIndex, hunk) }.font(.caption).buttonStyle(.clickPlain).foregroundStyle(Theme.accent)
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 2)
@@ -597,7 +599,7 @@ struct GitStatusBarItems: View {
                 }
                 .padding(.horizontal, 6).frame(maxHeight: .infinity).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).clickCursor().help("Checkout branch…")
+            .buttonStyle(.clickPlain).clickCursor().help("Checkout branch…")
             .popover(isPresented: $picking, arrowEdge: .top) { BranchPicker(git: git, isPresented: $picking) }
 
             Button { Task { git.hasUpstream ? await git.sync() : await git.publish() } } label: {
@@ -608,7 +610,7 @@ struct GitStatusBarItems: View {
                 }
                 .padding(.horizontal, 6).frame(maxHeight: .infinity).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).clickCursor().disabled(git.isBusy)
+            .buttonStyle(.clickPlain).clickCursor().disabled(git.isBusy)
             .help(git.hasUpstream ? "Synchronize Changes (pull ↓\(git.behindCount), push ↑\(git.aheadCount))" : "Publish Branch to origin")
         }
         .foregroundStyle(Theme.textSecondary)

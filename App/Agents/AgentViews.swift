@@ -53,7 +53,7 @@ struct AgentPanelView: View {
                             Text("Provider not available on this machine; the previous session cannot be restarted here.").font(.caption).foregroundStyle(Theme.warning)
                         }
                     }
-                    Button("Start Agent…") { showLaunch = true }.tint(Theme.accent).buttonStyle(.borderedProminent)
+                    Button("Start Agent…") { showLaunch = true }.tint(Theme.accent).buttonStyle(.clickProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.panel)   // placeholder, not a terminal: readable in light themes
@@ -100,14 +100,14 @@ struct AgentLaunchSheet: View {
             Text(linkedTask.map { "Start an agent for “\($0.title)”" } ?? "Start an agent session").font(.headline)
             Picker("Provider", selection: $providerID) {
                 ForEach(AgentProvider.builtIn) { p in Text(p.displayName).tag(p.id) }
-            }
+            }.clickCursor()
             statusLine
             Picker("Directory", selection: $directory) {
                 Text("Project root — \(workspace.projectName)").tag(workspace.projectPath)
                 ForEach(workspace.git.worktrees, id: \.path) { w in
                     Text("Worktree \(w.branch ?? "?") — \(w.path)").tag(w.path)
                 }
-            }
+            }.clickCursor()
             .task { await workspace.git.loadWorktrees() }
             if provider.capabilities.initialPromptArgument {
                 TextField("Task (optional, passed as the initial prompt)", text: $task, axis: .vertical).lineLimit(2...4)

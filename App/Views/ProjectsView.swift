@@ -61,12 +61,12 @@ struct ProjectRow: View {
             }
             Spacer()
             if available {
-                Button("Open", action: open).buttonStyle(.borderedProminent)
+                Button("Open", action: open).buttonStyle(.clickProminent)
             } else {
                 Button("Locate…", action: relocate)
             }
         }
-        .contentShape(Rectangle())
+        .contentShape(Rectangle()).clickCursor()
         .onTapGesture(count: 2) { if available { open() } }
         .contextMenu {
             Button(project.pinned ? "Unpin" : "Pin", action: pin)

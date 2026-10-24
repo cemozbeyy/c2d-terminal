@@ -36,7 +36,7 @@ final class WorkspaceController {
         self.explorer = ExplorerController(rootPath: projectPath)
         self.git = GitController(projectPath: projectPath, diagnostics: app.diagnosticsRecorder)
         self.tasks = TaskController(projectPath: projectPath, store: app.taskStore, app: app)
-        self.optimizer = OptimizerController(projectPath: projectPath, store: app.optimizationStore, app: app)
+        self.optimizer = OptimizerController(projectPath: projectPath, app: app)
         // Remote failures (fetch/pull/push) are started from the top bar, so they must be visible even
         // when the Git panel is hidden: route them to the window-level message banner as well.
         git.onRemoteFailure = { [weak app] title, detail in app?.report(title, detail) }
@@ -95,18 +95,6 @@ final class WorkspaceController {
         }
         activate(target)
         return target
-    }
-
-    /// Opens (or reveals) the single optimizer panel for this workspace.
-    var isOptimizerVisible: Bool { layout.visiblePanelIDs.contains { layout.panels[$0]?.kind == .tokenOptimizer } }
-    /// Top-bar toggle: hides the optimizer panel when it is showing, otherwise shows/restores/adds it.
-    func toggleOptimizerPanel() {
-        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { hide(visible) } else { showOptimizerPanel() }
-    }
-    func showOptimizerPanel() {
-        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { activate(visible); return }
-        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == .tokenOptimizer }) { restore(hidden); return }
-        addPanel(.tokenOptimizer, title: "Token Saver", besideGroup: layout.groupIDs.last)
     }
 
     /// Shows or hides the file-tree sidebar (VS-Code ⌘B): hides a visible explorer, restores a hidden

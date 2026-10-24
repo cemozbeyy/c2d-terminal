@@ -92,10 +92,13 @@ public struct PTYSessionConfiguration: Sendable {
     /// Checks everything that can be checked without spawning. Deterministic; no side effects.
     public func validate() throws(PTYError) {
         guard initialSize.rows > 0, initialSize.columns > 0 else { throw PTYError.invalidSize }
-        guard executable.hasPrefix("/"), access(executable, X_OK) == 0 else {
+        var isDir: ObjCBool = false
+        // A directory passes X_OK; reject it here because the spawn goes through `/bin/sh -c exec`,
+        // which would only report it as exit status 126 after the PTY is already allocated.
+        guard executable.hasPrefix("/"), access(executable, X_OK) == 0,
+              FileManager.default.fileExists(atPath: executable, isDirectory: &isDir), !isDir.boolValue else {
             throw PTYError.invalidExecutable(path: executable)
         }
-        var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workingDirectory, isDirectory: &isDir), isDir.boolValue,
               access(workingDirectory, X_OK) == 0 else {
             throw PTYError.invalidWorkingDirectory(path: workingDirectory)

@@ -16,6 +16,7 @@ struct C2DTerminalApp: App {
         WindowGroup("C2D Terminal") {
             MainWindowView()
                 .environment(model)
+                .buttonStyle(.clickDefault)
                 .onAppear {
                     delegate.model = model
                     // Only once the main window exists: a visible pet panel at launch makes SwiftUI skip
@@ -79,15 +80,26 @@ struct C2DTerminalApp: App {
                             guard let w = NSApp.windows.first(where: { $0.isVisible && $0.tabbingIdentifier != "c2d.terminal" }) else { return }
                             var f = w.frame
                             debugTrace("resizeCheck: \(Int(f.width))x\(Int(f.height)) → \(Int(f.width - 400))x\(Int(f.height - 200))")
+                            // A pointer drag puts every view in live resize (SwiftTerm then queues size changes for its
+                            // render loop instead of resizing synchronously); simulate that around the stepped frames.
+                            let views = model.workspace?.terminals.values.compactMap { $0.hostedView as? FocusableTerminalView } ?? []
+                            func liveResize(_ on: Bool) { for v in views { v.simulatedLiveResize = on; if on { v.viewWillStartLiveResize() } else { v.viewDidEndLiveResize() } } }
+                            liveResize(true)
                             for _ in 0..<20 {
                                 f.size.width -= 20; f.size.height -= 10; f.origin.y += 10
                                 w.setFrame(f, display: true)
                                 try? await Task.sleep(for: .milliseconds(16))
                             }
+                            liveResize(false)
                             try? await Task.sleep(for: .seconds(2))
                             debugTrace("resizeCheck: after shrink window=\(Int(w.frame.width)) content=\(Int(w.contentView?.frame.width ?? 0)) \(terminalFrames(model))")
-                            f.size.width += 400; f.size.height += 200; f.origin.y -= 200
-                            w.setFrame(f, display: true)
+                            liveResize(true)
+                            for _ in 0..<20 {
+                                f.size.width += 20; f.size.height += 10; f.origin.y -= 10
+                                w.setFrame(f, display: true)
+                                try? await Task.sleep(for: .milliseconds(16))
+                            }
+                            liveResize(false)
                             try? await Task.sleep(for: .seconds(2))
                             debugTrace("resizeCheck: after grow window=\(Int(w.frame.width)) \(terminalFrames(model))")
                             if let probe = UserDefaults.standard.string(forKey: "c2dResizeProbe") {   // shell-side view of the grid
@@ -196,6 +208,7 @@ struct C2DTerminalApp: App {
         WindowGroup("Terminal", id: "terminal", for: TerminalWindowRequest.self) { $request in
             TerminalWindowView(request: request ?? TerminalWindowRequest(directory: NSHomeDirectory()))
                 .environment(model)
+                .buttonStyle(.clickDefault)
                 .frame(minWidth: 520, minHeight: 320)
         }
         .windowStyle(.titleBar)
@@ -356,7 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor func terminalFrames(_ model: AppModel) -> String {
     (model.workspace?.terminals.values ?? [:].values).filter(\.isRunning).map { t in
         guard let v = t.hostedView else { return "nohost" }
-        return "[view=\(Int(v.frame.width))x\(Int(v.frame.height)) visible=\(Int(v.visibleRect.width))x\(Int(v.visibleRect.height)) container=\(Int(v.superview?.frame.width ?? 0))x\(Int(v.superview?.frame.height ?? 0)) containerVisible=\(Int(v.superview?.visibleRect.width ?? 0))]"
+        return "[view=\(Int(v.frame.width))x\(Int(v.frame.height)) visible=\(Int(v.visibleRect.width))x\(Int(v.visibleRect.height)) container=\(Int(v.superview?.frame.width ?? 0))x\(Int(v.superview?.frame.height ?? 0)) containerVisible=\(Int(v.superview?.visibleRect.width ?? 0)) grid=\(t.lastGrid.cols)x\(t.lastGrid.rows)]"
     }.joined(separator: " ")
 }
 #endif
