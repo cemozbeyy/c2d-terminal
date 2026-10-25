@@ -25,6 +25,9 @@ final class OptimizerController {
     /// Transcript session id → attribution, recomputed on every scan from the agent registry (pure, deterministic).
     private(set) var attribution: [String: SessionAttribution] = [:]
     private(set) var launchesWithoutTranscript: [AgentSessionRecord] = []
+    /// Whether the user's Claude Code settings run RTK as a `PreToolUse` Bash hook (TSD-02). Read-only, user-level
+    /// `settings.json` only; nil until read or while Token Saver is off. RTK's filtering is counted by `rtk gain`, never here.
+    private(set) var rtkHookConfigured: Bool?
 
     @ObservationIgnored private unowned let app: AppModel
 
@@ -36,6 +39,23 @@ final class OptimizerController {
     var isEnabled: Bool { app.optimizerEnabled }
     /// Provider-reported totals over every session of this project; nil until read or when unavailable. Usage, never savings.
     var usage: ProviderUsage? { if case .available(let l)? = ledger { return l.total }; return nil }
+    /// TSD-06 boundary for the totals: "verified" when every counted session's CLI version was hand-verified, otherwise
+    /// "shape-checked" (accepted by the read-time shape check only). Provider-reported either way; only the format check differs.
+    var usageFormatTag: String? {
+        guard case .available(let l)? = ledger, !l.sessions.isEmpty else { return nil }
+        return l.sessions.allSatisfy { $0.formatCheck == .handVerified } ? "verified format" : "some sessions shape-checked, not hand-verified"
+    }
+    /// The project's newest session by last reply — any Claude Code session in this folder, not only C2D launches —
+    /// with how it relates to a C2D launch. Its `lastContextTokens` / `peakContextTokens` are provider-reported sizes of
+    /// single requests (input + cache read + cache creation), a different measure from the summed `usage` above.
+    var newestSession: (session: TranscriptSession, attribution: SessionAttribution)? {
+        guard case .available(let l)? = ledger, let s = l.sessions.first else { return nil }
+        return (s, attribution[s.id] ?? .unmatched)
+    }
+    /// The settings file the RTK check reads (`CLAUDE_CONFIG_DIR` aware), shown so the user knows what was and was not checked.
+    var rtkSettingsPath: String {
+        (ClaudeTranscriptReader.defaultClaudeHome().appendingPathComponent("settings.json").path as NSString).abbreviatingWithTildeInPath
+    }
     /// Why there is no usage figure right now.
     var usageNote: String {
         if !app.optimizerEnabled { return "Token Saver is off; transcripts are not read." }
@@ -47,12 +67,14 @@ final class OptimizerController {
     /// Scans this project's transcript folder off the main actor (ADR-022). A no-op while the Token
     /// Optimizer switch is off (Addendum A.6.7: the whole surface can be switched off).
     func loadLedger() async {
-        guard app.optimizerEnabled else { ledger = nil; return }
+        guard app.optimizerEnabled else { ledger = nil; rtkHookConfigured = nil; return }
         guard !ledgerLoading else { return }
         ledgerLoading = true
         defer { ledgerLoading = false }
         let path = projectPath
-        ledger = await Task.detached(priority: .userInitiated) { ClaudeTranscriptReader.read(projectPath: path) }.value
+        let read = await Task.detached(priority: .userInitiated) { (ClaudeTranscriptReader.read(projectPath: path), RTKHookDetector.isConfigured()) }.value
+        ledger = read.0
+        rtkHookConfigured = read.1
         ledgerScannedAt = Date()
         let sessions: [TranscriptSession] = { if case .available(let l)? = ledger { return l.sessions }; return [] }()
         let records = app.agentSessions.records(forProject: projectPath)

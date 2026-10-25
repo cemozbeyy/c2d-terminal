@@ -393,7 +393,34 @@ struct OptimizerPopover: View {
                 MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens) } ?? "—",
                           detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it cache reads · provider-reported, all Claude Code sessions of this project" } ?? workspace.optimizer.usageNote,
                           valueMuted: u == nil)
-                MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—", detail: u == nil ? nil : "provider-reported", valueMuted: u == nil)
+                MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—",
+                          detail: u == nil ? nil : "provider-reported" + (workspace.optimizer.usageFormatTag.map { " · \($0)" } ?? ""), valueMuted: u == nil)
+                // TSD-01 option 1: per-request context of the newest session. A different measure from the totals above
+                // (one request's provider-reported size, not a sum), so the row says which session and which request.
+                if let n = workspace.optimizer.newestSession {
+                    let s = n.session
+                    let origin: String = switch n.attribution {
+                        case .linked: "launched from C2D"
+                        case .unmatched: "not launched from C2D"
+                        case .ambiguous: "launch ambiguous"
+                    }
+                    let when = s.lastTimestamp.map { t in
+                        Calendar.current.isDateInToday(t) ? t.formatted(date: .omitted, time: .shortened) : t.formatted(date: .abbreviated, time: .shortened)
+                    } ?? "time unknown"
+                    // TSD-06: provider-reported numbers; what varies is whether C2D hand-verified this CLI version's transcript format.
+                    let format = s.formatCheck == .handVerified ? "CLI \(s.cliVersion), verified format" : "CLI \(s.cliVersion), shape-checked format, not hand-verified"
+                    MetricRow(label: "Context now / peak",
+                              value: "\(s.lastContextTokens > 0 ? TokenSaverFormat.count(s.lastContextTokens) : "—") / \(TokenSaverFormat.count(s.peakContextTokens))",
+                              detail: "Newest session (\(origin), last reply \(when)). Provider-reported size of one request, last and largest; not a share of the totals above. \(format).")
+                }
+                // TSD-02: RTK's own PreToolUse hook filters Bash output before Claude sees it. Read-only (user settings.json);
+                // its savings are RTK's (`rtk gain`), never attributed here.
+                let rtk = workspace.optimizer.rtkHookConfigured
+                MetricRow(label: "RTK hook", value: rtk.map { $0 ? "Configured" : "Not configured" } ?? "—",
+                          detail: rtk.map { $0
+                              ? "RTK filters Bash output before Claude sees it; `rtk gain` counts that, not this card. Read from \(workspace.optimizer.rtkSettingsPath), never changed."
+                              : "No RTK PreToolUse hook in \(workspace.optimizer.rtkSettingsPath) (user settings only; project settings are not checked)." },
+                          valueMuted: rtk == nil)
                 // ADR-034/035: nothing transforms agent output, so there is nothing to count as saved.
                 MetricRow(label: "Saved", value: "Not active",
                           detail: "Nothing is transformed, so there are no verified savings. Candidate optimizations are measured offline first (ADR-034).",
