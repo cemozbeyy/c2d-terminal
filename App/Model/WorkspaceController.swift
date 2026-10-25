@@ -110,7 +110,7 @@ final class WorkspaceController {
         while dir.hasPrefix(root), dir != root { ancestors.append(dir); dir = (dir as NSString).deletingLastPathComponent }
         for d in ancestors.reversed() { explorer.expanded.insert(d); explorer.reload(d) }
         explorer.selectedPath = file
-        if !layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == .projectExplorer }) { toggleExplorer() }
+        if !layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == .projectExplorer }), !flipVisibleSidebar(to: .projectExplorer) { toggleExplorer() }
     }
 
     /// The Claude Code executable path when that provider is installed — i.e. whether "AI is connected"
@@ -120,16 +120,59 @@ final class WorkspaceController {
 
     /// Source Control as a left sidebar block (not a full-screen view): reveals a Git changes panel
     /// docked on the left, next to the editor — the way VS Code shows it.
+    /// Repeated clicks keep it there (VS Code's activity bar), they never hide it.
     func toggleGitPanel() {
-        toggleDockedPanel(.gitChanges, title: "Changes")
-        if layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == .gitChanges }) {
-            Task { await git.refresh() }
+        showSidebar(.gitChanges)
+        Task { await git.refresh() }
+    }
+
+    /// The rail's Explorer / Git items: bring that sidebar forward, flipping the other one in place, or dock it.
+    func showSidebar(_ kind: PanelKind) {
+        if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == kind }) {
+            activate(visible)
+        } else if !flipVisibleSidebar(to: kind) {
+            toggleDockedPanel(kind, title: Self.defaultTitle(for: kind))
         }
+    }
+
+    /// Which sidebar the rail highlights: Source Control only while it is on screen without an Explorer.
+    var sidebarShowsChanges: Bool {
+        let kinds = layout.visiblePanelIDs.compactMap { layout.panels[$0]?.kind }
+        return kinds.contains(.gitChanges) && !kinds.contains(.projectExplorer)
+    }
+
+    /// When `kind` is not on screen but the other sidebar kind is, flips that panel in place instead of
+    /// docking a second sidebar beside it. Returns whether it flipped.
+    private func flipVisibleSidebar(to kind: PanelKind) -> Bool {
+        let other: PanelKind = kind == .gitChanges ? .projectExplorer : .gitChanges
+        guard !layout.visiblePanelIDs.contains(where: { layout.panels[$0]?.kind == kind }),
+              let id = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == other }) else { return false }
+        switchSidebar(id, to: kind)
+        activate(id)
+        return true
+    }
+
+    /// VS Code's activity bar: one sidebar panel flips between Explorer and Source Control in place.
+    func switchSidebar(_ id: PanelID, to kind: PanelKind) {
+        guard let current = layout.panels[id]?.kind, current != kind else { return }
+        mutate("sidebar \(kind.rawValue)") { layout in
+            layout.panels[id]?.kind = kind
+            layout.panels[id]?.title = Self.defaultTitle(for: kind)
+        }
+        if kind == .gitChanges { Task { await git.refresh() } }
     }
 
     private func toggleDockedPanel(_ kind: PanelKind, title: String) {
         if let visible = layout.visiblePanelIDs.first(where: { layout.panels[$0]?.kind == kind }) { hide(visible); return }
-        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == kind }) { restore(hidden); return }
+        // A hidden sidebar comes back docked on the far left, not as a tab in whatever group is first.
+        if let hidden = layout.hidden.first(where: { layout.panels[$0]?.kind == kind }) {
+            mutate("restore \(kind.rawValue)") { layout in
+                let leftmost = layout.groupIDs.first
+                try layout.restore(hidden)
+                if let leftmost { try layout.move(hidden, beside: leftmost, edge: .left) }
+            }
+            return
+        }
         let panel = Panel(kind: kind, title: title)
         mutate("show \(kind.rawValue)") { layout in
             if let leftmost = layout.groupIDs.first {

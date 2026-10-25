@@ -23,11 +23,14 @@ struct MainWindowView: View {
     private var mainContent: some View {
         @Bindable var model = model
         return HStack(spacing: 0) {
-            NavigationRail(destination: $model.destination, hasWorkspace: model.workspace != nil) { d in
-                // Source Control opens as a docked left panel in the workspace, not a full-screen page.
+            NavigationRail(destination: railSelection, hasWorkspace: model.workspace != nil) { d in
+                // Explorer and Git are the workspace's left sidebar (VS Code's activity bar), not full-screen pages.
                 if d == .sourceControl, let ws = model.workspace {
                     model.destination = .workspace
                     ws.toggleGitPanel()
+                } else if d == .workspace, let ws = model.workspace {
+                    model.destination = .workspace
+                    ws.showSidebar(.projectExplorer)
                 } else {
                     model.destination = d
                 }
@@ -45,6 +48,12 @@ struct MainWindowView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// In the workspace the rail follows the sidebar: Git while Changes is showing, Explorer otherwise.
+    private var railSelection: Destination {
+        guard model.destination == .workspace || model.destination == .sourceControl, let ws = model.workspace else { return model.destination }
+        return ws.sidebarShowsChanges ? .sourceControl : .workspace
+    }
+
     @ViewBuilder private var content: some View {
         switch model.destination {
         case .projects: ProjectsView()
@@ -59,7 +68,7 @@ struct MainWindowView: View {
 }
 
 struct NavigationRail: View {
-    @Binding var destination: Destination
+    let destination: Destination
     let hasWorkspace: Bool
     var onSelect: (Destination) -> Void
 
