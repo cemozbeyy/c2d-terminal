@@ -355,12 +355,18 @@ struct PanelContentView: View {
         switch panel.kind {
         case .terminal:
             TerminalPanelView(controller: workspace.terminal(for: panel.id))
-        case .projectExplorer:
-            ExplorerPanelView(explorer: workspace.explorer, workspace: workspace)
+        case .projectExplorer, .gitChanges:
+            VStack(spacing: 0) {
+                SidebarSwitcher(panel: panel, workspace: workspace)
+                Divider()
+                if panel.kind == .projectExplorer {
+                    ExplorerPanelView(explorer: workspace.explorer, workspace: workspace)
+                } else {
+                    GitPanelView(git: workspace.git, workspace: workspace)
+                }
+            }
         case .editor:
             EditorPanelView(editor: workspace.editor(for: panel.id))
-        case .gitChanges:
-            GitPanelView(git: workspace.git, workspace: workspace)
         case .agentSession:
             AgentPanelView(controller: workspace.agent(for: panel.id), workspace: workspace)
         case .tasks:
@@ -368,6 +374,41 @@ struct PanelContentView: View {
         default:
             UnavailablePanelView(panel: panel, workspace: workspace)
         }
+    }
+}
+
+/// VS Code's activity bar at the top of the sidebar: flips this panel between Explorer and Source Control.
+struct SidebarSwitcher: View {
+    let panel: Panel
+    let workspace: WorkspaceController
+
+    var body: some View {
+        HStack(spacing: 2) {
+            item(.projectExplorer, symbol: "doc.on.doc", label: "Explorer")
+            item(.gitChanges, symbol: "arrow.triangle.branch", label: "Source Control")
+            Spacer()
+        }
+        .padding(.horizontal, 6).frame(height: 30).background(Theme.panel)
+    }
+
+    private func item(_ kind: PanelKind, symbol: String, label: String) -> some View {
+        let active = panel.kind == kind
+        let count = kind == .gitChanges ? workspace.git.status?.entries.count ?? 0 : 0
+        return Button { workspace.switchSidebar(panel.id, to: kind) } label: {
+            Image(systemName: symbol).font(.system(size: 14))
+                .foregroundStyle(active ? Theme.textPrimary : Theme.textMuted)
+                .frame(width: 30, height: 26)
+                .background(active ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 {
+                        Text("\(count)").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.onAccent)
+                            .padding(.horizontal, 3).background(Theme.accent, in: Capsule())
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.clickPlain).help(label)
+        .accessibilityLabel(count > 0 ? "\(label), \(count) changes" : label)
     }
 }
 

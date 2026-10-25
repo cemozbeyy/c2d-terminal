@@ -16,7 +16,7 @@ enum Destination: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .projects: "Projects"
-        case .workspace: "Workspace"
+        case .workspace: "Explorer"
         case .sourceControl: "Git"
         case .agents: "Agents"
         case .tasks: "Tasks"
@@ -27,7 +27,7 @@ enum Destination: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .projects: "folder"
-        case .workspace: "rectangle.3.group"
+        case .workspace: "doc.on.doc"
         case .sourceControl: "arrow.triangle.branch"
         case .agents: "cpu"
         case .tasks: "checklist"

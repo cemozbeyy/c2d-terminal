@@ -22,9 +22,11 @@ struct ExplorerPanelView: View {
             .padding(.horizontal, 8).frame(height: 24)
             Divider()
             ScrollView {
+                let badges = workspace.git.badges
+                let dirty = Self.dirtyFolders(badges.keys, root: explorer.rootPath)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(flattened()) { item in
-                        row(item.entry, depth: item.depth)
+                        row(item.entry, depth: item.depth, badge: badges[item.entry.path], dirty: dirty.contains(item.entry.path))
                     }
                 }
                 .padding(.vertical, 4)
@@ -59,7 +61,21 @@ struct ExplorerPanelView: View {
         return out
     }
 
-    private func row(_ entry: FileEntry, depth: Int) -> some View {
+    /// Every folder above a changed path, so a collapsed folder still shows VS Code's change dot.
+    static func dirtyFolders(_ paths: some Sequence<String>, root: String) -> Set<String> {
+        var out = Set<String>()
+        for p in paths {
+            var dir = (p as NSString).deletingLastPathComponent
+            while dir.count > root.count, out.insert(dir).inserted { dir = (dir as NSString).deletingLastPathComponent }
+        }
+        return out
+    }
+
+    static func badgeColor(_ badge: String) -> Color {
+        badge == "D" || badge == "C" ? Theme.error : badge == "U" || badge == "A" ? Theme.success : Theme.warning
+    }
+
+    private func row(_ entry: FileEntry, depth: Int, badge: String?, dirty: Bool) -> some View {
         HStack(spacing: 4) {
             if entry.isDirectory {
                 Image(systemName: explorer.expanded.contains(entry.path) ? "chevron.down" : "chevron.right").font(Theme.Typography.micro).frame(width: 10)
@@ -68,16 +84,31 @@ struct ExplorerPanelView: View {
             }
             let style = entry.isDirectory ? (explorer.expanded.contains(entry.path) ? "folder" : "folder.fill", Theme.info) : FileIcon.style(for: entry.name)
             Image(systemName: style.0).foregroundStyle(style.1).font(Theme.Typography.body).frame(width: 16)
-            Text(entry.name).font(Theme.Typography.title2).foregroundStyle(Theme.textPrimary).lineLimit(1)   // colour lives in the icon; tinted names fail on tinted panels
+            // VS Code tints a changed file's name, and a folder holding changes, by git status
+            Text(entry.name).font(Theme.Typography.title2).lineLimit(1)
+                .foregroundStyle(badge.map(Self.badgeColor) ?? (dirty ? Theme.warning : Theme.textPrimary))
+                .strikethrough(badge == "D")
             if entry.isSymlink { Image(systemName: "arrow.turn.down.right").font(.system(size: 8)).foregroundStyle(Theme.textSecondary) }
             Spacer()
-            if let badge = workspace.git.badges[entry.path] {
+            if let badge {
                 Text(badge).font(Theme.Typography.monoMetadata).bold()
-                    .foregroundStyle(badge == "D" ? Theme.error : badge == "U" || badge == "A" ? Theme.success : Theme.warning)
+                    .foregroundStyle(Self.badgeColor(badge))
                     .padding(.trailing, 8).accessibilityLabel("git status \(badge)")
+            } else if dirty {
+                Circle().fill(Theme.warning.opacity(0.8)).frame(width: 6, height: 6)
+                    .padding(.trailing, 10).accessibilityLabel("contains changes")
             }
         }
-        .padding(.leading, CGFloat(depth) * 16 + 8).padding(.vertical, 4)
+        .padding(.leading, CGFloat(depth) * 16 + 8).frame(height: 22)
+        // indent guides, one per ancestor level
+        .overlay(alignment: .leading) {
+            HStack(spacing: 0) {
+                ForEach(0..<depth, id: \.self) { _ in
+                    Rectangle().fill(Theme.borderSubtle).frame(width: 1).padding(.leading, 12).frame(width: 16, alignment: .leading)
+                }
+            }
+            .padding(.leading, 8)
+        }
         .background(explorer.selectedPath == entry.path ? Theme.accentSoft : hoveredPath == entry.path ? Theme.elevated : .clear)
         .contentShape(Rectangle()).clickCursor()
         .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
