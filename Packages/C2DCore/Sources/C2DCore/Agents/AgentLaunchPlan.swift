@@ -15,7 +15,8 @@ public struct AgentLaunchPlan: Hashable, Sendable {
     /// one. It is the only evidence the Token Saver uses to link a transcript to this launch.
     public let providerSessionID: String?
 
-    public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?) throws -> AgentLaunchPlan {
+    public static func make(provider: AgentProvider, executablePath: String, projectPath: String, workingDirectory: String, task: String?,
+                            tokenSaverHook: TokenSaverLaunchHook? = nil) throws -> AgentLaunchPlan {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workingDirectory, isDirectory: &isDir), isDir.boolValue, access(workingDirectory, X_OK) == 0 else {
             throw AgentError.invalidWorkingDirectory(workingDirectory)
@@ -27,9 +28,10 @@ public struct AgentLaunchPlan: Hashable, Sendable {
         let sessionID = provider.capabilities.explicitSessionID ? UUID().uuidString.lowercased() : nil   // fresh per launch: the CLI refuses a reused id
         var arguments = (sessionID.map { ["--session-id", $0] } ?? []) + provider.launchArguments(task: task)
         if provider.id == AgentProvider.claudeCode.id, let sessionID {
-            // Activity hooks (working / waiting / done) for the desktop pet; see AgentActivity. Nothing else (ADR-034).
+            // Activity hooks (working / waiting / done) for the desktop pet; see AgentActivity. No rewrite, no allow rule (ADR-034);
+            // the fold hook only when `TokenSaverLaunchHook.decide` said so.
             try? FileManager.default.createDirectory(at: AgentActivity.directory(), withIntermediateDirectories: true)
-            arguments = ["--settings", AgentActivity.hookSettings(stateFile: AgentActivity.stateFile(sessionID: sessionID).path)] + arguments
+            arguments = ["--settings", AgentActivity.hookSettings(stateFile: AgentActivity.stateFile(sessionID: sessionID).path, tokenSaverHook: tokenSaverHook)] + arguments
         }
         return AgentLaunchPlan(provider: provider, executable: executablePath, arguments: arguments,
                                projectPath: projectPath, workingDirectory: workingDirectory, task: task, environmentAdditions: [:],

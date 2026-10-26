@@ -13,8 +13,8 @@ struct Entitlement: Codable, Equatable {
 }
 
 /// Token Saver: provider-reported usage read from Claude Code's local transcripts (TS-1) and attributed to
-/// C2D-launched sessions (TS-2). Read-only, on demand, nothing stored. Nothing here transforms agent
-/// output (ADR-034/035), so there is no "saved" figure to compute.
+/// C2D-launched sessions (TS-2), plus the unified savings report (`UnifiedGain`: RTK-powered + C2D fold, both
+/// estimates from each engine's own count). Read-only, on demand; nothing here transforms agent output.
 @MainActor
 @Observable
 final class OptimizerController {
@@ -28,6 +28,13 @@ final class OptimizerController {
     /// Whether the user's Claude Code settings run RTK as a `PreToolUse` Bash hook (TSD-02). Read-only, user-level
     /// `settings.json` only; nil until read or while Token Saver is off. RTK's filtering is counted by `rtk gain`, never here.
     private(set) var rtkHookConfigured: Bool?
+    /// The unified live report (RTK-powered + C2D fold), read with the ledger; nil while off or not read yet.
+    private(set) var gain: UnifiedGain?
+    /// The same unified report over every project (`c2d gain --global`), read on request.
+    private(set) var globalGain: UnifiedGain?
+    /// Offline replay of this project's transcripts, computed on request and kept in memory only.
+    private(set) var replay: GainReport?
+    private(set) var replayLoading = false
 
     @ObservationIgnored private unowned let app: AppModel
 
@@ -56,6 +63,29 @@ final class OptimizerController {
     var rtkSettingsPath: String {
         (ClaudeTranscriptReader.defaultClaudeHome().appendingPathComponent("settings.json").path as NSString).abbreviatingWithTildeInPath
     }
+    /// Whether a Claude launch here would carry the C2D fold hook, and why not.
+    var foldDecision: TokenSaverLaunchHook.Decision { app.tokenSaverHookDecision(projectPath: projectPath) }
+
+    /// Reads the all-projects report (C2D ledger, every project; RTK's whole history, read-only).
+    func loadGlobalGain() async {
+        guard app.optimizerEnabled else { globalGain = nil; return }
+        globalGain = await Task.detached(priority: .userInitiated) { () -> UnifiedGain in
+            let store = (try? OptimizationStore.standardPath()).flatMap { try? OptimizationStore(path: $0) }
+            let events = await (try? store?.events(source: .live)) ?? []
+            return UnifiedGain(c2dEvents: events, rtk: RTKLedger.read(projectPath: nil), projectPath: nil)
+        }.value
+    }
+
+    /// Replays this project's transcripts through the exact fold (offline, in memory, nothing stored or sent).
+    func loadReplay() async {
+        guard app.optimizerEnabled, !replayLoading else { return }
+        replayLoading = true
+        defer { replayLoading = false }
+        let folder = ClaudeTranscriptReader.projectFolder(for: projectPath)
+        let events = await Task.detached(priority: .userInitiated) { GainEvent.replayEvents(projectFolder: folder) }.value
+        replay = GainReport(events: events, source: .replay, project: folder.lastPathComponent)
+    }
+
     /// Why there is no usage figure right now.
     var usageNote: String {
         if !app.optimizerEnabled { return "Token Saver is off; transcripts are not read." }
@@ -67,14 +97,22 @@ final class OptimizerController {
     /// Scans this project's transcript folder off the main actor (ADR-022). A no-op while the Token
     /// Optimizer switch is off (Addendum A.6.7: the whole surface can be switched off).
     func loadLedger() async {
-        guard app.optimizerEnabled else { ledger = nil; rtkHookConfigured = nil; return }
+        guard app.optimizerEnabled else { ledger = nil; rtkHookConfigured = nil; gain = nil; globalGain = nil; replay = nil; return }
         guard !ledgerLoading else { return }
         ledgerLoading = true
         defer { ledgerLoading = false }
         let path = projectPath
-        let read = await Task.detached(priority: .userInitiated) { (ClaudeTranscriptReader.read(projectPath: path), RTKHookDetector.isConfigured()) }.value
+        let read = await Task.detached(priority: .userInitiated) { () -> (TranscriptLedgerResult, Bool?, UnifiedGain) in
+            // C2D fold events from the local ledger (live only), RTK's own history read-only; a store error means no C2D rows, never a guess.
+            let folder = ClaudeTranscriptReader.projectFolderName(for: path)
+            let events = (try? OptimizationStore.standardPath()).flatMap { try? OptimizationStore(path: $0) }
+            let c2d = await (try? events?.events(source: .live, project: folder)) ?? []
+            return (ClaudeTranscriptReader.read(projectPath: path), RTKHookDetector.state(projectPath: path),
+                    UnifiedGain(c2dEvents: c2d, rtk: RTKLedger.read(projectPath: path), projectPath: path))
+        }.value
         ledger = read.0
         rtkHookConfigured = read.1
+        gain = read.2
         ledgerScannedAt = Date()
         let sessions: [TranscriptSession] = { if case .available(let l)? = ledger { return l.sessions }; return [] }()
         let records = app.agentSessions.records(forProject: projectPath)

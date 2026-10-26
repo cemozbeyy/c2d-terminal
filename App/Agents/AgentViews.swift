@@ -92,7 +92,8 @@ struct AgentLaunchSheet: View {
     private var status: AgentProviderStatus? { model.providerStatuses[providerID] }
     private var plan: AgentLaunchPlan? {
         guard let path = model.providerPaths[providerID] else { return nil }
-        return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: workspace.projectPath, workingDirectory: directory, task: task.isEmpty ? nil : task)
+        return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: workspace.projectPath, workingDirectory: directory, task: task.isEmpty ? nil : task,
+                                         tokenSaverHook: model.tokenSaverHookDecision(projectPath: workspace.projectPath).hook)
     }
 
     var body: some View {

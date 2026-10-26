@@ -19,6 +19,12 @@ targets:
     dependencies:
       - package: C2DCore
       - package: SwiftTerm
+      # Token Saver fold helper (ADR-035), copied to Contents/MacOS. Present in every build; only Debug launches can
+      # reference it, and only when TokenSaverLaunchHook.decide allows (plan C2D_GAIN P2).
+      - target: c2d-token-helper
+        embed: true
+        copy:
+          destination: executables
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.c2d.terminal
@@ -36,3 +42,20 @@ targets:
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO   # PROPOSED — see ADR-003
         ARCHS: arm64             # CONFIRMED — ADR-006, Intel deferred
+  c2d-token-helper:
+    type: tool
+    platform: macOS
+    sources:
+      - Packages/C2DCore/Sources/c2d-token-helper
+    dependencies:
+      - package: C2DCore
+    settings:
+      base:
+        PRODUCT_NAME: c2d-token-helper
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
+        SKIP_INSTALL: YES
+        ARCHS: arm64
