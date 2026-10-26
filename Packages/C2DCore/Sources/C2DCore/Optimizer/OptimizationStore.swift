@@ -83,9 +83,10 @@ public struct SourceTotals: Hashable, Sendable {
 public actor OptimizationStore {
     private let db: SQLiteDatabase
 
-    public init(path: String) throws {
+    /// A hook process passes a short `busyTimeoutMilliseconds`: it drops its event rather than hold up a tool call.
+    public init(path: String, busyTimeoutMilliseconds: Int32 = 2000) throws {
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
-        db = try SQLiteDatabase(path: path)
+        db = try SQLiteDatabase(path: path, busyTimeoutMilliseconds: busyTimeoutMilliseconds)
         try Self.migrate(db)
     }
 
@@ -123,6 +124,65 @@ public actor OptimizationStore {
                 """)
             }
             db.userVersion = 2
+        }
+        if db.userVersion < 3 {   // `c2d gain` events (plan C2D_GAIN_PLAN_2026-10-26 P0); live and replay rows are never mixed
+            try db.inTransaction {
+                try db.exec("""
+                CREATE TABLE IF NOT EXISTS token_saver_events (
+                  id INTEGER PRIMARY KEY, ts REAL NOT NULL, source TEXT NOT NULL CHECK (source IN ('live', 'replay')),
+                  project TEXT NOT NULL, session_id TEXT, tool_use_id TEXT, family TEXT NOT NULL, mode TEXT NOT NULL,
+                  outcome TEXT NOT NULL CHECK (outcome IN ('emitted', 'skipped')), skip_reason TEXT,
+                  original_stdout_bytes INTEGER NOT NULL, result_stdout_bytes INTEGER NOT NULL, stderr_bytes INTEGER, helper_ms INTEGER);
+                CREATE INDEX IF NOT EXISTS token_saver_events_scope ON token_saver_events(source, project, ts);
+                """)
+            }
+            db.userVersion = 3
+        }
+    }
+
+    // MARK: Token Saver events (`c2d gain`)
+
+    public func record(events: [GainEvent]) throws {
+        try db.inTransaction { try insert(events) }
+    }
+
+    private func insert(_ events: [GainEvent]) throws {
+        for e in events {
+            try db.run("""
+            INSERT INTO token_saver_events (ts, source, project, session_id, tool_use_id, family, mode, outcome, skip_reason,
+              original_stdout_bytes, result_stdout_bytes, stderr_bytes, helper_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, [.double(e.timestamp.timeIntervalSince1970), .text(e.source.rawValue), .text(e.project),
+                  e.sessionID.map { .text($0) } ?? .null, e.toolUseID.map { .text($0) } ?? .null, .text(e.family), .text(e.mode),
+                  .text(e.outcome.rawValue), e.skipReason.map { .text($0.rawValue) } ?? .null,
+                  .int(Int64(e.originalStdoutBytes)), .int(Int64(e.resultStdoutBytes)),
+                  e.stderrBytes.map { .int(Int64($0)) } ?? .null, e.helperMilliseconds.map { .int(Int64($0)) } ?? .null])
+        }
+    }
+
+    /// Events of one source only (a query can never return both), newest first; `project` nil = every project.
+    public func events(source: GainEvent.Source, project: String? = nil, limit: Int? = nil) throws -> [GainEvent] {
+        var params: [SQLiteValue] = [.text(source.rawValue)]
+        if let project { params.append(.text(project)) }
+        if let limit { params.append(.int(Int64(limit))) }
+        return try db.query("""
+        SELECT ts, source, project, session_id, tool_use_id, family, mode, outcome, skip_reason, original_stdout_bytes,
+          result_stdout_bytes, stderr_bytes, helper_ms FROM token_saver_events
+          WHERE source = ?\(project == nil ? "" : " AND project = ?") ORDER BY ts DESC, id DESC\(limit == nil ? "" : " LIMIT ?")
+        """, params) { row in
+            GainEvent(timestamp: Date(timeIntervalSince1970: row.double(0)), source: GainEvent.Source(rawValue: row.string(1) ?? "") ?? source,
+                      project: row.string(2) ?? "", sessionID: row.string(3), toolUseID: row.string(4), family: row.string(5) ?? "other",
+                      mode: row.string(6) ?? "", outcome: GainEvent.Outcome(rawValue: row.string(7) ?? "") ?? .skipped,
+                      skipReason: row.string(8).flatMap(GainEvent.SkipReason.init(rawValue:)),
+                      originalStdoutBytes: row.int(9), resultStdoutBytes: row.int(10),
+                      stderrBytes: row.isNull(11) ? nil : row.int(11), helperMilliseconds: row.isNull(12) ? nil : row.int(12))
+        }
+    }
+
+    /// A replay export replaces the previous one instead of piling up duplicates. Live rows are never deleted here.
+    public func replaceReplayEvents(with events: [GainEvent]) throws {
+        try db.inTransaction {
+            try db.run("DELETE FROM token_saver_events WHERE source = 'replay'")
+            try insert(events.filter { $0.source == .replay })
         }
     }
 

@@ -4,8 +4,10 @@
 // no model calls. Exclude the session you are running in, or it measures itself.
 //
 //   swift run -c release --package-path Tools/replay replay [--exclude <session-id>]... [--claude-home <dir>] [--families] [--json <file>]
+//     [--emit-events <optimizer.sqlite>]   (replaces that store's replay rows; live rows are untouched)
 //
-// `--json` writes the same aggregates machine-readably (counts and ratios only).
+// `--json` writes the same aggregates machine-readably (counts and ratios only). `--emit-events` writes one row per Bash
+// result to a local store: command family, byte counts, Claude's project folder name and session id — never command or output text.
 import C2DCore
 import Foundation
 import Synchronization
@@ -14,6 +16,7 @@ var home = ClaudeTranscriptReader.defaultClaudeHome()
 var excluded = Set<String>()
 var showFamilies = false
 var jsonOut: URL?
+var eventsOut: String?   // `c2d gain --source replay`: exact-fold per Bash result, written as source=replay events
 var args = CommandLine.arguments.dropFirst()
 while let arg = args.popFirst() {
     switch (arg, args.first) {
@@ -21,8 +24,9 @@ while let arg = args.popFirst() {
     case ("--exclude", let v?): excluded.insert(v); args.removeFirst()
     case ("--families", _): showFamilies = true
     case ("--json", let v?): jsonOut = URL(fileURLWithPath: v); args.removeFirst()
+    case ("--emit-events", let v?): eventsOut = v; args.removeFirst()
     default:
-        FileHandle.standardError.write(Data("usage: replay [--exclude <session-id>]... [--claude-home <dir>] [--families] [--json <file>]\n".utf8))
+        FileHandle.standardError.write(Data("usage: replay [--exclude <session-id>]... [--claude-home <dir>] [--families] [--json <file>] [--emit-events <optimizer.sqlite>]\n".utf8))
         exit(2)
     }
 }
@@ -45,7 +49,8 @@ DispatchQueue.concurrentPerform(iterations: files.count) { i in
     let session = Replay.extract(lines: String(decoding: data, as: UTF8.self).split(separator: "\n"))
     parsed.withLock { $0[i] = session }
 }
-let sessions = parsed.withLock { $0.compactMap { $0 } }
+let parsedByFile = parsed.withLock { $0 }
+let sessions = parsedByFile.compactMap { $0 }
 let samples = sessions.flatMap(\.samples).filter { $0.tool == "Bash" }
 let transforms = [Replay.runnerLossless, Replay.exactFold, Replay.runnerDefault, Replay.lossySimilar, Replay.lossyLongLines, Replay.lossyTruncate]
 let results = transforms.map { Replay.measure($0, on: samples) }
@@ -221,4 +226,24 @@ if let jsonOut {
     let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
     try data.write(to: jsonOut, options: .atomic)
     print("Wrote \(jsonOut.path)")
+}
+
+if let eventsOut {
+    var events: [GainEvent] = []
+    for (file, session) in zip(files, parsedByFile) {
+        guard let session else { continue }
+        let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? started
+        let project = file.deletingLastPathComponent().lastPathComponent
+        let id = file.deletingPathExtension().lastPathComponent
+        for s in session.samples where s.tool == "Bash" {
+            events.append(GainEvent.replay(command: s.command, output: s.output, isError: s.isError, project: project, sessionID: id, at: date))
+        }
+    }
+    do {
+        try await OptimizationStore(path: eventsOut).replaceReplayEvents(with: events)
+        print("\nEvents       \(events.count.formatted()) replay events → \(eventsOut) (source=replay; read with `c2d-token-helper gain --source replay`)")
+    } catch {
+        FileHandle.standardError.write(Data("replay: could not write events: \(error)\n".utf8))
+        exit(1)
+    }
 }

@@ -377,10 +377,15 @@ struct SettingsPlaceholderView: View {
     }
 }
 
-/// Token Saver card behind the top-bar gauge: on/off, then input, output and the C2D engine's (inactive) state.
+/// Token Saver card behind the top-bar gauge: on/off, provider-reported usage, then the unified engine and its estimated savings.
 struct OptimizerPopover: View {
     @Environment(AppModel.self) private var model
     let workspace: WorkspaceController
+    #if DEBUG
+    @State private var showReport = UserDefaults.standard.bool(forKey: "c2dGainReportCheck")   // `-c2dGainReportCheck YES`: open the report at once (screenshot checks)
+    #else
+    @State private var showReport = false
+    #endif
 
     var body: some View {
         @Bindable var model = model
@@ -402,11 +407,57 @@ struct OptimizerPopover: View {
                 MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens) } ?? "—",
                           detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it cache reads · provider-reported, all Claude Code sessions of this project" } ?? workspace.optimizer.usageNote,
                           valueMuted: u == nil)
-                MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—", detail: u == nil ? nil : "provider-reported", valueMuted: u == nil)
-                // ADR-034/035: nothing transforms agent output, so there is nothing to count as saved.
-                MetricRow(label: "Saved", value: "Not active",
-                          detail: "Nothing is transformed, so there are no verified savings. Candidate optimizations are measured offline first (ADR-034).",
-                          valueMuted: true)
+                MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—",
+                          detail: u == nil ? nil : "provider-reported" + (workspace.optimizer.usageFormatTag.map { " · \($0)" } ?? ""), valueMuted: u == nil)
+                // TSD-01 option 1: per-request context of the newest session. A different measure from the totals above
+                // (one request's provider-reported size, not a sum), so the row says which session and which request.
+                if let n = workspace.optimizer.newestSession {
+                    let s = n.session
+                    let origin: String = switch n.attribution {
+                        case .linked: "launched from C2D"
+                        case .unmatched: "not launched from C2D"
+                        case .ambiguous: "launch ambiguous"
+                    }
+                    let when = s.lastTimestamp.map { t in
+                        Calendar.current.isDateInToday(t) ? t.formatted(date: .omitted, time: .shortened) : t.formatted(date: .abbreviated, time: .shortened)
+                    } ?? "time unknown"
+                    // TSD-06: provider-reported numbers; what varies is whether C2D hand-verified this CLI version's transcript format.
+                    let format = s.formatCheck == .handVerified ? "CLI \(s.cliVersion), verified format" : "CLI \(s.cliVersion), shape-checked format, not hand-verified"
+                    MetricRow(label: "Context now / peak",
+                              value: "\(s.lastContextTokens > 0 ? TokenSaverFormat.count(s.lastContextTokens) : "—") / \(TokenSaverFormat.count(s.peakContextTokens))",
+                              detail: "Newest session (\(origin), last reply \(when)). Provider-reported size of one request, last and largest; not a share of the totals above. \(format).")
+                }
+                // One Token Saver (owner decision 2026-10-26): RTK-powered + C2D fold in one estimate, each engine's own count.
+                // Estimates only (bytes/4); "provider-verified" is never claimed here.
+                let g = workspace.optimizer.gain
+                let rtkOn = workspace.optimizer.rtkHookConfigured
+                let fold = workspace.optimizer.foldDecision
+                MetricRow(label: "Engine",
+                          value: [rtkOn == true ? "RTK-powered" : nil, fold.hook != nil ? "C2D fold" : nil].compactMap { $0 }.joined(separator: " + ").nilIfEmpty ?? "None active",
+                          detail: (rtkOn == true ? "RTK filters Bash output through its own hook (read from Claude settings, never changed). " : rtkOn == nil ? "Claude settings could not be fully read. " : "")
+                              + "C2D fold: " + (fold.hook != nil ? "on for new C2D launches (Debug)." : { if case .off(let why) = fold { return why }; return "" }()),
+                          valueMuted: rtkOn != true && fold.hook == nil)
+                #if DEBUG
+                Toggle(isOn: $model.tokenSaverFoldEnabled) {
+                    Text("C2D fold hook (Debug, off by default)").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                }
+                .toggleStyle(.switch).controlSize(.mini).tint(Theme.accent).clickCursor()
+                #endif
+                if let g, g.estimatedTokensSaved != 0 || g.rtk.ledger != nil {
+                    MetricRow(label: "Saved (est.)", value: TokenSaverFormat.count(g.estimatedTokensSaved),
+                              detail: "RTK-powered \(TokenSaverFormat.count(g.rtkSavedTokens)) · C2D fold \(TokenSaverFormat.count(g.c2dSavedTokens)) (emitted, delivery not proven). "
+                                  + "Estimated, bytes/4, from each engine's own count; not provider-reported or verified.")
+                } else {
+                    MetricRow(label: "Saved", value: "Not active",
+                              detail: g.map { if case .unavailable(let why) = $0.rtk { return "No C2D fold events; RTK not included: \(why)" }; return "No filtered output recorded yet." }
+                                  ?? "Reading…",
+                              valueMuted: true)
+                }
+                Button { showReport = true } label: {
+                    Label("Open report", systemImage: "list.bullet.rectangle").font(Theme.Typography.detail)
+                }
+                .buttonStyle(.clickPlain).foregroundStyle(Theme.accent)
+                .sheet(isPresented: $showReport) { GainReportView(optimizer: workspace.optimizer) }
             } else {
                 Text("Off: nothing is measured, recorded or read.").font(Theme.Typography.detail).foregroundStyle(Theme.textMuted)
             }
@@ -414,8 +465,12 @@ struct OptimizerPopover: View {
         .padding(Theme.space4)
         .frame(width: 300)
         .background(Theme.panel)
-        .task(id: model.optimizerEnabled) {
+        .task(id: "\(model.optimizerEnabled)\(model.tokenSaverFoldEnabled)") {
             await workspace.optimizer.loadLedger()
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -14,7 +14,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     /// `path` of ":memory:" opens a private in-memory database.
-    public init(path: String) throws {
+    public init(path: String, busyTimeoutMilliseconds: Int32 = 2000) throws {
         var handle: OpaquePointer?
         let rc = sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
         guard rc == SQLITE_OK, let handle else {
@@ -23,9 +23,28 @@ public final class SQLiteDatabase: @unchecked Sendable {
             throw SQLiteError(code: rc, message: msg)
         }
         db = handle
-        sqlite3_busy_timeout(handle, 2000)
+        sqlite3_busy_timeout(handle, busyTimeoutMilliseconds)
         try exec("PRAGMA journal_mode=WAL")
         try exec("PRAGMA foreign_keys=ON")
+    }
+
+    /// Opens another program's database strictly read-only (no pragmas, no journal change, no writes possible):
+    /// `mode=ro` first, then `immutable=1` (no locking; a snapshot) when the read-only open needs files it cannot create.
+    public init(readOnly path: String) throws {
+        let base = URL(fileURLWithPath: path).absoluteString
+        var lastError = SQLiteError(code: SQLITE_CANTOPEN, message: "open failed")
+        for uri in [base + "?mode=ro", base + "?mode=ro&immutable=1"] {
+            var handle: OpaquePointer?
+            let rc = sqlite3_open_v2(uri, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX, nil)
+            if rc == SQLITE_OK, let handle, sqlite3_exec(handle, "SELECT count(*) FROM sqlite_master", nil, nil, nil) == SQLITE_OK {
+                db = handle
+                sqlite3_busy_timeout(handle, 200)
+                return
+            }
+            lastError = SQLiteError(code: rc, message: handle.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed")
+            if let handle { sqlite3_close(handle) }
+        }
+        throw lastError
     }
 
     deinit { close() }

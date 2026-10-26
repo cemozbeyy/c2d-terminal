@@ -427,7 +427,8 @@ final class WorkspaceController {
     private func restoredPlan(from record: AgentSessionRecord) -> AgentLaunchPlan? {
         guard let provider = AgentProvider.builtIn.first(where: { $0.id == record.providerID }),
               let path = app.providerPaths[provider.id] else { return nil }
-        return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: projectPath, workingDirectory: record.workingDirectory, task: nil)
+        return try? AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: projectPath, workingDirectory: record.workingDirectory, task: nil,
+                                         tokenSaverHook: app.tokenSaverHookDecision(projectPath: projectPath).hook)
     }
 
     /// Agents currently running in a given directory, for the pre-launch warning (Bible Part 7 §5).

@@ -97,6 +97,25 @@ final class AppModel {
     var optimizerEnabled: Bool = (UserDefaults.standard.object(forKey: "optimizerEnabled") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(optimizerEnabled, forKey: "optimizerEnabled") }
     }
+    /// Debug only, off by default: lets Claude launches carry the C2D fold hook when every gate in
+    /// `TokenSaverLaunchHook.decide` is open (plan C2D_GAIN P2). Release builds ignore it.
+    var tokenSaverFoldEnabled: Bool = UserDefaults.standard.bool(forKey: "tokenSaverFoldEnabled") {
+        didSet { UserDefaults.standard.set(tokenSaverFoldEnabled, forKey: "tokenSaverFoldEnabled") }
+    }
+    static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+    /// Whether a Claude launch in `projectPath` gets the fold hook right now, and why not.
+    func tokenSaverHookDecision(projectPath: String) -> TokenSaverLaunchHook.Decision {
+        TokenSaverLaunchHook.decide(isDebugBuild: Self.isDebugBuild, tokenSaverOn: optimizerEnabled, foldOn: tokenSaverFoldEnabled,
+                                    rtkHookConfigured: RTKHookDetector.state(projectPath: projectPath),
+                                    helperPath: Bundle.main.url(forAuxiliaryExecutable: "c2d-token-helper")?.path,
+                                    ledgerPath: try? OptimizationStore.standardPath(), projectPath: projectPath)
+    }
     var developerMode: Bool = UserDefaults.standard.bool(forKey: "developerMode") {
         didSet { UserDefaults.standard.set(developerMode, forKey: "developerMode") }
     }
@@ -228,7 +247,8 @@ final class AppModel {
                     debugTrace("c2dLaunchAgent: provider not ready \(String(describing: self.providerStatuses[providerID]))"); return
                 }
                 do {
-                    let plan = try AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: ws.projectPath, workingDirectory: ws.projectPath, task: nil)
+                    let plan = try AgentLaunchPlan.make(provider: provider, executablePath: path, projectPath: ws.projectPath, workingDirectory: ws.projectPath, task: nil,
+                                                        tokenSaverHook: self.tokenSaverHookDecision(projectPath: ws.projectPath).hook)
                     ws.launchAgent(plan)
                     debugTrace("c2dLaunchAgent: launched \(plan.executable) \(plan.arguments)")
                     // `-c2dAgentPrompt "<text>"` types it + Enter after 10 s; `-c2dScreenDump <file>` writes the
@@ -355,6 +375,37 @@ final class AppModel {
                 debugTrace("addPanelCheck: panelsBefore=\(before) panelsAfter=\(ws.layout.panels.count) kinds=\(kinds)")
             }
         }
+        #if DEBUG
+        // `-c2dGainSnapshot <dir>`: renders the Token Saver popover and both report tabs with this Mac's real data to PNGs
+        // in <dir> (no screen capture, no clicks), and traces the unified totals.
+        if let dir = UserDefaults.standard.string(forKey: "c2dGainSnapshot"), !dir.isEmpty {
+            Task { @MainActor [weak self] in
+                for _ in 0..<60 { if self?.workspace != nil { break }; try? await Task.sleep(for: .milliseconds(250)) }
+                guard let self, let ws = self.workspace else { debugTrace("gainSnapshot: no workspace"); return }
+                await ws.optimizer.loadLedger()
+                await ws.optimizer.loadReplay()
+                await ws.optimizer.loadGlobalGain()
+                let g = ws.optimizer.gain
+                debugTrace("gainSnapshot: rtk=\(g?.rtkSavedTokens ?? -1) c2d=\(g?.c2dSavedTokens ?? -1) total=\(g?.estimatedTokensSaved ?? -1) commands=\(g?.commands ?? -1) rtkStatus=\(g.map { if case .unavailable(let w) = $0.rtk { return "unavailable: \(w)" }; return "available" } ?? "?") fold=\(ws.optimizer.foldDecision) replayCommands=\(ws.optimizer.replay?.total.commands ?? -1) globalTotal=\(ws.optimizer.globalGain?.estimatedTokensSaved ?? -1)")
+                let views: [(String, AnyView)] = [
+                    ("popover", AnyView(OptimizerPopover(workspace: ws))),
+                    ("report-live", AnyView(GainReportView(optimizer: ws.optimizer, tab: 0, scrolls: false))),
+                    ("report-replay", AnyView(GainReportView(optimizer: ws.optimizer, tab: 1, scrolls: false))),
+                    ("report-global", AnyView(GainReportView(optimizer: ws.optimizer, tab: 0, global: true, scrolls: false))),
+                ]
+                for (name, view) in views {
+                    let renderer = ImageRenderer(content: view.environment(self))
+                    renderer.scale = 2
+                    guard let tiff = renderer.nsImage?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                        debugTrace("gainSnapshot: \(name) did not render"); continue
+                    }
+                    let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
+                    try? png.write(to: url)
+                    debugTrace("gainSnapshot: wrote \(url.path)")
+                }
+            }
+        }
+        #endif
         // `-c2dGitPanelCheck YES`: the Source-Control rail entry docks a VS-Code-style changes panel on
         // the left of the workspace (file groups + per-file diff), instead of a full-screen view.
         if UserDefaults.standard.bool(forKey: "c2dGitPanelCheck") {
