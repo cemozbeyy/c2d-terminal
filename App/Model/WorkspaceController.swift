@@ -93,6 +93,14 @@ final class WorkspaceController {
         } else {
             target = addPanel(.editor, title: "Editor", besideGroup: layout.groupIDs.first)
         }
+        // A restore lands in the first group, usually the docked sidebar; an editor tabbed there hides the
+        // file tree on every open. Pull it out: above the first terminal, else right of the sidebar.
+        if let group = layout.group(containing: target),
+           layout.visiblePanelIDs.contains(where: { layout.group(containing: $0) == group && [.projectExplorer, .gitChanges].contains(layout.panels[$0]?.kind) }) {
+            let termGroup = layout.visiblePanelIDs.lazy.filter { self.layout.panels[$0]?.kind == .terminal }
+                .compactMap { self.layout.group(containing: $0) }.first { $0 != group }
+            mutate("move editor out of sidebar") { try $0.move(target, beside: termGroup ?? group, edge: termGroup == nil ? .right : .top) }
+        }
         activate(target)
         return target
     }
