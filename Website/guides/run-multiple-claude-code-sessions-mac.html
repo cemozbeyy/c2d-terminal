@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Run Multiple Claude Code Sessions on a Mac | C2D Terminal</title>
+<meta name="description" content="Run several Claude Code sessions in parallel without edits colliding: one git worktree per session, how to resume them, and how to keep track.">
+<link rel="canonical" href="https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#fbf6ee">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="C2D Terminal">
+<meta property="og:url" content="https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac">
+<meta property="og:title" content="Run Multiple Claude Code Sessions on a Mac | C2D Terminal">
+<meta property="og:description" content="Run several Claude Code sessions in parallel without edits colliding: one git worktree per session, how to resume them, and how to keep track.">
+<meta property="og:image" content="https://c2dterminal.com/shots/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/guide.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "Home",
+     "item": "https://c2dterminal.com/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "Guides",
+     "item": "https://c2dterminal.com/guides"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "name": "Run multiple sessions",
+     "item": "https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac"
+    }
+   ]
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "How to run several Claude Code sessions at once on a Mac",
+   "description": "Run several Claude Code sessions in parallel without edits colliding: one git worktree per session, how to resume them, and how to keep track.",
+   "url": "https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac",
+   "datePublished": "2026-10-29",
+   "dateModified": "2026-10-29",
+   "inLanguage": "en",
+   "image": "https://c2dterminal.com/shots/og.jpg",
+   "author": {
+    "@type": "Organization",
+    "@id": "https://c2dterminal.com/#org",
+    "name": "C2D Works",
+    "url": "https://c2dterminal.com/",
+    "sameAs": [
+     "https://github.com/cemozbeyy"
+    ]
+   },
+   "publisher": {
+    "@id": "https://c2dterminal.com/#org"
+   }
+  }
+ ]
+}
+</script>
+<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre').forEach(function(pre){var b=document.createElement('button');b.type='button';b.className='copy';b.textContent='Copy';b.setAttribute('aria-label','Copy code');b.addEventListener('click',function(){try{navigator.clipboard.writeText((pre.querySelector("code")||pre).innerText).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)})}catch(e){}});pre.appendChild(b)})})</script>
+</head>
+<body>
+<nav class="nav"><div class="in">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="" width="24" height="24">C2D Terminal</a>
+  <div class="links"><a href="/guides">Guides</a><a href="/install">Install</a><a href="/changelog">Changelog</a></div>
+  <a class="get" href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a>
+</div></nav>
+<main>
+<article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides">Guides</a> › Run multiple sessions</p>
+<h1>How to run several Claude Code sessions at once on a Mac</h1>
+<p class="lede">Two Claude Code sessions in the same folder will edit the same files and trip over each other. The fix is to give each session its own checkout. Git worktrees do that without cloning the repository again.</p>
+<p class="meta">Updated 29 October 2026 · Written by the makers of C2D Terminal</p>
+
+<h2>1. One worktree per session</h2>
+<p>Claude Code can create the worktree for you. In one terminal:</p>
+<pre><code>claude --worktree feature-auth</code></pre>
+<p>In a second terminal, the same command with another name starts an isolated parallel session:</p>
+<pre><code>claude --worktree fix-login-bug</code></pre>
+<p>Claude Code puts each worktree in <code>.claude/worktrees/&lt;name&gt;/</code> at the repository root, on a new branch called <code>worktree-&lt;name&gt;</code>, branched from your default branch. The repository needs at least one commit first. Add <code>.claude/worktrees/</code> to your <code>.gitignore</code> so the folders don't show up as untracked files in your main checkout.</p>
+<h3>Set up each worktree</h3>
+<p>A worktree is a fresh checkout, so install dependencies there (or ask Claude Code to). Gitignored files such as <code>.env</code> are not copied by default. List them in a <code>.worktreeinclude</code> file at the project root, using <code>.gitignore</code> syntax, and Claude Code copies them into every new worktree:</p>
+<pre><code>.env
+.env.local</code></pre>
+<h3>Or manage worktrees with plain git</h3>
+<p>Use git directly when you want a specific existing branch or a folder outside the repository:</p>
+<pre><code>git worktree add ../myapp-auth -b feature-auth
+cd ../myapp-auth && claude</code></pre>
+<p>See what you have with <code>git worktree list</code>, and remove a folder when its branch is merged with <code>git worktree remove ../myapp-auth</code>.</p>
+<h3>What happens when you exit</h3>
+<p>When you leave a <code>--worktree</code> session, Claude Code checks the worktree for changes, untracked files and new commits. A clean worktree from an unnamed session is removed with its branch. If there is work in it, Claude Code asks whether to keep it, and prints a <code>claude --worktree &lt;name&gt; --resume</code> command to come back to it later.</p>
+
+<h2>2. Pick up where a session left off</h2>
+<pre><code>claude --continue     # resume the most recent session in this folder
+claude --resume       # choose from a list of earlier sessions</code></pre>
+<p>Because sessions are stored per folder, a separate worktree also keeps each session's history separate. Permission approvals are shared, though: "Yes, and don't ask again" in any worktree is saved to the main checkout's <code>.claude/settings.local.json</code> and applies to every worktree of the repository.</p>
+
+<h2>3. Know when a session needs you</h2>
+<p>Claude Code sends a desktop notification when it finishes or waits for a permission prompt, by default in Ghostty, Kitty and iTerm2. In other terminals, set <code>"preferredNotifChannel": "terminal_bell"</code> in <code>~/.claude/settings.json</code> to get a bell instead. See the <a href="/best-terminal-for-claude-code-mac">terminal setup guide</a> for details.</p>
+
+<h2>4. Review each branch on its own</h2>
+<p>Parallel sessions mean parallel diffs, and two sessions that edit the same files will still conflict when you merge. Review and commit each worktree separately, with the steps in <a href="/guides/review-claude-code-changes-before-commit">How to review Claude Code's changes before you commit</a>, and merge only what you have read.</p>
+
+<h2>Doing the same in C2D Terminal</h2>
+<p>In <a href="/">C2D Terminal</a> the pieces above sit in one window:</p>
+<ul>
+<li>Several projects stay open as pages, so each repository or worktree can have its own workspace and layout.</li>
+<li>The Git panel handles branches and worktrees.</li>
+<li>Each Claude Code launch runs in its own real terminal, rooted in the project you picked, and gets its own session id. You can hand it a task as the first prompt.</li>
+<li>Terminal windows have native tabs and split panes, so tests and dev servers run next to the agent.</li>
+<li>Token Saver shows token usage per project and per session, read from Claude Code's own local transcripts.</li>
+</ul>
+<h2>Related guides</h2>
+<ul class="cards">
+<li><a href="/guides/review-claude-code-changes-before-commit"><b>Review Claude Code changes before you commit</b><span>Keep Claude Code from committing on its own, then read the diff, stage hunk by hunk and commit yourself.</span></a></li>
+<li><a href="/best-terminal-for-claude-code-mac"><b>Terminals for Claude Code on macOS</b><span>Claude Code runs in any Mac terminal. What to set up in Terminal.app, iTerm2, Ghostty, Kitty, WezTerm and Warp.</span></a></li>
+</ul>
+<section class="cta">
+  <h2>Try C2D Terminal</h2>
+  <p>A free, open-source macOS app where Claude Code runs in a real terminal next to an editor and a Git panel. Nothing is committed or pushed until you press the button.</p>
+  <a class="pill" href="/install">Install guide</a>
+  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Watch the repo for releases</a> (Watch → Custom → Releases) to hear when the signed build ships.</p>
+</section>
+</article>
+</main>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a> is an independent project, not affiliated with Anthropic.</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+</body>
+</html>
