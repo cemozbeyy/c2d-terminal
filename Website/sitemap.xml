@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://c2dterminal.com/</loc><lastmod>2026-10-27</lastmod></url>
+  <url><loc>https://c2dterminal.com/</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/guides</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/guides/review-claude-code-changes-before-commit</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/best-terminal-for-claude-code-mac</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/install</loc><lastmod>2026-10-29</lastmod></url>
+  <url><loc>https://c2dterminal.com/changelog</loc><lastmod>2026-10-29</lastmod></url>
 </urlset>

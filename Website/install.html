@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Install C2D Terminal: Build from Source | C2D Terminal</title>
+<meta name="description" content="How to build and run C2D Terminal on macOS 15+ (Apple Silicon) from source with Xcode and XcodeGen. No signed download yet.">
+<link rel="canonical" href="https://c2dterminal.com/install">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#fbf6ee">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="C2D Terminal">
+<meta property="og:url" content="https://c2dterminal.com/install">
+<meta property="og:title" content="Install C2D Terminal: Build from Source | C2D Terminal">
+<meta property="og:description" content="How to build and run C2D Terminal on macOS 15+ (Apple Silicon) from source with Xcode and XcodeGen. No signed download yet.">
+<meta property="og:image" content="https://c2dterminal.com/shots/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/guide.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "Home",
+     "item": "https://c2dterminal.com/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "Install",
+     "item": "https://c2dterminal.com/install"
+    }
+   ]
+  }
+ ]
+}
+</script>
+<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+<nav class="nav"><div class="in">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="" width="24" height="24">C2D Terminal</a>
+  <div class="links"><a href="/guides">Guides</a><a href="/install">Install</a><a href="/changelog">Changelog</a></div>
+  <a class="get" href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a>
+</div></nav>
+<main>
+<article>
+<p class="crumbs"><a href="/">Home</a> › Install</p>
+<h1>Install C2D Terminal</h1>
+<p class="lede">C2D Terminal has no signed or notarized download yet. Today you build it from source, which takes a few minutes on a Mac with Xcode installed.</p>
+<div class="note"><p>A signed download needs an Apple Developer ID, which is in progress. <a href="https://github.com/cemozbeyy/c2d-terminal">Star or watch the repo</a> to hear when it ships.</p></div>
+
+<h2>Requirements</h2>
+<ul>
+<li>macOS 15 or later on Apple Silicon.</li>
+<li>Xcode with Swift 6.1 or later.</li>
+<li><a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a>.</li>
+<li><a href="https://code.claude.com/docs/en/overview">Claude Code</a>, if you want agent sessions.</li>
+</ul>
+<p>Install XcodeGen with Homebrew:</p>
+<pre><code>brew install xcodegen</code></pre>
+
+<h2>Build and run</h2>
+<pre><code>git clone https://github.com/cemozbeyy/c2d-terminal.git
+cd c2d-terminal
+./Scripts/run-debug.sh</code></pre>
+<p>The script generates the Xcode project, builds the Debug app and launches it. To open a project straight away:</p>
+<pre><code>./Scripts/run-debug.sh /path/to/project</code></pre>
+
+<h2>Manual build</h2>
+<p>The Xcode project is generated from <code>project.yml</code> and is not committed. Generate it, then build:</p>
+<pre><code>xcodegen generate
+xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configuration Debug -destination 'platform=macOS' -skipPackagePluginValidation -skipMacroValidation</code></pre>
+<p>Or open <code>C2DTerminal.xcodeproj</code> in Xcode and press Run.</p>
+
+<h2>Release package</h2>
+<pre><code>./Scripts/build-release.sh</code></pre>
+<p>This writes <code>build/C2DTerminal.app</code> and an unsigned zip. The app is ad-hoc signed, so Gatekeeper will refuse it on other Macs until it is signed with a Developer ID.</p>
+
+<h2>Next</h2>
+<p>Open a project, launch Claude Code from the agent panel, and review what it changes in the Git panel. The <a href="/guides/review-claude-code-changes-before-commit">review guide</a> walks through that loop.</p>
+<p>Something not working? <a href="https://github.com/cemozbeyy/c2d-terminal/issues">Open an issue on GitHub</a>.</p>
+
+</article>
+</main>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+</body>
+</html>

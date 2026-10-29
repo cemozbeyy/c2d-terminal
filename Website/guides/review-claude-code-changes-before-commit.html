@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Review Claude Code Changes Before You Commit | C2D Terminal</title>
+<meta name="description" content="How to stop Claude Code from committing or pushing on its own, then review its diff hunk by hunk and commit yourself. Works in any terminal.">
+<link rel="canonical" href="https://c2dterminal.com/guides/review-claude-code-changes-before-commit">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#fbf6ee">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="C2D Terminal">
+<meta property="og:url" content="https://c2dterminal.com/guides/review-claude-code-changes-before-commit">
+<meta property="og:title" content="Review Claude Code Changes Before You Commit | C2D Terminal">
+<meta property="og:description" content="How to stop Claude Code from committing or pushing on its own, then review its diff hunk by hunk and commit yourself. Works in any terminal.">
+<meta property="og:image" content="https://c2dterminal.com/shots/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/guide.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "Home",
+     "item": "https://c2dterminal.com/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "Guides",
+     "item": "https://c2dterminal.com/guides"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "name": "Review changes before commit",
+     "item": "https://c2dterminal.com/guides/review-claude-code-changes-before-commit"
+    }
+   ]
+  },
+  {
+   "@type": "TechArticle",
+   "headline": "How to review Claude Code's changes before you commit",
+   "description": "How to stop Claude Code from committing or pushing on its own, then review its diff hunk by hunk and commit yourself. Works in any terminal.",
+   "url": "https://c2dterminal.com/guides/review-claude-code-changes-before-commit",
+   "datePublished": "2026-10-29",
+   "dateModified": "2026-10-29",
+   "inLanguage": "en",
+   "image": "https://c2dterminal.com/shots/og.jpg",
+   "author": {
+    "@type": "Organization",
+    "@id": "https://c2dterminal.com/#org",
+    "name": "C2D Works",
+    "url": "https://c2dterminal.com/"
+   },
+   "publisher": {
+    "@id": "https://c2dterminal.com/#org"
+   }
+  }
+ ]
+}
+</script>
+<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+<nav class="nav"><div class="in">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="" width="24" height="24">C2D Terminal</a>
+  <div class="links"><a href="/guides">Guides</a><a href="/install">Install</a><a href="/changelog">Changelog</a></div>
+  <a class="get" href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a>
+</div></nav>
+<main>
+<article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides">Guides</a> › Review changes before commit</p>
+<h1>How to review Claude Code's changes before you commit</h1>
+<p class="lede">Claude Code edits files fast. The safe habit is simple: let it change the working tree, then read the diff and make the commit yourself. This guide shows how to set that up in any terminal, and how C2D Terminal makes it the default.</p>
+<p class="meta">Updated 29 October 2026 · Written by the makers of C2D Terminal</p>
+
+<h2>1. Ask before every commit and push</h2>
+<p>Claude Code reads permission rules from <code>.claude/settings.json</code> in your project (shared with the team) or <code>~/.claude/settings.json</code> (just you). An <code>ask</code> rule makes Claude Code stop and ask you before a matching command runs:</p>
+<pre><code>{
+  "permissions": {
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ]
+  }
+}</code></pre>
+<p>Use <code>deny</code> instead of <code>ask</code> if you never want Claude Code to run them. One limit worth knowing, from Anthropic's permission docs: a rule matches the command as written, so <code>Bash(git push *)</code> does not catch a push written another way, such as <code>git -C . push</code>. Treat these rules as a guard rail, and keep the final check in your own hands.</p>
+<p>You can also say it in plain words in your project's <code>CLAUDE.md</code>, for example "Never commit or push. Stop after the change and tell me what to review." Claude Code reads that file at the start of every session.</p>
+
+<h2>2. Read the whole diff, not the summary</h2>
+<p>When Claude Code says it is done, its summary is a claim. The diff is the evidence. In a second terminal:</p>
+<pre><code>git status            # which files changed, and any new untracked files
+git diff              # every unstaged change, line by line
+git diff --stat       # a quick size check: did it touch more than you asked?</code></pre>
+<p>Look for files you did not expect, deleted tests, loosened assertions, and new dependencies. Untracked files do not show up in <code>git diff</code>, so check <code>git status</code> for them.</p>
+
+<h2>3. Stage hunk by hunk</h2>
+<p>Agents often bundle a good change with an unrelated one. Stage only what you have read and agree with:</p>
+<pre><code>git add -p            # walk through each hunk: y to stage, n to skip, s to split
+git diff --staged     # exactly what the commit will contain</code></pre>
+<p>Anything you skip stays in the working tree, so you can ask Claude Code to rework it or throw it away with <code>git restore &lt;file&gt;</code>.</p>
+
+<h2>4. Run the tests, then commit</h2>
+<p>Run the project's tests yourself before you commit, even if Claude Code already said they pass. Then write the commit, or ask Claude Code to draft the message and paste it in. The commit is yours either way.</p>
+
+<h2>Doing the same in C2D Terminal</h2>
+<p><a href="/">C2D Terminal</a> is built around this loop. Claude Code runs in a real terminal inside the app, and every file it touches shows up in the Git panel next to it:</p>
+<ul>
+<li>Status and diff for every changed file. Diffs open as an editor tab.</li>
+<li>Stage and unstage per file or per hunk, without leaving the window.</li>
+<li>Commit, optionally with a message drafted by Claude Code.</li>
+<li>Fetch, Pull and Push are separate buttons. The app never commits, pushes, pulls or discards on its own.</li>
+<li>Run the tests in a terminal pane in the same window, next to the diff.</li>
+</ul>
+<p>You still get the permission rules above if you add them: C2D runs the unmodified <code>claude</code> CLI and does not change its configuration.</p>
+<section class="cta">
+  <h2>Try C2D Terminal</h2>
+  <p>A free, open-source macOS app where Claude Code runs in a real terminal next to an editor and a Git panel. Nothing is committed or pushed until you press the button.</p>
+  <a class="pill" href="/install">Install guide</a>
+  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Star or watch the repo</a> to hear when the signed release ships.</p>
+</section>
+</article>
+</main>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+</body>
+</html>

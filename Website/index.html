@@ -29,33 +29,137 @@
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Caveat:wght@600&family=JetBrains+Mono:wght@500&display=swap"></noscript>
 <script type="application/ld+json">
 {
-  "@context": "https://schema.org",
-  "@graph": [
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "Organization",
+   "@id": "https://c2dterminal.com/#org",
+   "name": "C2D Works",
+   "url": "https://c2dterminal.com/",
+   "logo": "https://c2dterminal.com/icon-512.png",
+   "sameAs": [
+    "https://github.com/cemozbeyy"
+   ]
+  },
+  {
+   "@type": "WebSite",
+   "@id": "https://c2dterminal.com/#website",
+   "name": "C2D Terminal",
+   "url": "https://c2dterminal.com/",
+   "publisher": {
+    "@id": "https://c2dterminal.com/#org"
+   },
+   "inLanguage": "en"
+  },
+  {
+   "@type": "SoftwareApplication",
+   "@id": "https://c2dterminal.com/#app",
+   "name": "C2D Terminal",
+   "url": "https://c2dterminal.com/",
+   "image": "https://c2dterminal.com/shots/og.jpg",
+   "screenshot": "https://c2dterminal.com/shots/shot1.jpg",
+   "description": "A free, open-source macOS app for Apple Silicon that runs Claude Code in real PTY terminals next to an editor, a file explorer and a Git panel, in one native window.",
+   "applicationCategory": "DeveloperApplication",
+   "operatingSystem": "macOS 15 or later (Apple Silicon)",
+   "license": "https://opensource.org/license/mit",
+   "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+   },
+   "author": {
+    "@id": "https://c2dterminal.com/#org"
+   },
+   "publisher": {
+    "@id": "https://c2dterminal.com/#org"
+   },
+   "installUrl": "https://c2dterminal.com/install",
+   "sameAs": [
+    "https://github.com/cemozbeyy/c2d-terminal"
+   ]
+  },
+  {
+   "@type": "VideoObject",
+   "name": "C2D Terminal in 45 seconds",
+   "description": "Open a project, work beside Claude Code, run the tests and review the changes in Git.",
+   "thumbnailUrl": "https://c2dterminal.com/shots/demo-poster.jpg",
+   "contentUrl": "https://c2dterminal.com/demo.mp4",
+   "uploadDate": "2026-10-21",
+   "duration": "PT45S",
+   "publisher": {
+    "@id": "https://c2dterminal.com/#org"
+   }
+  },
+  {
+   "@type": "FAQPage",
+   "mainEntity": [
     {
-      "@type": "SoftwareApplication",
-      "name": "C2D Terminal",
-      "url": "https://c2dterminal.com/",
-      "image": "https://c2dterminal.com/shots/og.jpg",
-      "description": "A native macOS terminal app where Claude Code, Git, an editor and real PTY shells share one window.",
-      "applicationCategory": "DeveloperApplication",
-      "license": "https://opensource.org/license/mit",
-      "operatingSystem": "macOS 15 or later (Apple Silicon)",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "author": { "@type": "Organization", "name": "C2D Works", "url": "https://c2dterminal.com/" },
-      "sameAs": ["https://github.com/cemozbeyy/c2d-terminal"]
+     "@type": "Question",
+     "name": "What is C2D Terminal?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "C2D Terminal is a free, open-source (MIT) macOS app for Apple Silicon that runs Claude Code in real terminals, next to a code editor, a file explorer and a Git panel, all in one native window."
+     }
     },
     {
-      "@type": "FAQPage",
-      "mainEntity": [
-        { "@type": "Question", "name": "Is it a real terminal or a chat window?", "acceptedAnswer": { "@type": "Answer", "text": "A real terminal. Every shell and agent runs in a genuine PTY with your own shell config and PATH." } },
-        { "@type": "Question", "name": "Does my code leave my Mac?", "acceptedAnswer": { "@type": "Answer", "text": "Not to C2D. Agents talk to the provider you set up, with your own access, and you're responsible for those charges." } },
-        { "@type": "Question", "name": "Will an agent commit or push for me?", "acceptedAnswer": { "@type": "Answer", "text": "Never. Commits, pushes, pulls and discards are always your explicit actions." } },
-        { "@type": "Question", "name": "How much does it cost?", "acceptedAnswer": { "@type": "Answer", "text": "The core is free and open source: terminal, editor, Git and agents. If a paid tier ever comes, it will never lock core features." } },
-        { "@type": "Question", "name": "How is this different from iTerm2 or Warp?", "acceptedAnswer": { "@type": "Answer", "text": "Those are terminal emulators. C2D Terminal is a workspace: real PTY terminals plus an editor, a Git panel and a dedicated place for Claude Code sessions, all in one native macOS window. Keep your favorite terminal for everything else." } },
-        { "@type": "Question", "name": "Does it work with Codex or other agents?", "acceptedAnswer": { "@type": "Answer", "text": "Claude Code is the verified agent today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested." } }
-      ]
+     "@type": "Question",
+     "name": "Is it a real terminal or a chat window?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "A real terminal. In C2D Terminal every shell and agent runs in a genuine PTY with your own shell config and PATH."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Does my code leave my Mac?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Not to C2D. C2D Terminal has no server and no account. Agents talk to the provider you set up, with your own access, and you're responsible for those charges."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Will an agent commit or push for me?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Never. In C2D Terminal, commits, pushes, pulls and discards are always your explicit actions."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Is there a download?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Not yet. C2D Terminal has no signed or notarized build, so today you build it from source with Xcode and XcodeGen. The install guide takes you through it."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How much does it cost?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "The core of C2D Terminal is free and open source: terminal, editor, Git and agents. If a paid tier ever comes, it will never lock core features."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How is this different from iTerm2 or Warp?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Those are terminal emulators. C2D Terminal is a workspace: real PTY terminals plus an editor, a Git panel and a dedicated place for Claude Code sessions, all in one native macOS window. Keep your favorite terminal for everything else."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Does it work with Codex or other agents?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Claude Code is the agent verified in C2D Terminal today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested."
+     }
     }
-  ]
+   ]
+  }
+ ]
 }
 </script>
 <style>
@@ -117,7 +221,7 @@ img{display:block;max-width:100%;height:auto}
 @media (max-width:560px){.bubble{left:50%;top:-34px;transform:translateX(-50%)}.bubble.hide{transform:translateX(-50%) scale(.4)}}
 .hero h1{font-size:clamp(46px,8vw,96px);font-weight:900;line-height:.98;letter-spacing:-.035em}
 .hero h1 em{font-style:normal;background:linear-gradient(90deg,#6f5cf1,#e46aa0 55%,#f0a04b);-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero .sub{font-size:clamp(19px,2vw,24px);color:var(--ink-2);font-weight:600;max-width:30ch}
+.hero .sub{font-size:clamp(19px,2vw,24px);color:var(--ink-2);font-weight:600;max-width:36ch}
 .hero .ctas{display:flex;flex-wrap:wrap;gap:22px;align-items:center;justify-content:center;margin-top:10px}
 .hero .fine{font-size:14px;color:var(--ink-3);font-weight:600}
 
@@ -204,6 +308,7 @@ summary::-webkit-details-marker{display:none}
 summary::after{content:"+";width:28px;height:28px;border-radius:50%;background:var(--cream-2);display:grid;place-items:center;flex:none;font-weight:900;transition:transform .2s}
 details[open] summary::after{transform:rotate(45deg)}
 details p{color:var(--ink-2);font-weight:600;padding-bottom:20px}
+details p a{color:var(--lav-text);text-decoration:underline}
 
 /* final */
 .final{background:var(--ink);color:var(--cream);border-radius:40px 40px 0 0;padding-block:100px 40px}
@@ -227,6 +332,7 @@ footer a:hover{color:var(--cream)}
 }
 @media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}.laptop{transform:none!important}html{scroll-behavior:auto}}
 </style>
+<noscript><style>.rv{opacity:1;transform:none}</style></noscript>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
@@ -254,7 +360,7 @@ footer a:hover{color:var(--cream)}
 
 <nav class="nav"><div class="wrap">
   <a class="brand" href="#top"><svg><use href="#tiny"/></svg>C2D Terminal</a>
-  <ul id="nav-links"><li><a href="#inside">Inside</a></li><li><a href="#how">How it works</a></li><li><a href="#moods">Moods</a></li><li><a href="#film">Film</a></li><li><a href="#faq">FAQ</a></li></ul>
+  <ul id="nav-links"><li><a href="#inside">Inside</a></li><li><a href="#how">How it works</a></li><li><a href="#moods">Moods</a></li><li><a href="#film">Film</a></li><li><a href="#faq">FAQ</a></li><li><a href="/guides">Guides</a></li></ul>
   <a class="get" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Get it on GitHub</a>
   <button class="menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><span></span><span></span><span></span></button>
 </div></nav>
@@ -273,9 +379,9 @@ footer a:hover{color:var(--cream)}
   </div>
   <span class="hand">meet your new favorite terminal</span>
   <h1>Cozy terminal.<br><em>Serious work.</em></h1>
-  <p class="sub">A native macOS terminal and workspace where Claude Code, Git and real shells all get along.</p>
+  <p class="sub">C2D Terminal is a free, open-source macOS app where Claude Code, Git, an editor and real shells share one window.</p>
   <div class="ctas"><a class="pill" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run">Get it on GitHub</a><a class="more" href="#film">Watch the film</a></div>
-  <p class="fine">Free and open source · Apple Silicon · macOS 15+<br>Requires Xcode and XcodeGen · setup instructions on GitHub</p>
+  <p class="fine">Free and open source · Apple Silicon · macOS 15+<br>Requires Xcode and XcodeGen · <a class="more" href="/install">install guide</a></p>
 </header>
 
 <div class="stage">
@@ -357,12 +463,14 @@ footer a:hover{color:var(--cream)}
   <span class="hand rv">good questions</span>
   <h2 class="rv">Ask away.</h2>
   <div class="faq rv">
-    <details open><summary>Is it a real terminal or a chat window?</summary><p>A real terminal. Every shell and agent runs in a genuine PTY with your own shell config and PATH.</p></details>
-    <details><summary>Does my code leave my Mac?</summary><p>Not to C2D. Agents talk to the provider you set up, with your own access, and you're responsible for those charges.</p></details>
-    <details><summary>Will an agent commit or push for me?</summary><p>Never. Commits, pushes, pulls and discards are always your explicit actions.</p></details>
-    <details><summary>How much does it cost?</summary><p>The core is free and open source: terminal, editor, Git and agents. If a paid tier ever comes, it will never lock core features.</p></details>
+    <details open><summary>What is C2D Terminal?</summary><p>C2D Terminal is a free, open-source (MIT) macOS app for Apple Silicon that runs Claude Code in real terminals, next to a code editor, a file explorer and a Git panel, all in one native window.</p></details>
+    <details><summary>Is it a real terminal or a chat window?</summary><p>A real terminal. In C2D Terminal every shell and agent runs in a genuine PTY with your own shell config and PATH.</p></details>
+    <details><summary>Does my code leave my Mac?</summary><p>Not to C2D. C2D Terminal has no server and no account. Agents talk to the provider you set up, with your own access, and you're responsible for those charges.</p></details>
+    <details><summary>Will an agent commit or push for me?</summary><p>Never. In C2D Terminal, commits, pushes, pulls and discards are always your explicit actions.</p></details>
+    <details><summary>Is there a download?</summary><p>Not yet. C2D Terminal has no signed or notarized build, so today you build it from source with Xcode and XcodeGen. The <a href="/install">install guide</a> takes you through it.</p></details>
+    <details><summary>How much does it cost?</summary><p>The core of C2D Terminal is free and open source: terminal, editor, Git and agents. If a paid tier ever comes, it will never lock core features.</p></details>
     <details><summary>How is this different from iTerm2 or Warp?</summary><p>Those are terminal emulators. C2D Terminal is a workspace: real PTY terminals plus an editor, a Git panel and a dedicated place for Claude Code sessions, all in one native macOS window. Keep your favorite terminal for everything else.</p></details>
-    <details><summary>Does it work with Codex or other agents?</summary><p>Claude Code is the verified agent today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested.</p></details>
+    <details><summary>Does it work with Codex or other agents?</summary><p>Claude Code is the agent verified in C2D Terminal today. A Codex launcher exists but is not verified yet, and other CLI agents can join through adapters as they are tested.</p></details>
   </div>
 </section>
 
@@ -373,7 +481,8 @@ footer a:hover{color:var(--cream)}
     <p class="lead rv">Your projects, agents and Git share one cozy native window, and the core is free.</p>
     <a class="pill rv" href="https://github.com/cemozbeyy/c2d-terminal#build-and-run" style="margin-top:8px">Get it on GitHub</a>
     <p class="rv" style="color:#a39890;font-size:14px;font-weight:600">Apple Silicon · macOS 15 or later · No signed download yet: you build it with Xcode</p>
-    <footer><span>© 2026 C2D Works · C2D Terminal</span><span><a href="#inside">Inside</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+    <p class="rv" style="color:#c8bfb6;font-size:15px;font-weight:700">Not ready to build? <a href="https://github.com/cemozbeyy/c2d-terminal" style="text-decoration:underline">Star or watch the repo</a> to hear when the signed release ships.</p>
+    <footer><span>© 2026 C2D Works · C2D Terminal</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
   </div>
 </section>
 </main>
