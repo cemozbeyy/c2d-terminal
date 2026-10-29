@@ -49,7 +49,7 @@
    ]
   },
   {
-   "@type": "TechArticle",
+   "@type": "BlogPosting",
    "headline": "How to review Claude Code's changes before you commit",
    "description": "How to stop Claude Code from committing or pushing on its own, then review its diff hunk by hunk and commit yourself. Works in any terminal.",
    "url": "https://c2dterminal.com/guides/review-claude-code-changes-before-commit",
@@ -61,7 +61,10 @@
     "@type": "Organization",
     "@id": "https://c2dterminal.com/#org",
     "name": "C2D Works",
-    "url": "https://c2dterminal.com/"
+    "url": "https://c2dterminal.com/",
+    "sameAs": [
+     "https://github.com/cemozbeyy"
+    ]
    },
    "publisher": {
     "@id": "https://c2dterminal.com/#org"
@@ -72,6 +75,7 @@
 </script>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
 <script defer src="/_vercel/insights/script.js"></script>
+<script>addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre').forEach(function(pre){var b=document.createElement('button');b.type='button';b.className='copy';b.textContent='Copy';b.setAttribute('aria-label','Copy code');b.addEventListener('click',function(){try{navigator.clipboard.writeText((pre.querySelector("code")||pre).innerText).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)})}catch(e){}});pre.appendChild(b)})})</script>
 </head>
 <body>
 <nav class="nav"><div class="in">
@@ -86,7 +90,7 @@
 <p class="lede">Claude Code edits files fast. The safe habit is simple: let it change the working tree, then read the diff and make the commit yourself. This guide shows how to set that up in any terminal, and how C2D Terminal makes it the default.</p>
 <p class="meta">Updated 29 October 2026 · Written by the makers of C2D Terminal</p>
 
-<h2>1. Ask before every commit and push</h2>
+<h2>1. Stop Claude Code from committing on its own</h2>
 <p>Claude Code reads permission rules from <code>.claude/settings.json</code> in your project (shared with the team) or <code>~/.claude/settings.json</code> (just you). An <code>ask</code> rule makes Claude Code stop and ask you before a matching command runs:</p>
 <pre><code>{
   "permissions": {
@@ -96,8 +100,13 @@
     ]
   }
 }</code></pre>
-<p>Use <code>deny</code> instead of <code>ask</code> if you never want Claude Code to run them. One limit worth knowing, from Anthropic's permission docs: a rule matches the command as written, so <code>Bash(git push *)</code> does not catch a push written another way, such as <code>git -C . push</code>. Treat these rules as a guard rail, and keep the final check in your own hands.</p>
-<p>You can also say it in plain words in your project's <code>CLAUDE.md</code>, for example "Never commit or push. Stop after the change and tell me what to review." Claude Code reads that file at the start of every session.</p>
+<p>Use <code>deny</code> instead of <code>ask</code> if you never want Claude Code to run them. Claude Code checks deny rules first, then ask, then allow, so a deny or ask rule wins over any allow rule that also matches.</p>
+<p>Three things that catch people out:</p>
+<ul>
+<li><b>An earlier "Yes, and don't ask again".</b> If you once approved <code>git commit</code> that way, Claude Code saved an allow rule to <code>.claude/settings.local.json</code> at the repository root. Your new ask or deny rule still wins, but delete the old entry so the file says what you mean.</li>
+<li><b>Rules match the command as written.</b> <code>Bash(git push *)</code> does not catch a push written another way, such as <code>git -C . push</code>. Treat rules as a guard rail, not a lock.</li>
+<li><b>CLAUDE.md is an instruction, not enforcement.</b> A line such as "Never commit or push. Stop after the change and tell me what to review." helps, and Claude Code reads it every session, but only permission rules make it stop and ask.</li>
+</ul>
 
 <h2>2. Read the whole diff, not the summary</h2>
 <p>When Claude Code says it is done, its summary is a claim. The diff is the evidence. In a second terminal:</p>
@@ -121,18 +130,23 @@ git diff --staged     # exactly what the commit will contain</code></pre>
 <li>Status and diff for every changed file. Diffs open as an editor tab.</li>
 <li>Stage and unstage per file or per hunk, without leaving the window.</li>
 <li>Commit, optionally with a message drafted by Claude Code.</li>
-<li>Fetch, Pull and Push are separate buttons. The app never commits, pushes, pulls or discards on its own.</li>
+<li>Fetch, Pull and Push are separate buttons. The app itself never commits, pushes, pulls or discards on its own.</li>
 <li>Run the tests in a terminal pane in the same window, next to the diff.</li>
 </ul>
-<p>You still get the permission rules above if you add them: C2D runs the unmodified <code>claude</code> CLI and does not change its configuration.</p>
+<p>One thing C2D does not do: it does not stop Claude Code from running <code>git commit</code> in its own terminal. C2D runs the unmodified <code>claude</code> CLI and leaves its permission settings to you, so add the rules from step 1 if you want Claude Code to ask first.</p>
+<h2>Related guides</h2>
+<ul class="cards">
+<li><a href="/guides/run-multiple-claude-code-sessions-mac"><b>Run several Claude Code sessions on a Mac</b><span>Give each session its own git worktree so parallel edits never collide, and keep track of which agent changed what.</span></a></li>
+<li><a href="/best-terminal-for-claude-code-mac"><b>Terminals for Claude Code on macOS</b><span>Claude Code runs in any Mac terminal. What to set up in Terminal.app, iTerm2, Ghostty, Kitty, WezTerm and Warp.</span></a></li>
+</ul>
 <section class="cta">
   <h2>Try C2D Terminal</h2>
   <p>A free, open-source macOS app where Claude Code runs in a real terminal next to an editor and a Git panel. Nothing is committed or pushed until you press the button.</p>
   <a class="pill" href="/install">Install guide</a>
-  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Star or watch the repo</a> to hear when the signed release ships.</p>
+  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Watch the repo for releases</a> (Watch → Custom → Releases) to hear when the signed build ships.</p>
 </section>
 </article>
 </main>
-<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a> is an independent project, not affiliated with Anthropic.</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
 </body>
 </html>

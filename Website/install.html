@@ -47,6 +47,7 @@
 </script>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
 <script defer src="/_vercel/insights/script.js"></script>
+<script>addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre').forEach(function(pre){var b=document.createElement('button');b.type='button';b.className='copy';b.textContent='Copy';b.setAttribute('aria-label','Copy code');b.addEventListener('click',function(){try{navigator.clipboard.writeText((pre.querySelector("code")||pre).innerText).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)})}catch(e){}});pre.appendChild(b)})})</script>
 </head>
 <body>
 <nav class="nav"><div class="in">
@@ -66,7 +67,7 @@
 <li>macOS 15 or later on Apple Silicon.</li>
 <li>Xcode with Swift 6.1 or later.</li>
 <li><a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a>.</li>
-<li><a href="https://code.claude.com/docs/en/overview">Claude Code</a>, if you want agent sessions.</li>
+<li><a href="https://code.claude.com/docs/en/overview">Claude Code</a>, if you want agent sessions. C2D Terminal is free, but Claude Code needs an Anthropic account with a paid plan or API access.</li>
 </ul>
 <p>Install XcodeGen with Homebrew:</p>
 <pre><code>brew install xcodegen</code></pre>
@@ -94,6 +95,6 @@ xcodebuild build -project C2DTerminal.xcodeproj -scheme C2DTerminal -configurati
 
 </article>
 </main>
-<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a> is an independent project, not affiliated with Anthropic.</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
 </body>
 </html>

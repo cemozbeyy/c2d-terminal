@@ -49,7 +49,7 @@
    ]
   },
   {
-   "@type": "TechArticle",
+   "@type": "BlogPosting",
    "headline": "How to run several Claude Code sessions at once on a Mac",
    "description": "Run several Claude Code sessions in parallel without edits colliding: one git worktree per session, how to resume them, and how to keep track.",
    "url": "https://c2dterminal.com/guides/run-multiple-claude-code-sessions-mac",
@@ -61,7 +61,10 @@
     "@type": "Organization",
     "@id": "https://c2dterminal.com/#org",
     "name": "C2D Works",
-    "url": "https://c2dterminal.com/"
+    "url": "https://c2dterminal.com/",
+    "sameAs": [
+     "https://github.com/cemozbeyy"
+    ]
    },
    "publisher": {
     "@id": "https://c2dterminal.com/#org"
@@ -72,6 +75,7 @@
 </script>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
 <script defer src="/_vercel/insights/script.js"></script>
+<script>addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre').forEach(function(pre){var b=document.createElement('button');b.type='button';b.className='copy';b.textContent='Copy';b.setAttribute('aria-label','Copy code');b.addEventListener('click',function(){try{navigator.clipboard.writeText((pre.querySelector("code")||pre).innerText).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)})}catch(e){}});pre.appendChild(b)})})</script>
 </head>
 <body>
 <nav class="nav"><div class="in">
@@ -91,21 +95,29 @@
 <pre><code>claude --worktree feature-auth</code></pre>
 <p>In a second terminal, the same command with another name starts an isolated parallel session:</p>
 <pre><code>claude --worktree fix-login-bug</code></pre>
-<p>Each worktree is a separate checkout on its own branch, created from an existing commit, so the repository needs at least one commit first. If you prefer to manage worktrees yourself, plain git works too:</p>
+<p>Claude Code puts each worktree in <code>.claude/worktrees/&lt;name&gt;/</code> at the repository root, on a new branch called <code>worktree-&lt;name&gt;</code>, branched from your default branch. The repository needs at least one commit first. Add <code>.claude/worktrees/</code> to your <code>.gitignore</code> so the folders don't show up as untracked files in your main checkout.</p>
+<h3>Set up each worktree</h3>
+<p>A worktree is a fresh checkout, so install dependencies there (or ask Claude Code to). Gitignored files such as <code>.env</code> are not copied by default. List them in a <code>.worktreeinclude</code> file at the project root, using <code>.gitignore</code> syntax, and Claude Code copies them into every new worktree:</p>
+<pre><code>.env
+.env.local</code></pre>
+<h3>Or manage worktrees with plain git</h3>
+<p>Use git directly when you want a specific existing branch or a folder outside the repository:</p>
 <pre><code>git worktree add ../myapp-auth -b feature-auth
 cd ../myapp-auth && claude</code></pre>
-<p>When a branch is merged, remove its folder with <code>git worktree remove ../myapp-auth</code>.</p>
+<p>See what you have with <code>git worktree list</code>, and remove a folder when its branch is merged with <code>git worktree remove ../myapp-auth</code>.</p>
+<h3>What happens when you exit</h3>
+<p>When you leave a <code>--worktree</code> session, Claude Code checks the worktree for changes, untracked files and new commits. A clean worktree from an unnamed session is removed with its branch. If there is work in it, Claude Code asks whether to keep it, and prints a <code>claude --worktree &lt;name&gt; --resume</code> command to come back to it later.</p>
 
 <h2>2. Pick up where a session left off</h2>
 <pre><code>claude --continue     # resume the most recent session in this folder
 claude --resume       # choose from a list of earlier sessions</code></pre>
-<p>Because sessions are stored per folder, a separate worktree also keeps each session's history separate.</p>
+<p>Because sessions are stored per folder, a separate worktree also keeps each session's history separate. Permission approvals are shared, though: "Yes, and don't ask again" in any worktree is saved to the main checkout's <code>.claude/settings.local.json</code> and applies to every worktree of the repository.</p>
 
 <h2>3. Know when a session needs you</h2>
 <p>Claude Code sends a desktop notification when it finishes or waits for a permission prompt, by default in Ghostty, Kitty and iTerm2. In other terminals, set <code>"preferredNotifChannel": "terminal_bell"</code> in <code>~/.claude/settings.json</code> to get a bell instead. See the <a href="/best-terminal-for-claude-code-mac">terminal setup guide</a> for details.</p>
 
 <h2>4. Review each branch on its own</h2>
-<p>Parallel sessions mean parallel diffs. Review and commit each worktree separately, with the steps in <a href="/guides/review-claude-code-changes-before-commit">How to review Claude Code's changes before you commit</a>, and merge only what you have read.</p>
+<p>Parallel sessions mean parallel diffs, and two sessions that edit the same files will still conflict when you merge. Review and commit each worktree separately, with the steps in <a href="/guides/review-claude-code-changes-before-commit">How to review Claude Code's changes before you commit</a>, and merge only what you have read.</p>
 
 <h2>Doing the same in C2D Terminal</h2>
 <p>In <a href="/">C2D Terminal</a> the pieces above sit in one window:</p>
@@ -116,14 +128,19 @@ claude --resume       # choose from a list of earlier sessions</code></pre>
 <li>Terminal windows have native tabs and split panes, so tests and dev servers run next to the agent.</li>
 <li>Token Saver shows token usage per project and per session, read from Claude Code's own local transcripts.</li>
 </ul>
+<h2>Related guides</h2>
+<ul class="cards">
+<li><a href="/guides/review-claude-code-changes-before-commit"><b>Review Claude Code changes before you commit</b><span>Keep Claude Code from committing on its own, then read the diff, stage hunk by hunk and commit yourself.</span></a></li>
+<li><a href="/best-terminal-for-claude-code-mac"><b>Terminals for Claude Code on macOS</b><span>Claude Code runs in any Mac terminal. What to set up in Terminal.app, iTerm2, Ghostty, Kitty, WezTerm and Warp.</span></a></li>
+</ul>
 <section class="cta">
   <h2>Try C2D Terminal</h2>
   <p>A free, open-source macOS app where Claude Code runs in a real terminal next to an editor and a Git panel. Nothing is committed or pushed until you press the button.</p>
   <a class="pill" href="/install">Install guide</a>
-  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Star or watch the repo</a> to hear when the signed release ships.</p>
+  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Watch the repo for releases</a> (Watch → Custom → Releases) to hear when the signed build ships.</p>
 </section>
 </article>
 </main>
-<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a> is an independent project, not affiliated with Anthropic.</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
 </body>
 </html>

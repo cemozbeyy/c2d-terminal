@@ -43,7 +43,7 @@
    ]
   },
   {
-   "@type": "TechArticle",
+   "@type": "BlogPosting",
    "headline": "Choosing and setting up a terminal for Claude Code on macOS",
    "description": "Claude Code works in any Mac terminal. What to configure in Terminal.app, iTerm2, Ghostty, Kitty, WezTerm and Warp: newlines, Option key, notifications.",
    "url": "https://c2dterminal.com/best-terminal-for-claude-code-mac",
@@ -55,7 +55,10 @@
     "@type": "Organization",
     "@id": "https://c2dterminal.com/#org",
     "name": "C2D Works",
-    "url": "https://c2dterminal.com/"
+    "url": "https://c2dterminal.com/",
+    "sameAs": [
+     "https://github.com/cemozbeyy"
+    ]
    },
    "publisher": {
     "@id": "https://c2dterminal.com/#org"
@@ -66,6 +69,7 @@
 </script>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};</script>
 <script defer src="/_vercel/insights/script.js"></script>
+<script>addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre').forEach(function(pre){var b=document.createElement('button');b.type='button';b.className='copy';b.textContent='Copy';b.setAttribute('aria-label','Copy code');b.addEventListener('click',function(){try{navigator.clipboard.writeText((pre.querySelector("code")||pre).innerText).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)})}catch(e){}});pre.appendChild(b)})})</script>
 </head>
 <body>
 <nav class="nav"><div class="in">
@@ -123,14 +127,19 @@ set -as terminal-features 'xterm*:extkeys'</code></pre>
 <h2>When a terminal alone is not enough</h2>
 <p>Any of the terminals above runs Claude Code well. What they leave to you is everything around it: an editor to read the files it touched, a Git client to review and commit, and a way to keep several sessions and projects apart.</p>
 <p><a href="/">C2D Terminal</a> is our answer to that, and you can use it next to the terminal you already have. It is a native macOS workspace where Claude Code runs in a real terminal (a genuine PTY with your own shell, dotfiles and PATH), with an editor, a file explorer and a Git panel in the same window. It is free and open source under the MIT license. It is younger than everything above, and there is no signed download yet, so you build it from source.</p>
+<h2>Related guides</h2>
+<ul class="cards">
+<li><a href="/guides/review-claude-code-changes-before-commit"><b>Review Claude Code changes before you commit</b><span>Keep Claude Code from committing on its own, then read the diff, stage hunk by hunk and commit yourself.</span></a></li>
+<li><a href="/guides/run-multiple-claude-code-sessions-mac"><b>Run several Claude Code sessions on a Mac</b><span>Give each session its own git worktree so parallel edits never collide, and keep track of which agent changed what.</span></a></li>
+</ul>
 <section class="cta">
   <h2>Try C2D Terminal</h2>
   <p>A free, open-source macOS app where Claude Code runs in a real terminal next to an editor and a Git panel. Nothing is committed or pushed until you press the button.</p>
   <a class="pill" href="/install">Install guide</a>
-  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Star or watch the repo</a> to hear when the signed release ships.</p>
+  <p class="fine">Apple Silicon, macOS 15+. No signed download yet: you build it with Xcode. <a href="https://github.com/cemozbeyy/c2d-terminal">Watch the repo for releases</a> (Watch → Custom → Releases) to hear when the signed build ships.</p>
 </section>
 </article>
 </main>
-<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a></span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
+<footer><span>© 2026 C2D Works · <a href="/">C2D Terminal</a> is an independent project, not affiliated with Anthropic.</span><span><a href="/guides">Guides</a> · <a href="/install">Install</a> · <a href="/changelog">Changelog</a> · <a href="https://github.com/cemozbeyy/c2d-terminal">GitHub</a></span></footer>
 </body>
 </html>
