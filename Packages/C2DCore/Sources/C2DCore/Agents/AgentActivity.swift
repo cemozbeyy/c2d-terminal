@@ -80,18 +80,15 @@ public struct TokenSaverLaunchHook: Hashable, Sendable {
         public var hook: TokenSaverLaunchHook? { if case .on(let h) = self { return h }; return nil }
     }
 
-    /// Release builds, Token Saver off, the fold switch off (the default), an RTK hook (configured or unknown: one owner
-    /// per output is not yet proven — fail-closed), or a missing helper each keep the fold out of the launch.
+    /// Release builds, Token Saver off, the fold switch off (the default), an unknown RTK hook state (fail-closed), or a
+    /// missing helper each keep the fold out of the launch. A configured RTK hook does not: the helper skips RTK-owned output
+    /// (one owner per output), shown by hookcheck rtk-1/rtk-2 and the rtk vs combined gate run, 2026-10-30.
     public static func decide(isDebugBuild: Bool, tokenSaverOn: Bool, foldOn: Bool, rtkHookConfigured: Bool?,
                               helperPath: String?, ledgerPath: String?, projectPath: String) -> Decision {
         guard isDebugBuild else { return .off("Release builds never add the fold hook.") }
         guard tokenSaverOn else { return .off("Token Saver is off.") }
         guard foldOn else { return .off("Off (default).") }
-        switch rtkHookConfigured {
-        case nil: return .off("RTK hook state unknown; the fold stays off (fail-closed).")
-        case true?: return .off("RTK hook is active, so the C2D fold stays off until a combined run proves it never reprocesses RTK output (fail-closed).")
-        case false?: break
-        }
+        guard rtkHookConfigured != nil else { return .off("RTK hook state unknown; the fold stays off (fail-closed).") }
         guard let helperPath, FileManager.default.isExecutableFile(atPath: helperPath) else { return .off("Fold helper is not in this build.") }
         guard let ledgerPath else { return .off("No ledger path.") }
         return .on(TokenSaverLaunchHook(helperPath: helperPath, ledgerPath: ledgerPath, projectFolder: ClaudeTranscriptReader.projectFolderName(for: projectPath)))

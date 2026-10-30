@@ -412,10 +412,11 @@ struct OptimizerPopover: View {
                 // Input/output: provider-reported (Claude Code transcripts of this project).
                 sectionTitle("Claude sessions launched from C2D")
                 let u = workspace.optimizer.usage
-                MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens) } ?? "—",
-                          detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it re-read from cache" } ?? workspace.optimizer.usageNote,
+                // Lead with fresh input; cache re-reads (most of the total, billed far lower) only in the detail (owner 2026-10-30).
+                MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheCreationInputTokens) } ?? "—",
+                          detail: u.map { "+ \(TokenSaverFormat.count($0.cacheReadInputTokens)) re-read from cache" } ?? workspace.optimizer.usageNote,
                           valueMuted: u == nil,
-                          help: "Every token Claude read in the \(workspace.optimizer.c2dSessions.count) session(s) launched from C2D in this project, provider-reported. Sessions started in another terminal are not counted. Each turn re-sends the whole conversation; those re-sent tokens are cache reads, billed far below fresh input.")
+                          help: "Fresh input tokens (new + written to cache) Claude read in the \(workspace.optimizer.c2dSessions.count) session(s) launched from C2D in this project, provider-reported. Sessions started in another terminal are not counted. Each turn re-sends the whole conversation; those re-sent tokens are cache reads, billed far below fresh input.")
                 MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—",
                           valueMuted: u == nil,
                           help: u == nil ? nil : "Tokens Claude wrote, provider-reported" + (workspace.optimizer.usageFormatTag.map { " · \($0)" } ?? "") + ".")
@@ -450,7 +451,7 @@ struct OptimizerPopover: View {
                     Text("Experimental: C2D fold (Debug)").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
                 }
                 .toggleStyle(.switch).controlSize(.mini).tint(Theme.accent).clickCursor()
-                .help("C2D's own output filter: folds repeated lines in Bash output before Claude reads it. Off by default; stays off while RTK is active, and delivery to the model is not proven yet.")
+                .help("C2D's own output filter: folds repeated lines in Bash output before Claude reads it. Off by default. Runs beside RTK on the commands RTK does not rewrite; never touches RTK output.")
                 #endif
                 Button { showReport = true } label: {
                     Label("Open report", systemImage: "list.bullet.rectangle").font(Theme.Typography.detail)

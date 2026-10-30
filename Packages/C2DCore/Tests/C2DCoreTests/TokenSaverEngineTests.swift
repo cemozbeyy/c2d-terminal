@@ -48,6 +48,11 @@ import Testing
         #expect(skip(Self.payload(command: "grep value", stdout: "[rtk] 40 matches\n" + Self.foldable)) == .rtk)
         #expect(skip(Self.payload(command: "git diff", stdout: Self.foldable)) == .diff)
         #expect(skip(Self.payload(command: "cat log", stdout: "<persisted-output>\n" + Self.foldable)) == .persisted)
+        // Over ~30 KB the CLI gives the hook a prefix plus persistedOutputPath and ignores any replacement.
+        let persisted = try! JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": ["command": "sh gen.sh"],
+            "tool_response": ["stdout": Self.foldable, "stderr": "", "persistedOutputPath": "/tmp/x.txt", "persistedOutputSize": 212679]])
+        #expect(skip(persisted) == .persisted)
         #expect(skip(Self.payload(command: "make", stdout: Self.foldable, interrupted: true)) == .interrupted)
         #expect(skip(Self.payload(command: "true", stdout: "")) == .empty)
         #expect(skip(Self.payload(command: "echo hi", stdout: "hi\n")) == .noGain)
@@ -74,7 +79,7 @@ import Testing
         #expect(decide(debug: false).hook == nil, "Release never")
         #expect(decide(on: false).hook == nil)
         #expect(decide(fold: false).hook == nil, "off by default")
-        #expect(decide(rtk: true).hook == nil, "RTK configured: fail-closed")
+        #expect(decide(rtk: true).hook != nil, "RTK configured: fold runs beside it, skipping RTK-owned output")
         #expect(decide(rtk: nil).hook == nil, "RTK unknown: fail-closed")
         #expect(decide(helperPath: nil).hook == nil && decide(helperPath: "/no/such/helper").hook == nil)
         let hook = try #require(decide().hook)
