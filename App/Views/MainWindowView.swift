@@ -402,13 +402,23 @@ struct OptimizerPopover: View {
                 Toggle("", isOn: $model.optimizerEnabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Theme.accent).clickCursor()
             }
             if model.optimizerEnabled {
+                // One Token Saver (owner decision 2026-10-26): RTK-powered + C2D fold in one estimate, each engine's own count.
+                // Estimates only (bytes/4); "provider-verified" is never claimed here. Savings lead the card (owner 2026-10-30).
+                let g = workspace.optimizer.gain
+                let rtkOn = workspace.optimizer.rtkHookConfigured
+                let fold = workspace.optimizer.foldDecision
+                savedCard(g)
+
                 // Input/output: provider-reported (Claude Code transcripts of this project).
+                sectionTitle("Claude sessions launched from C2D")
                 let u = workspace.optimizer.usage
                 MetricRow(label: "Input", value: u.map { TokenSaverFormat.count($0.inputTokens + $0.cacheReadInputTokens + $0.cacheCreationInputTokens) } ?? "—",
-                          detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it cache reads · provider-reported, all Claude Code sessions of this project" } ?? workspace.optimizer.usageNote,
-                          valueMuted: u == nil)
+                          detail: u.map { "\(TokenSaverFormat.count($0.cacheReadInputTokens)) of it re-read from cache" } ?? workspace.optimizer.usageNote,
+                          valueMuted: u == nil,
+                          help: "Every token Claude read in the \(workspace.optimizer.c2dSessions.count) session(s) launched from C2D in this project, provider-reported. Sessions started in another terminal are not counted. Each turn re-sends the whole conversation; those re-sent tokens are cache reads, billed far below fresh input.")
                 MetricRow(label: "Output", value: u.map { TokenSaverFormat.count($0.outputTokens) } ?? "—",
-                          detail: u == nil ? nil : "provider-reported" + (workspace.optimizer.usageFormatTag.map { " · \($0)" } ?? ""), valueMuted: u == nil)
+                          valueMuted: u == nil,
+                          help: u == nil ? nil : "Tokens Claude wrote, provider-reported" + (workspace.optimizer.usageFormatTag.map { " · \($0)" } ?? "") + ".")
                 // TSD-01 option 1: per-request context of the newest session. A different measure from the totals above
                 // (one request's provider-reported size, not a sum), so the row says which session and which request.
                 if let n = workspace.optimizer.newestSession {
@@ -423,36 +433,25 @@ struct OptimizerPopover: View {
                     } ?? "time unknown"
                     // TSD-06: provider-reported numbers; what varies is whether C2D hand-verified this CLI version's transcript format.
                     let format = s.formatCheck == .handVerified ? "CLI \(s.cliVersion), verified format" : "CLI \(s.cliVersion), shape-checked format, not hand-verified"
-                    MetricRow(label: "Context now / peak",
-                              value: "\(s.lastContextTokens > 0 ? TokenSaverFormat.count(s.lastContextTokens) : "—") / \(TokenSaverFormat.count(s.peakContextTokens))",
-                              detail: "Newest session (\(origin), last reply \(when)). Provider-reported size of one request, last and largest; not a share of the totals above. \(format).")
+                    MetricRow(label: "Context now",
+                              value: s.lastContextTokens > 0 ? TokenSaverFormat.count(s.lastContextTokens) : "—",
+                              detail: "peak \(TokenSaverFormat.count(s.peakContextTokens)) · newest session, \(when)",
+                              help: "Size of one request in the newest session (\(origin)), provider-reported: the last and the largest. Not a share of the totals above. \(format).")
                 }
-                // One Token Saver (owner decision 2026-10-26): RTK-powered + C2D fold in one estimate, each engine's own count.
-                // Estimates only (bytes/4); "provider-verified" is never claimed here.
-                let g = workspace.optimizer.gain
-                let rtkOn = workspace.optimizer.rtkHookConfigured
-                let fold = workspace.optimizer.foldDecision
-                MetricRow(label: "Engine",
-                          value: [rtkOn == true ? "RTK-powered" : nil, fold.hook != nil ? "C2D fold" : nil].compactMap { $0 }.joined(separator: " + ").nilIfEmpty ?? "None active",
-                          detail: (rtkOn == true ? "RTK filters Bash output through its own hook (read from Claude settings, never changed). " : rtkOn == nil ? "Claude settings could not be fully read. " : "")
-                              + "C2D fold: " + (fold.hook != nil ? "on for new C2D launches (Debug)." : { if case .off(let why) = fold { return why }; return "" }()),
-                          valueMuted: rtkOn != true && fold.hook == nil)
+
+                Divider()
+                MetricRow(label: "Filtering",
+                          value: [rtkOn == true ? "RTK" : nil, fold.hook != nil ? "C2D fold" : nil].compactMap { $0 }.joined(separator: " + ").nilIfEmpty ?? "None active",
+                          valueMuted: rtkOn != true && fold.hook == nil,
+                          help: (rtkOn == true ? "RTK shortens Bash output through its own hook before Claude reads it (read from Claude settings, never changed). " : rtkOn == nil ? "Claude settings could not be fully read. " : "")
+                              + "C2D fold: " + (fold.hook != nil ? "on for new C2D launches (Debug)." : { if case .off(let why) = fold { return why }; return "" }()))
                 #if DEBUG
                 Toggle(isOn: $model.tokenSaverFoldEnabled) {
-                    Text("C2D fold hook (Debug, off by default)").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                    Text("Experimental: C2D fold (Debug)").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
                 }
                 .toggleStyle(.switch).controlSize(.mini).tint(Theme.accent).clickCursor()
+                .help("C2D's own output filter: folds repeated lines in Bash output before Claude reads it. Off by default; stays off while RTK is active, and delivery to the model is not proven yet.")
                 #endif
-                if let g, g.estimatedTokensSaved != 0 || g.rtk.ledger != nil {
-                    MetricRow(label: "Saved (est.)", value: TokenSaverFormat.count(g.estimatedTokensSaved),
-                              detail: "RTK-powered \(TokenSaverFormat.count(g.rtkSavedTokens)) · C2D fold \(TokenSaverFormat.count(g.c2dSavedTokens)) (emitted, delivery not proven). "
-                                  + "Estimated, bytes/4, from each engine's own count; not provider-reported or verified.")
-                } else {
-                    MetricRow(label: "Saved", value: "Not active",
-                              detail: g.map { if case .unavailable(let why) = $0.rtk { return "No C2D fold events; RTK not included: \(why)" }; return "No filtered output recorded yet." }
-                                  ?? "Reading…",
-                              valueMuted: true)
-                }
                 Button { showReport = true } label: {
                     Label("Open report", systemImage: "list.bullet.rectangle").font(Theme.Typography.detail)
                 }
@@ -468,6 +467,42 @@ struct OptimizerPopover: View {
         .task(id: "\(model.optimizerEnabled)\(model.tokenSaverFoldEnabled)") {
             await workspace.optimizer.loadLedger()
         }
+    }
+
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t.uppercased()).font(Theme.Typography.metadata).fontWeight(.semibold).foregroundStyle(Theme.textMuted)
+    }
+
+    /// The headline: estimated tokens kept out of Claude's context, green when there is something to show.
+    @ViewBuilder private func savedCard(_ g: UnifiedGain?) -> some View {
+        let active = (g?.estimatedTokensSaved ?? 0) != 0
+        let tint = active ? Theme.success : Theme.textMuted
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: "leaf.fill").foregroundStyle(tint)
+                Text("Saved").font(Theme.Typography.detail).foregroundStyle(Theme.textSecondary)
+                if active {
+                    Text("est.").font(Theme.Typography.badge).foregroundStyle(tint)
+                        .padding(.horizontal, 5).background(tint.opacity(0.15), in: Capsule())
+                }
+            }
+            if let g, active {
+                Text(TokenSaverFormat.count(g.estimatedTokensSaved) + " tokens")
+                    .font(.system(size: 24, weight: .bold)).monospacedDigit().foregroundStyle(tint)
+                Text("RTK \(TokenSaverFormat.count(g.rtkSavedTokens)) · C2D fold \(TokenSaverFormat.count(g.c2dSavedTokens))")
+                    .font(Theme.Typography.metadata).foregroundStyle(Theme.textMuted)
+            } else {
+                Text("Not active").font(.system(size: 18, weight: .semibold)).foregroundStyle(tint)
+                Text(workspace.optimizer.ledger != nil && workspace.optimizer.c2dSessions.isEmpty ? "No Claude session launched from C2D yet."
+                     : g.map { if case .unavailable(let why) = $0.rtk { return "No C2D fold events; RTK not included: \(why)" }; return "No filtered output recorded yet." } ?? "Reading…")
+                    .font(Theme.Typography.metadata).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.space3)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(tint.opacity(0.25)))
+        .help("Estimated tokens kept out of Claude's context in sessions launched from C2D: bytes/4 of the output each engine removed, from each engine's own count. Not provider-reported or verified. RTK rows are matched by time to when a C2D session ran (RTK records no session), so another agent in this folder at the same time would count too. C2D fold counts are emitted; delivery to the model is not proven.")
     }
 }
 

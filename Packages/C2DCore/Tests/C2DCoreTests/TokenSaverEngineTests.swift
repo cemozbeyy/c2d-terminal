@@ -165,6 +165,17 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: path + "-journal"))
     }
 
+    @Test func rtkRowsCanBeLimitedToWhenC2DSessionsRan() throws {
+        // makeRTKHistory stamps row i at 2026-10-2i 10:00 UTC (RTK's own RFC 3339 shape, microseconds + offset).
+        let path = try Self.makeRTKHistory([("git log", 1000, 100, 900, 20, "/w/app"), ("grep x", 400, 300, 100, 10, "/w/app")])
+        let day1 = try #require(RTKLedger.parseTimestamp("2026-10-21T09:00:00Z"))...(try #require(RTKLedger.parseTimestamp("2026-10-21T11:00:00Z")))
+        let only = try #require(RTKLedger.read(path: path, projectPath: "/w/app", windows: [day1]).ledger)
+        #expect(only.total.commands == 1 && only.total.savedTokens == 100, "only the row inside the session window")
+        #expect(try #require(RTKLedger.read(path: path, projectPath: "/w/app", windows: []).ledger).total.commands == 0, "no C2D session, no RTK rows")
+        #expect(RTKLedger.parseTimestamp("2026-10-30T10:53:03.444727+00:00") != nil && RTKLedger.parseTimestamp("2026-10-30 10:53:03") != nil)
+        #expect(RTKLedger.parseTimestamp("yesterday") == nil)
+    }
+
     @Test func rtkHistoryThatCannotBeTrustedIsLeftOutNotGuessed() throws {
         if case .unavailable = RTKLedger.read(path: "/no/such/history.db", projectPath: nil) {} else { Issue.record("missing file must be unavailable") }
         let odd = try Self.makeRTKHistory([("ls", 1, 1, 0, 0, "/w")], dropColumn: true)

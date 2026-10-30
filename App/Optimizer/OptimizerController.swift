@@ -44,20 +44,25 @@ final class OptimizerController {
     }
 
     var isEnabled: Bool { app.optimizerEnabled }
-    /// Provider-reported totals over every session of this project; nil until read or when unavailable. Usage, never savings.
-    var usage: ProviderUsage? { if case .available(let l)? = ledger { return l.total }; return nil }
+    /// Sessions launched from C2D (TS-2 link by the `--session-id` C2D chose), newest first. The popover counts only
+    /// these (owner 2026-10-30); a session started in another terminal is the user's, not C2D's.
+    var c2dSessions: [TranscriptSession] {
+        guard case .available(let l)? = ledger else { return [] }
+        return l.sessions.filter { if case .linked? = attribution[$0.id] { return true }; return false }
+    }
+    /// Provider-reported totals over the C2D-launched sessions; nil until read, when unavailable, or with none. Usage, never savings.
+    var usage: ProviderUsage? { c2dSessions.isEmpty ? nil : c2dSessions.map(\.usage).reduce(ProviderUsage(), +) }
     /// TSD-06 boundary for the totals: "verified" when every counted session's CLI version was hand-verified, otherwise
     /// "shape-checked" (accepted by the read-time shape check only). Provider-reported either way; only the format check differs.
     var usageFormatTag: String? {
-        guard case .available(let l)? = ledger, !l.sessions.isEmpty else { return nil }
-        return l.sessions.allSatisfy { $0.formatCheck == .handVerified } ? "verified format" : "some sessions shape-checked, not hand-verified"
+        let s = c2dSessions
+        guard !s.isEmpty else { return nil }
+        return s.allSatisfy { $0.formatCheck == .handVerified } ? "verified format" : "some sessions shape-checked, not hand-verified"
     }
-    /// The project's newest session by last reply — any Claude Code session in this folder, not only C2D launches —
-    /// with how it relates to a C2D launch. Its `lastContextTokens` / `peakContextTokens` are provider-reported sizes of
-    /// single requests (input + cache read + cache creation), a different measure from the summed `usage` above.
+    /// The newest C2D-launched session by last reply. Its `lastContextTokens` / `peakContextTokens` are provider-reported
+    /// sizes of single requests (input + cache read + cache creation), a different measure from the summed `usage` above.
     var newestSession: (session: TranscriptSession, attribution: SessionAttribution)? {
-        guard case .available(let l)? = ledger, let s = l.sessions.first else { return nil }
-        return (s, attribution[s.id] ?? .unmatched)
+        c2dSessions.first.map { ($0, attribution[$0.id] ?? .unmatched) }
     }
     /// The settings file the RTK check reads (`CLAUDE_CONFIG_DIR` aware), shown so the user knows what was and was not checked.
     var rtkSettingsPath: String {
@@ -91,6 +96,7 @@ final class OptimizerController {
         if !app.optimizerEnabled { return "Token Saver is off; transcripts are not read." }
         if ledgerLoading { return "Reading Claude Code transcripts…" }
         if case .unavailable(let reason)? = ledger { return reason }
+        if ledger != nil { return "No Claude session launched from C2D in this project yet." }
         return "Not read yet."
     }
 
@@ -102,21 +108,24 @@ final class OptimizerController {
         ledgerLoading = true
         defer { ledgerLoading = false }
         let path = projectPath
-        let read = await Task.detached(priority: .userInitiated) { () -> (TranscriptLedgerResult, Bool?, UnifiedGain) in
-            // C2D fold events from the local ledger (live only), RTK's own history read-only; a store error means no C2D rows, never a guess.
-            let folder = ClaudeTranscriptReader.projectFolderName(for: path)
-            let events = (try? OptimizationStore.standardPath()).flatMap { try? OptimizationStore(path: $0) }
-            let c2d = await (try? events?.events(source: .live, project: folder)) ?? []
-            return (ClaudeTranscriptReader.read(projectPath: path), RTKHookDetector.state(projectPath: path),
-                    UnifiedGain(c2dEvents: c2d, rtk: RTKLedger.read(projectPath: path), projectPath: path))
+        let read = await Task.detached(priority: .userInitiated) { () -> (TranscriptLedgerResult, Bool?) in
+            (ClaudeTranscriptReader.read(projectPath: path), RTKHookDetector.state(projectPath: path))
         }.value
         ledger = read.0
         rtkHookConfigured = read.1
-        gain = read.2
         ledgerScannedAt = Date()
         let sessions: [TranscriptSession] = { if case .available(let l)? = ledger { return l.sessions }; return [] }()
         let records = app.agentSessions.records(forProject: projectPath)
         attribution = SessionAttributor.attribute(sessions: sessions, agentRecords: records)
         launchesWithoutTranscript = SessionAttributor.launchesWithoutTranscript(sessions: sessions, agentRecords: records)
+        // RTK rows only while a C2D-launched session was running (approximate: RTK keeps no session id). C2D fold events
+        // need no filter: the fold hook rides only on C2D launches. A store error means no C2D rows, never a guess.
+        let windows = c2dSessions.compactMap { s in s.firstTimestamp.flatMap { f in s.lastTimestamp.map { f...$0 } } }
+        gain = await Task.detached(priority: .userInitiated) { () -> UnifiedGain in
+            let folder = ClaudeTranscriptReader.projectFolderName(for: path)
+            let events = (try? OptimizationStore.standardPath()).flatMap { try? OptimizationStore(path: $0) }
+            let c2d = await (try? events?.events(source: .live, project: folder)) ?? []
+            return UnifiedGain(c2dEvents: c2d, rtk: RTKLedger.read(projectPath: path, windows: windows), projectPath: path)
+        }.value
     }
 }
