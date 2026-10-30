@@ -29,6 +29,12 @@ final class WorkspaceController {
     static let saveDebounce: Duration = .milliseconds(500)
 
     init(layout: WorkspaceLayout, projectPath: String, app: AppModel, restoredFromDisk: Bool) {
+        // Layouts saved before the VS Code sidebar can show Changes and Explorer side by side: keep one sidebar.
+        var layout = layout
+        let visibleKinds = layout.visiblePanelIDs.map { ($0, layout.panels[$0]?.kind) }
+        if visibleKinds.contains(where: { $0.1 == .projectExplorer }) {
+            for (id, kind) in visibleKinds where kind == .gitChanges { try? layout.hide(id) }
+        }
         self.layout = layout
         self.projectPath = projectPath
         self.app = app
