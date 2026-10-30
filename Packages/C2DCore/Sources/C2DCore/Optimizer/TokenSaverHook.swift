@@ -53,6 +53,9 @@ public enum TokenSaverHook {
         if response["interrupted"] as? Bool == true { return (nil, event(.interrupted, result: original)) }
         if stdout.isEmpty { return (nil, event(.empty, result: 0)) }
         if original > maximumBytes { return (nil, event(.tooLarge, result: original)) }
+        // Over ~30 KB Claude Code saves the output to a file, hands the hook only a prefix, and sends the model its own
+        // <persisted-output> preview, never a replacement (hookcheck `large`, 2026-10-30). Folding it would count a saving that never happened.
+        if response["persistedOutputPath"] != nil { return (nil, event(.persisted, result: original)) }
         if let reason = skipReason(command: command, stdout: stdout) { return (nil, event(reason, result: original)) }
         let folded: String
         if let lossy {

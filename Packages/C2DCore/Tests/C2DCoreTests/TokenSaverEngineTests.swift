@@ -48,6 +48,11 @@ import Testing
         #expect(skip(Self.payload(command: "grep value", stdout: "[rtk] 40 matches\n" + Self.foldable)) == .rtk)
         #expect(skip(Self.payload(command: "git diff", stdout: Self.foldable)) == .diff)
         #expect(skip(Self.payload(command: "cat log", stdout: "<persisted-output>\n" + Self.foldable)) == .persisted)
+        // Over ~30 KB the CLI gives the hook a prefix plus persistedOutputPath and ignores any replacement.
+        let persisted = try! JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": ["command": "sh gen.sh"],
+            "tool_response": ["stdout": Self.foldable, "stderr": "", "persistedOutputPath": "/tmp/x.txt", "persistedOutputSize": 212679]])
+        #expect(skip(persisted) == .persisted)
         #expect(skip(Self.payload(command: "make", stdout: Self.foldable, interrupted: true)) == .interrupted)
         #expect(skip(Self.payload(command: "true", stdout: "")) == .empty)
         #expect(skip(Self.payload(command: "echo hi", stdout: "hi\n")) == .noGain)
@@ -74,7 +79,7 @@ import Testing
         #expect(decide(debug: false).hook == nil, "Release never")
         #expect(decide(on: false).hook == nil)
         #expect(decide(fold: false).hook == nil, "off by default")
-        #expect(decide(rtk: true).hook == nil, "RTK configured: fail-closed")
+        #expect(decide(rtk: true).hook != nil, "RTK configured: fold runs beside it, skipping RTK-owned output")
         #expect(decide(rtk: nil).hook == nil, "RTK unknown: fail-closed")
         #expect(decide(helperPath: nil).hook == nil && decide(helperPath: "/no/such/helper").hook == nil)
         let hook = try #require(decide().hook)
@@ -163,6 +168,17 @@ import Testing
         #expect(try #require(RTKLedger.read(path: path, projectPath: nil).ledger).total.commands == 4)
         #expect(SHA256.hash(data: try Data(contentsOf: URL(fileURLWithPath: path))) == before, "reading never changes RTK's file")
         #expect(!FileManager.default.fileExists(atPath: path + "-journal"))
+    }
+
+    @Test func rtkRowsCanBeLimitedToWhenC2DSessionsRan() throws {
+        // makeRTKHistory stamps row i at 2026-10-2i 10:00 UTC (RTK's own RFC 3339 shape, microseconds + offset).
+        let path = try Self.makeRTKHistory([("git log", 1000, 100, 900, 20, "/w/app"), ("grep x", 400, 300, 100, 10, "/w/app")])
+        let day1 = try #require(RTKLedger.parseTimestamp("2026-10-21T09:00:00Z"))...(try #require(RTKLedger.parseTimestamp("2026-10-21T11:00:00Z")))
+        let only = try #require(RTKLedger.read(path: path, projectPath: "/w/app", windows: [day1]).ledger)
+        #expect(only.total.commands == 1 && only.total.savedTokens == 100, "only the row inside the session window")
+        #expect(try #require(RTKLedger.read(path: path, projectPath: "/w/app", windows: []).ledger).total.commands == 0, "no C2D session, no RTK rows")
+        #expect(RTKLedger.parseTimestamp("2026-10-30T10:53:03.444727+00:00") != nil && RTKLedger.parseTimestamp("2026-10-30 10:53:03") != nil)
+        #expect(RTKLedger.parseTimestamp("yesterday") == nil)
     }
 
     @Test func rtkHistoryThatCannotBeTrustedIsLeftOutNotGuessed() throws {
