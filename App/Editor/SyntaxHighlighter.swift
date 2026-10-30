@@ -21,6 +21,9 @@ struct SyntaxHighlighter {
         var isMarkup: Bool = false
         /// JavaScript/TypeScript: JSX tags and attributes are coloured like markup.
         var hasJSX: Bool = false
+        /// Lower-case names (variables, properties, labels) get their own colour, as VS Code's Dark+ does.
+        /// Off where bare words are data or commands (Shell, JSON, YAML).
+        var colorsVariables: Bool = true
     }
 
     static let languages: [String: Language] = {
@@ -29,10 +32,10 @@ struct SyntaxHighlighter {
         js.hasJSX = true
         let html = Language(name: "HTML", keywords: [], lineComment: nil, blockComment: ("<!--", "-->"), stringDelimiters: [], isMarkup: true)
         let py = Language(name: "Python", keywords: ["def", "class", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or", "import", "from", "as", "try", "except", "finally", "raise", "with", "lambda", "yield", "pass", "break", "continue", "None", "True", "False", "async", "await", "global", "nonlocal", "del", "is", "assert"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"])
-        let sh = Language(name: "Shell", keywords: ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "in", "function", "return", "export", "local", "echo", "exit", "source", "set", "unset", "readonly"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"])
-        let json = Language(name: "JSON", keywords: ["true", "false", "null"], lineComment: nil, blockComment: nil, stringDelimiters: ["\""], highlightsKeys: true)
+        let sh = Language(name: "Shell", keywords: ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "in", "function", "return", "export", "local", "echo", "exit", "source", "set", "unset", "readonly"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"], colorsVariables: false)
+        let json = Language(name: "JSON", keywords: ["true", "false", "null"], lineComment: nil, blockComment: nil, stringDelimiters: ["\""], highlightsKeys: true, colorsVariables: false)
         let md = Language(name: "Markdown", keywords: [], lineComment: nil, blockComment: nil, stringDelimiters: [], isMarkdown: true)
-        let yaml = Language(name: "YAML", keywords: ["true", "false", "null"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"], highlightsKeys: true)
+        let yaml = Language(name: "YAML", keywords: ["true", "false", "null"], lineComment: "#", blockComment: nil, stringDelimiters: ["\"", "'"], highlightsKeys: true, colorsVariables: false)
         let c = Language(name: "C", keywords: ["int", "char", "void", "return", "if", "else", "for", "while", "struct", "typedef", "static", "const", "include", "define", "switch", "case", "break", "continue", "unsigned", "long", "double", "float", "sizeof", "enum", "extern", "goto", "do", "default"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\""])
         let rust = Language(name: "Rust", keywords: ["fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "for", "in", "if", "else", "match", "while", "loop", "return", "use", "mod", "crate", "self", "Self", "as", "where", "async", "await", "move", "ref", "const", "static", "type", "unsafe", "dyn", "true", "false", "break", "continue"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\""])
         let go = Language(name: "Go", keywords: ["package", "import", "func", "var", "const", "type", "struct", "interface", "map", "chan", "if", "else", "for", "range", "switch", "case", "default", "return", "go", "defer", "select", "break", "continue", "fallthrough", "nil", "true", "false"], lineComment: "//", blockComment: ("/*", "*/"), stringDelimiters: ["\"", "`"])
@@ -62,6 +65,8 @@ struct SyntaxHighlighter {
         var tag: NSColor
         var attribute: NSColor
         var punctuation: NSColor
+        /// Bracket pair colours by nesting depth (VS Code's bracket pair colorization defaults).
+        var brackets: [NSColor] = [NSColor(hex: 0xFFD700), NSColor(hex: 0xDA70D6), NSColor(hex: 0x179FFF)]
 
         private static func c(_ hex: UInt32) -> NSColor { NSColor(hex: hex) }
 
@@ -80,25 +85,34 @@ struct SyntaxHighlighter {
         /// VS Code "Light+", for Daylight.
         static let daylight = Palette(keyword: c(0x0000FF), string: c(0xA31515), comment: c(0x008000), number: c(0x098658),
                                       propertyKey: c(0x0451A5), link: c(0x0070C1), plain: c(0x1F1F1F), type: c(0x267F99),
-                                      function: c(0x795E26), tag: c(0x800000), attribute: c(0xE50000), punctuation: c(0x6B6F7A))
+                                      function: c(0x795E26), tag: c(0x800000), attribute: c(0xE50000), punctuation: c(0x6B6F7A),
+                                      brackets: [c(0x0431FA), c(0x319331), c(0x7B3814)])
     }
 
     let language: Language
     var palette = Palette.midnight
 
+    /// A matched bracket pair: UTF-16 offsets of the opening and closing bracket, and nesting depth.
+    struct BracketPair: Sendable { let open: Int, close: Int, depth: Int }
+
     /// Applies foreground colors to the whole storage. Cheap enough for the size limit above.
-    func highlight(_ storage: NSTextStorage) {
+    /// Returns the bracket pairs found outside strings and comments (empty where brackets are not coloured).
+    @discardableResult
+    func highlight(_ storage: NSTextStorage) -> [BracketPair] {
         let text = storage.string as NSString
         let full = NSRange(location: 0, length: text.length)
         storage.beginEditing()
         storage.removeAttribute(.foregroundColor, range: full)
         storage.addAttribute(.foregroundColor, value: palette.plain, range: full)
-        guard text.length <= Self.maximumHighlightedLength else { storage.endEditing(); return }
+        guard text.length <= Self.maximumHighlightedLength else { storage.endEditing(); return [] }
 
-        if language.isMarkdown { highlightMarkdown(storage, full: full); storage.endEditing(); return }
-        if language.isMarkup { highlightMarkup(storage, full: full); storage.endEditing(); return }
+        if language.isMarkdown { highlightMarkdown(storage, full: full); storage.endEditing(); return [] }
+        if language.isMarkup { highlightMarkup(storage, full: full); storage.endEditing(); return [] }
 
         // Names first, so keywords (`if (`, `return`) and strings override them below.
+        if language.colorsVariables {
+            color(storage, "\\b[a-z_][A-Za-z0-9_]*\\b", palette.propertyKey, in: full)            // variables, properties
+        }
         color(storage, "\\b[A-Z][A-Za-z0-9_]*\\b", palette.type, in: full)                       // Types, Constants
         color(storage, "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()", palette.function, group: 1, in: full)  // calls(
         if language.hasJSX {
@@ -108,6 +122,7 @@ struct SyntaxHighlighter {
             color(storage, "(?<![\\w)\\]])</?([A-Za-z][\\w.]*)(?=[\\s>/])", palette.tag, group: 1, in: full)
             color(storage, "(?<=\\s)([A-Za-z_][\\w-]*)(?==[{\"'])", palette.attribute, group: 1, in: full)
         }
+        color(storage, "[@#][A-Za-z_][A-Za-z0-9_]*\\b", palette.keyword, in: full)                // @attributes, #macros, #include
         if !language.keywords.isEmpty {
             let pattern = "\\b(" + language.keywords.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|") + ")\\b"
             if let re = try? NSRegularExpression(pattern: pattern) {
@@ -141,7 +156,27 @@ struct SyntaxHighlighter {
         if let (open, close) = language.blockComment, let re = try? NSRegularExpression(pattern: NSRegularExpression.escapedPattern(for: open) + "[\\s\\S]*?" + NSRegularExpression.escapedPattern(for: close)) {
             for m in re.matches(in: storage.string, range: full) { storage.addAttribute(.foregroundColor, value: palette.comment, range: m.range) }
         }
+        let pairs = colorBrackets(storage)
         storage.endEditing()
+        return pairs
+    }
+
+    /// Pair colours by depth. Runs last and skips brackets already coloured as string or comment, so
+    /// an unbalanced `(` inside a literal does not shift every pair after it.
+    private func colorBrackets(_ storage: NSTextStorage) -> [BracketPair] {
+        let skip = [palette.string, palette.comment]
+        var depth = 0
+        var stack: [Int] = []
+        var pairs: [BracketPair] = []
+        for (i, u) in storage.string.utf16.enumerated() {
+            let opens = u == 0x28 || u == 0x5B || u == 0x7B      // ( [ {
+            guard opens || u == 0x29 || u == 0x5D || u == 0x7D else { continue }
+            if let fg = storage.attribute(.foregroundColor, at: i, effectiveRange: nil) as? NSColor, skip.contains(fg) { continue }
+            if !opens { depth = max(0, depth - 1) }
+            storage.addAttribute(.foregroundColor, value: palette.brackets[depth % palette.brackets.count], range: NSRange(location: i, length: 1))
+            if opens { depth += 1; stack.append(i) } else if let open = stack.popLast() { pairs.append(BracketPair(open: open, close: i, depth: depth)) }
+        }
+        return pairs
     }
 
     private func color(_ storage: NSTextStorage, _ pattern: String, _ color: NSColor, group: Int = 0,
