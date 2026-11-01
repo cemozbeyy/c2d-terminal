@@ -13,6 +13,8 @@ struct MetricRow: View {
     let value: String
     var detail: String?
     var valueMuted = false
+    /// Long basis/caveats, shown on hover so the row stays one glance.
+    var help: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -26,5 +28,6 @@ struct MetricRow: View {
                 Text(detail).font(Theme.Typography.metadata).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
             }
         }
+        .help(help ?? "")
     }
 }
