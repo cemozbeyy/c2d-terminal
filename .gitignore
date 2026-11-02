@@ -1,5 +1,7 @@
 # Xcode / generated project (regenerate with `xcodegen generate`)
 *.xcodeproj
+# App/Info.plist is written by xcodegen from project.yml `info:`
+App/Info.plist
 *.xcworkspace
 xcuserdata/
 DerivedData/

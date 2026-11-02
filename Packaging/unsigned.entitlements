@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- UNSIGNED builds only (Scripts/build-release.sh without C2D_SIGN_IDENTITY). An ad-hoc signature has no Team ID, so
+	     Hardened Runtime's library validation refuses the embedded Sparkle.framework ("different Team IDs", dyld abort at
+	     launch). Disabling library validation keeps every other Hardened Runtime restriction on for local launch checks.
+	     Signed builds never use this file: Developer ID gives app and frameworks one Team ID. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
