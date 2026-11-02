@@ -122,10 +122,14 @@ runs. It makes model calls on your own account only after you type `SPEND` at it
 
 ## Privacy
 
-- There is no C2D server or account, and the app makes no network requests of its own.
+- There is no C2D server or account, and the app makes no network requests of its own, apart from the
+  optional update check below.
 - Agents run with your own provider accounts and settings. C2D never injects credentials and does
   not change Claude Code's configuration.
 - Token Saver reads only usage metadata from local transcripts, on demand.
+
+Update checks (signed builds only): when you allow them, the app fetches `https://c2dterminal.com/appcast.xml`
+to compare version numbers. Nothing else is sent; the check can be declined or turned off.
 
 ## Requirements
 
@@ -176,8 +180,12 @@ Or open `C2DTerminal.xcodeproj` in Xcode and press Run.
 ./Scripts/build-release.sh
 ```
 
-This writes `build/C2DTerminal.app` and `build/C2DTerminal-<version>-unsigned.zip`. The app is
-ad-hoc signed, so Gatekeeper will refuse it on other Macs until it is signed with a Developer ID.
+Without signing credentials this produces an **unsigned** build in `build/release/`: `C2DTerminal.app`,
+`C2DTerminal-<version>-unsigned.dmg` and `updates/C2DTerminal-<version>-unsigned.zip`, all ad-hoc signed.
+Gatekeeper refuses unsigned builds on other Macs, by design; they are for local checks only. With a Developer ID
+certificate (`C2D_SIGN_IDENTITY`, `C2D_TEAM_ID`) the same script signs, and with a notarytool profile
+(`C2D_NOTARY_PROFILE`) it notarizes and staples the app and the DMG. The in-app updater (Sparkle) only works in
+signed builds that embed the EdDSA public key (`C2D_SPARKLE_PUBLIC_KEY`); see the header of the script.
 
 ## Development
 
