@@ -10,6 +10,9 @@ packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm.git
     exactVersion: 1.99.0   # ADR-009; review every bump
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: 2.10.1   # ADR-039; updater, UI layer only (C2DCore never sees it)
 targets:
   C2DTerminal:
     type: application
@@ -19,15 +22,28 @@ targets:
     dependencies:
       - package: C2DCore
       - package: SwiftTerm
+      - package: Sparkle
       # Token Saver fold helper (ADR-035), copied to Contents/MacOS. Present in every build; only Debug launches can
       # reference it, and only when TokenSaverLaunchHook.decide allows (plan C2D_GAIN P2).
       - target: c2d-token-helper
         embed: true
         copy:
           destination: executables
+    info:
+      path: App/Info.plist
+      properties:
+        SUFeedURL: $(C2D_UPDATE_FEED_URL)
+        SUPublicEDKey: $(C2D_SPARKLE_PUBLIC_KEY)
+        # No SUEnableAutomaticChecks here on purpose: absent → Sparkle asks the user once (second launch) before any
+        # scheduled check; set → silent automatic checks, which the privacy stance (README) rules out.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.c2d.terminal
+        # Sparkle (ADR-039). Feed is overridable per build (xcodebuild C2D_UPDATE_FEED_URL=…) and at runtime by the
+        # `C2DUpdateFeedURL` user default. The EdDSA public key is EMPTY here on purpose: the release signer injects
+        # it (C2D_SPARKLE_PUBLIC_KEY=…); without it Sparkle refuses updates, which is the correct unsigned behaviour.
+        C2D_UPDATE_FEED_URL: https://c2dterminal.com/appcast.xml
+        C2D_SPARKLE_PUBLIC_KEY: ""
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
@@ -36,12 +52,18 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: C2D Terminal
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
-        # Ad-hoc signing: dev builds need no team or certificate. Release signing is a separate, later decision (Bible Part 17).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon   # App/Assets.xcassets, rendered by Packaging/icon/render-appicon.swift
+        # Ad-hoc signing by default: dev builds need no team or certificate. Scripts/build-release.sh overrides
+        # CODE_SIGN_IDENTITY / DEVELOPMENT_TEAM when Developer ID credentials are present (ADR-003, ADR-039).
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
-        ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO   # PROPOSED — see ADR-003
         ARCHS: arm64             # CONFIRMED — ADR-006, Intel deferred
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO    # ad-hoc + library validation would refuse Sparkle.framework
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES   # required for notarization; Release was NO here but YES in the script before ADR-039
   c2d-token-helper:
     type: tool
     platform: macOS
@@ -56,6 +78,10 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
-        ENABLE_HARDENED_RUNTIME: NO
         SKIP_INSTALL: YES
         ARCHS: arm64
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES

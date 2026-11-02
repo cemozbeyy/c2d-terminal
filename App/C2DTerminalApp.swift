@@ -187,6 +187,9 @@ struct C2DTerminalApp: App {
                 Button("Save as Default Layout") { model.workspace?.saveAsGlobalDefault() }
                     .disabled(model.workspace == nil)
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { AppUpdater.shared.checkForUpdates() }
+            }
             CommandGroup(after: .help) {
                 Button("Export Diagnostics…") { model.prepareDiagnosticsExport() }
             }
@@ -317,6 +320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.windows.forEach { $0.isRestorable = false }
+        _ = AppUpdater.shared   // starts Sparkle; it asks the user before enabling scheduled checks (no SUEnableAutomaticChecks key)
+        #if DEBUG
+        // `-c2dSparkleCheck YES`: print the updater state and exit — the headless check for the release pipeline (ADR-039).
+        if UserDefaults.standard.bool(forKey: "c2dSparkleCheck") { AppUpdater.shared.runHeadlessCheck() }
+        #endif
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "c2dBuddyPetCheck") { BuddyPet.shared.restore() }   // runs without a main window
         #endif
